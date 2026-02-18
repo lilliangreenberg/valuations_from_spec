@@ -1,0 +1,71 @@
+"""Sequential snapshot capture manager."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+import structlog
+
+from src.core.transformers import prepare_snapshot_data
+from src.utils.progress import ProgressTracker
+
+if TYPE_CHECKING:
+    from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
+    from src.repositories.company_repository import CompanyRepository
+    from src.services.firecrawl_client import FirecrawlClient
+
+logger = structlog.get_logger(__name__)
+
+
+class SnapshotManager:
+    """Manages sequential snapshot capture for all companies."""
+
+    def __init__(
+        self,
+        firecrawl_client: FirecrawlClient,
+        snapshot_repo: SnapshotRepository,
+        company_repo: CompanyRepository,
+    ) -> None:
+        self.firecrawl = firecrawl_client
+        self.snapshot_repo = snapshot_repo
+        self.company_repo = company_repo
+
+    def capture_all_snapshots(self) -> dict[str, Any]:
+        """Capture snapshots for all companies with homepage URLs.
+
+        Returns summary stats dict.
+        """
+        companies = self.company_repo.get_companies_with_homepage()
+        tracker = ProgressTracker(total=len(companies))
+
+        for company in companies:
+            company_id = company["id"]
+            url = company["homepage_url"]
+
+            if not url:
+                tracker.record_skip()
+                continue
+
+            try:
+                result = self.firecrawl.capture_snapshot(url)
+                snapshot_data = prepare_snapshot_data(company_id, url, result)
+                self.snapshot_repo.store_snapshot(snapshot_data)
+                tracker.record_success()
+            except Exception as exc:
+                logger.error(
+                    "snapshot_capture_failed",
+                    company_id=company_id,
+                    url=url,
+                    error=str(exc),
+                )
+                tracker.record_failure(f"Company {company_id}: {exc}")
+                self.company_repo.store_processing_error(
+                    entity_type="snapshot",
+                    entity_id=company_id,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                )
+
+            tracker.log_progress(every_n=10)
+
+        return tracker.summary()
