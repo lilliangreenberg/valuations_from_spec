@@ -36,6 +36,9 @@ class DiscoveryMethod(StrEnum):
     PAGE_HEADER = "page_header"
     PAGE_CONTENT = "page_content"
     FULL_SITE_CRAWL = "full_site_crawl"
+    LINKEDIN_PEOPLE_TAB = "linkedin_people_tab"
+    KAGI_SEARCH = "kagi_search"
+    AIRTABLE_IMPORT = "airtable_import"
 
 
 class VerificationStatus(StrEnum):

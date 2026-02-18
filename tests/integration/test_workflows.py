@@ -141,10 +141,10 @@ class TestExtractionSnapshotChangeWorkflow:
                 },
             },
         ]
-        mock_airtable.resolve_company_name.side_effect = [
-            "Alpha Inc",
-            "Beta Inc",
-        ]
+        mock_airtable.build_company_name_lookup.return_value = {
+            "recLINK1": "Alpha Inc",
+            "recLINK2": "Beta Inc",
+        }
 
         company_repo = CompanyRepository(db)
         extractor = CompanyExtractor(mock_airtable, company_repo)
@@ -657,3 +657,174 @@ class TestSignificanceBackfillWorkflow:
         for record in records:
             if record["has_changed"]:
                 assert record["significance_classification"] is not None
+
+
+# ===========================================================================
+# 7. Baseline Signal Analysis Workflow
+# ===========================================================================
+
+
+class TestBaselineSignalWorkflow:
+    """Integration tests for baseline signal analysis."""
+
+    def test_auto_baseline_on_first_scrape(self, workflow_db: Database) -> None:
+        """When SnapshotManager captures the first snapshot for a company,
+        baseline analysis runs automatically."""
+        db = workflow_db
+        cid = _insert_company(db, "New Corp", "https://newcorp.com")
+
+        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db)
+
+        # Mock firecrawl client
+        mock_firecrawl = MagicMock()
+        mock_firecrawl.capture_snapshot.return_value = {
+            "markdown": (
+                "# New Corp\nWe are shutting down operations. "
+                "Ceased operations effective immediately. Winding down."
+            ),
+            "html": "<h1>New Corp</h1>",
+            "metadata": {"statusCode": 200},
+        }
+
+        manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
+        manager.capture_all_snapshots()
+
+        # Verify snapshot was stored
+        snapshots = snapshot_repo.get_snapshots_for_company(cid)
+        assert len(snapshots) == 1
+
+        # Verify baseline was auto-computed
+        snap = snapshots[0]
+        assert snap["baseline_classification"] is not None
+        assert snap["baseline_confidence"] is not None
+        assert snap["baseline_confidence"] > 0
+
+    def test_baseline_not_recomputed_on_second_scrape(self, workflow_db: Database) -> None:
+        """Second scrape for same company does NOT recompute baseline."""
+        db = workflow_db
+        cid = _insert_company(db, "Existing Corp", "https://existing.com")
+
+        # Insert first snapshot manually with baseline
+        snap_id = _insert_snapshot(
+            db, cid, "# Old content", captured_at="2025-01-01T00:00:00+00:00"
+        )
+        snapshot_repo = SnapshotRepository(db)
+        snapshot_repo.update_baseline(
+            snap_id,
+            {
+                "baseline_classification": "insignificant",
+                "baseline_sentiment": "neutral",
+                "baseline_confidence": 0.75,
+                "baseline_keywords": [],
+                "baseline_categories": [],
+                "baseline_notes": "Original baseline",
+            },
+        )
+
+        company_repo = CompanyRepository(db)
+
+        mock_firecrawl = MagicMock()
+        mock_firecrawl.capture_snapshot.return_value = {
+            "markdown": "# New content with layoffs and restructuring",
+            "html": "<h1>New content</h1>",
+            "metadata": {"statusCode": 200},
+        }
+
+        manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
+        manager.capture_all_snapshots()
+
+        # Should have 2 snapshots now
+        snapshots = snapshot_repo.get_snapshots_for_company(cid)
+        assert len(snapshots) == 2
+
+        # First snapshot should still have original baseline
+        first = snapshots[0]
+        assert first["baseline_notes"] == "Original baseline"
+
+        # Second snapshot should NOT have baseline (not first scrape)
+        second = snapshots[1]
+        assert second["baseline_classification"] is None
+
+    def test_baseline_backfill_workflow(self, workflow_db: Database) -> None:
+        """Backfill baselines for companies that were scraped before
+        the baseline feature existed."""
+        db = workflow_db
+
+        # Create companies with existing snapshots (no baseline)
+        cid1 = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        cid2 = _insert_company(db, "Beta Corp", "https://beta.com")
+
+        _insert_snapshot(
+            db,
+            cid1,
+            "# Alpha Inc\nWe raised funding in Series A. Revenue doubled.",
+            captured_at="2025-01-01T00:00:00+00:00",
+        )
+        _insert_snapshot(
+            db,
+            cid2,
+            "# Beta Corp\nOur team is growing with new hires.",
+            captured_at="2025-01-01T00:00:00+00:00",
+        )
+
+        snapshot_repo = SnapshotRepository(db)
+        from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
+
+        analyzer = BaselineAnalyzer(snapshot_repo)
+        summary = analyzer.backfill_baselines()
+
+        assert summary["successful"] == 2
+
+        # Verify both companies have baselines
+        assert snapshot_repo.has_baseline_for_company(cid1) is True
+        assert snapshot_repo.has_baseline_for_company(cid2) is True
+
+    def test_diff_based_detection_with_baseline(self, workflow_db: Database) -> None:
+        """Full workflow: first scrape gets baseline, change detection uses diff."""
+        db = workflow_db
+        cid = _insert_company(db, "Full Pipeline", "https://fullpipeline.com")
+
+        # Insert two snapshots with shared boilerplate
+        boilerplate = (
+            "We are an international company with strategic partnerships "
+            "and expansion into new markets."
+        )
+        _insert_snapshot(
+            db,
+            cid,
+            f"# Full Pipeline\n{boilerplate}\nOld section",
+            captured_at="2025-01-01T00:00:00+00:00",
+        )
+        _insert_snapshot(
+            db,
+            cid,
+            f"# Full Pipeline\n{boilerplate}\nNew section with updated team info",
+            captured_at="2025-02-01T00:00:00+00:00",
+        )
+
+        # Run baseline on first snapshot
+        snapshot_repo = SnapshotRepository(db)
+        from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
+
+        baseline = BaselineAnalyzer(snapshot_repo)
+        first_snaps = snapshot_repo.get_snapshots_for_company(cid)
+        baseline.analyze_baseline_for_snapshot(first_snaps[0]["id"])
+
+        # Baseline should have caught "international", "partnerships", "expansion"
+        first_snap = snapshot_repo.get_snapshot_by_id(first_snaps[0]["id"])
+        assert first_snap is not None
+        assert first_snap["baseline_classification"] is not None
+
+        # Run change detection -- should NOT flag boilerplate keywords
+        change_repo = ChangeRecordRepository(db)
+        company_repo = CompanyRepository(db)
+        detector = ChangeDetector(snapshot_repo, change_repo, company_repo)
+        detector.detect_all_changes()
+
+        changes = change_repo.get_changes_for_company(cid)
+        assert len(changes) == 1
+        record = changes[0]
+        assert record["has_changed"] == 1
+        # Diff only contains "New section with updated team info" -- no keywords
+        assert record["significance_classification"] in ("insignificant", None)

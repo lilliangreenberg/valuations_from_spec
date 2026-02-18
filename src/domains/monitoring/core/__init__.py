@@ -7,6 +7,7 @@ from src.domains.monitoring.core.change_detection import (
     calculate_similarity,
     detect_content_change,
     determine_magnitude,
+    extract_content_diff,
 )
 from src.domains.monitoring.core.checksum import compute_content_checksum
 from src.domains.monitoring.core.http_headers import (
@@ -39,6 +40,7 @@ __all__ = [
     "calculate_similarity",
     "detect_content_change",
     "determine_magnitude",
+    "extract_content_diff",
     # checksum
     "compute_content_checksum",
     # http_headers

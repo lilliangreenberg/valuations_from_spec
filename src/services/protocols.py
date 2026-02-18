@@ -36,3 +36,12 @@ class SearchClientProtocol(Protocol):
         before_date: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]: ...
+
+
+class LinkedInBrowserProtocol(Protocol):
+    """Protocol for LinkedIn browser scraping service."""
+
+    def extract_people(
+        self,
+        company_linkedin_url: str,
+    ) -> list[dict[str, str]]: ...

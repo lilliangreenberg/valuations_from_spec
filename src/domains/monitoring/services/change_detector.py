@@ -7,7 +7,10 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from src.domains.monitoring.core.change_detection import detect_content_change
+from src.domains.monitoring.core.change_detection import (
+    detect_content_change,
+    extract_content_diff,
+)
 from src.domains.monitoring.core.significance_analysis import (
     analyze_content_significance,
 )
@@ -36,12 +39,17 @@ class ChangeDetector:
         self.change_record_repo = change_record_repo
         self.company_repo = company_repo
 
-    def detect_all_changes(self) -> dict[str, Any]:
-        """Detect changes for all companies with 2+ snapshots.
+    def detect_all_changes(self, limit: int | None = None) -> dict[str, Any]:
+        """Detect changes for companies with 2+ snapshots.
+
+        Args:
+            limit: Maximum number of companies to process. None for all.
 
         Returns summary stats.
         """
         company_ids = self.snapshot_repo.get_companies_with_multiple_snapshots()
+        if limit is not None:
+            company_ids = company_ids[:limit]
         tracker = ProgressTracker(total=len(company_ids))
         changes_found = 0
 
@@ -78,23 +86,28 @@ class ChangeDetector:
                     "detected_at": now,
                 }
 
-                # Run significance analysis if changed
-                if has_changed and new_snap.get("content_markdown"):
-                    sig_result = analyze_content_significance(
-                        new_snap["content_markdown"],
-                        magnitude=magnitude.value,
+                # Run significance analysis on diff content only
+                if has_changed:
+                    diff_text = extract_content_diff(
+                        old_snap.get("content_markdown") or "",
+                        new_snap.get("content_markdown") or "",
                     )
-                    record_data.update(
-                        {
-                            "significance_classification": sig_result.classification,
-                            "significance_sentiment": sig_result.sentiment,
-                            "significance_confidence": sig_result.confidence,
-                            "matched_keywords": sig_result.matched_keywords,
-                            "matched_categories": sig_result.matched_categories,
-                            "significance_notes": sig_result.notes,
-                            "evidence_snippets": sig_result.evidence_snippets,
-                        }
-                    )
+                    if diff_text.strip():
+                        sig_result = analyze_content_significance(
+                            diff_text,
+                            magnitude=magnitude.value,
+                        )
+                        record_data.update(
+                            {
+                                "significance_classification": sig_result.classification,
+                                "significance_sentiment": sig_result.sentiment,
+                                "significance_confidence": sig_result.confidence,
+                                "matched_keywords": sig_result.matched_keywords,
+                                "matched_categories": sig_result.matched_categories,
+                                "significance_notes": sig_result.notes,
+                                "evidence_snippets": sig_result.evidence_snippets,
+                            }
+                        )
 
                 self.change_record_repo.store_change_record(record_data)
 

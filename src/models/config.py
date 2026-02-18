@@ -29,6 +29,8 @@ class Config(BaseSettings):
     llm_model: str = "claude-haiku-4-5-20251001"
     llm_validation_enabled: bool = False
     kagi_api_key: str | None = None
+    linkedin_headless: bool = False
+    linkedin_profile_dir: str = "data/linkedin_profile"
 
     @field_validator("airtable_api_key")
     @classmethod

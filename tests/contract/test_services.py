@@ -355,10 +355,10 @@ class TestCompanyExtractor:
                 },
             },
         ]
-        mock_airtable.resolve_company_name.side_effect = [
-            "Alpha Inc",
-            "Beta Inc",
-        ]
+        mock_airtable.build_company_name_lookup.return_value = {
+            "recABC": "Alpha Inc",
+            "recDEF": "Beta Inc",
+        }
 
         company_repo = CompanyRepository(db)
         extractor = CompanyExtractor(mock_airtable, company_repo)
@@ -385,6 +385,7 @@ class TestCompanyExtractor:
                 },
             },
         ]
+        mock_airtable.build_company_name_lookup.return_value = {}
 
         company_repo = CompanyRepository(db)
         extractor = CompanyExtractor(mock_airtable, company_repo)
@@ -395,7 +396,7 @@ class TestCompanyExtractor:
         assert summary["stored"] == 0
 
     def test_resolves_linked_records(self, db: Database) -> None:
-        """Linked record IDs resolved via Airtable API."""
+        """Linked record IDs resolved via bulk name lookup."""
         mock_airtable = MagicMock()
         mock_airtable.fetch_online_presence_records.return_value = [
             {
@@ -407,14 +408,16 @@ class TestCompanyExtractor:
                 },
             },
         ]
-        mock_airtable.resolve_company_name.return_value = "Linked Corp"
+        mock_airtable.build_company_name_lookup.return_value = {
+            "recLINKED123": "Linked Corp",
+        }
 
         company_repo = CompanyRepository(db)
         extractor = CompanyExtractor(mock_airtable, company_repo)
 
         summary = extractor.extract_companies()
 
-        mock_airtable.resolve_company_name.assert_called_once_with("recLINKED123")
+        mock_airtable.build_company_name_lookup.assert_called_once()
         assert summary["stored"] == 1
         company = company_repo.get_company_by_name("Linked Corp")
         assert company is not None
@@ -433,6 +436,7 @@ class TestCompanyExtractor:
                 },
             },
         ]
+        mock_airtable.build_company_name_lookup.return_value = {"recABC": "Test Co"}
 
         company_repo = CompanyRepository(db)
         extractor = CompanyExtractor(mock_airtable, company_repo)
@@ -623,6 +627,213 @@ class TestSignificanceAnalyzer:
         row = db.fetchone("SELECT * FROM change_records WHERE id = ?", (record_id,))
         assert row is not None
         assert row["significance_classification"] is None
+
+
+class TestDiffBasedSignificance:
+    """Contract tests verifying diff-based (not full-content) significance analysis."""
+
+    def test_boilerplate_keywords_not_flagged(self, db: Database) -> None:
+        """Keywords in static boilerplate (present in both snapshots) are NOT flagged.
+
+        This is the core false-positive fix: 'international' and 'partnership' in
+        unchanging page content should produce no significance signals.
+        """
+        boilerplate = (
+            "We are an international company with strategic partnerships. "
+            "Our expansion into new markets continues through collaboration. "
+            "We offer partnership opportunities and international services."
+        )
+        cid = _insert_company(db, "Boilerplate Corp", "https://boilerplate.com")
+        _insert_snapshot(
+            db,
+            cid,
+            f"# About Us\n{boilerplate}\nOld footer text",
+            captured_at="2025-01-01T00:00:00+00:00",
+        )
+        _insert_snapshot(
+            db,
+            cid,
+            f"# About Us\n{boilerplate}\nNew footer text",
+            captured_at="2025-02-01T00:00:00+00:00",
+        )
+
+        snapshot_repo = SnapshotRepository(db)
+        change_repo = ChangeRecordRepository(db)
+        company_repo = CompanyRepository(db)
+        detector = ChangeDetector(snapshot_repo, change_repo, company_repo)
+
+        detector.detect_all_changes()
+
+        changes = change_repo.get_changes_for_company(cid)
+        assert len(changes) == 1
+        record = changes[0]
+        assert record["has_changed"] == 1
+        # The diff only contains "New footer text" -- no significant keywords
+        assert record["significance_classification"] in (
+            "insignificant",
+            None,
+        )
+
+    def test_new_keywords_in_diff_are_flagged(self, db: Database) -> None:
+        """Keywords only in the new content ARE detected via diff analysis."""
+        cid = _insert_company(db, "Growing Corp", "https://growing.com")
+        _insert_snapshot(
+            db,
+            cid,
+            "# About Us\nWe are a technology company.",
+            captured_at="2025-01-01T00:00:00+00:00",
+        )
+        _insert_snapshot(
+            db,
+            cid,
+            (
+                "# About Us\nWe are a technology company.\n"
+                "We just raised funding in our Series B round. "
+                "Our valuation has doubled with strong revenue growth."
+            ),
+            captured_at="2025-02-01T00:00:00+00:00",
+        )
+
+        snapshot_repo = SnapshotRepository(db)
+        change_repo = ChangeRecordRepository(db)
+        company_repo = CompanyRepository(db)
+        detector = ChangeDetector(snapshot_repo, change_repo, company_repo)
+
+        detector.detect_all_changes()
+
+        changes = change_repo.get_changes_for_company(cid)
+        assert len(changes) == 1
+        record = changes[0]
+        assert record["has_changed"] == 1
+        assert record["significance_classification"] == "significant"
+        assert record["significance_sentiment"] == "positive"
+
+    def test_backfill_uses_diff(self, db: Database) -> None:
+        """Backfill also uses diff-based analysis, not full new content."""
+        boilerplate = "We offer international expansion and partnership opportunities."
+        cid = _insert_company(db, "Backfill Corp", "https://backfill.com")
+        snap_old_id = _insert_snapshot(
+            db,
+            cid,
+            f"# Page\n{boilerplate}\nOld section",
+            captured_at="2025-01-01T00:00:00+00:00",
+        )
+        snap_new_id = _insert_snapshot(
+            db,
+            cid,
+            f"# Page\n{boilerplate}\nNew section",
+            captured_at="2025-02-01T00:00:00+00:00",
+        )
+        record_id = _insert_change_record(
+            db,
+            cid,
+            snap_old_id,
+            snap_new_id,
+            has_changed=True,
+            significance_classification=None,
+        )
+
+        change_repo = ChangeRecordRepository(db)
+        snapshot_repo = SnapshotRepository(db)
+        analyzer = SignificanceAnalyzer(change_repo, snapshot_repo)
+
+        analyzer.backfill_significance()
+
+        row = db.fetchone("SELECT * FROM change_records WHERE id = ?", (record_id,))
+        assert row is not None
+        # Diff contains only "New section" -- no significant keywords
+        assert row["significance_classification"] in ("insignificant", None)
+
+
+# ===========================================================================
+# 5b. BaselineAnalyzer
+# ===========================================================================
+
+
+class TestBaselineAnalyzer:
+    """Contract tests for BaselineAnalyzer service."""
+
+    def test_analyze_baseline_for_snapshot(self, db: Database) -> None:
+        """Baseline analysis populates baseline columns on snapshot."""
+        cid = _insert_company(db, "Baseline Corp", "https://baseline.com")
+        snap_id = _insert_snapshot(
+            db,
+            cid,
+            ("# Baseline Corp\nWe raised funding in a Series A round. Our valuation has doubled."),
+            captured_at="2025-01-01T00:00:00+00:00",
+        )
+
+        snapshot_repo = SnapshotRepository(db)
+        from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
+
+        analyzer = BaselineAnalyzer(snapshot_repo)
+        result = analyzer.analyze_baseline_for_snapshot(snap_id)
+
+        assert result is not None
+        assert result["baseline_classification"] is not None
+
+        row = db.fetchone("SELECT * FROM snapshots WHERE id = ?", (snap_id,))
+        assert row is not None
+        assert row["baseline_classification"] is not None
+        assert row["baseline_confidence"] is not None
+        assert row["baseline_confidence"] > 0
+
+    def test_analyze_baseline_for_company_skips_if_exists(self, db: Database) -> None:
+        """Once a baseline exists for a company, it is not re-computed."""
+        cid = _insert_company(db, "Already Done", "https://already.com")
+        _insert_snapshot(
+            db,
+            cid,
+            "# Some content with funding mentioned",
+            captured_at="2025-01-01T00:00:00+00:00",
+        )
+
+        snapshot_repo = SnapshotRepository(db)
+        from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
+
+        analyzer = BaselineAnalyzer(snapshot_repo)
+
+        # First run -- should compute baseline
+        result1 = analyzer.analyze_baseline_for_company(cid)
+        assert result1 is not None
+
+        # Second run -- should skip
+        result2 = analyzer.analyze_baseline_for_company(cid)
+        assert result2 is None
+
+    def test_backfill_baselines_processes_multiple_companies(self, db: Database) -> None:
+        """Backfill processes one snapshot per company."""
+        cid1 = _insert_company(db, "Company A", "https://a.com")
+        cid2 = _insert_company(db, "Company B", "https://b.com")
+        _insert_snapshot(db, cid1, "# Company A page", captured_at="2025-01-01T00:00:00+00:00")
+        _insert_snapshot(db, cid2, "# Company B page", captured_at="2025-01-01T00:00:00+00:00")
+
+        snapshot_repo = SnapshotRepository(db)
+        from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
+
+        analyzer = BaselineAnalyzer(snapshot_repo)
+        summary = analyzer.backfill_baselines()
+
+        assert summary["successful"] == 2
+
+    def test_backfill_dry_run_does_not_write(self, db: Database) -> None:
+        """dry_run=True does not update the database."""
+        cid = _insert_company(db, "Dry Corp", "https://dry.com")
+        snap_id = _insert_snapshot(
+            db, cid, "# Dry Corp content", captured_at="2025-01-01T00:00:00+00:00"
+        )
+
+        snapshot_repo = SnapshotRepository(db)
+        from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
+
+        analyzer = BaselineAnalyzer(snapshot_repo)
+        summary = analyzer.backfill_baselines(dry_run=True)
+
+        assert summary["successful"] == 1
+
+        row = db.fetchone("SELECT * FROM snapshots WHERE id = ?", (snap_id,))
+        assert row is not None
+        assert row["baseline_classification"] is None
 
 
 # ===========================================================================

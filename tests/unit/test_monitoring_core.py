@@ -17,6 +17,7 @@ from src.domains.monitoring.core.change_detection import (
     calculate_similarity,
     detect_content_change,
     determine_magnitude,
+    extract_content_diff,
 )
 from src.domains.monitoring.core.checksum import compute_content_checksum
 from src.domains.monitoring.core.http_headers import (
@@ -276,6 +277,95 @@ class TestDetectContentChange:
         assert isinstance(result[0], bool)
         assert isinstance(result[1], ChangeMagnitude)
         assert isinstance(result[2], float)
+
+
+class TestExtractContentDiff:
+    """Tests for extract_content_diff."""
+
+    def test_identical_content_returns_empty(self) -> None:
+        """Identical old and new content produces no diff."""
+        content = "Hello world\nThis is a test\nLine three"
+        assert extract_content_diff(content, content) == ""
+
+    def test_both_empty_returns_empty(self) -> None:
+        assert extract_content_diff("", "") == ""
+
+    def test_added_lines_appear_in_diff(self) -> None:
+        """New lines added to end are captured in diff."""
+        old = "Line 1\nLine 2"
+        new = "Line 1\nLine 2\nLine 3 added"
+        diff = extract_content_diff(old, new)
+        assert "Line 3 added" in diff
+
+    def test_removed_lines_excluded(self) -> None:
+        """Lines removed from old content do NOT appear in the diff output."""
+        old = "Keep this\nRemove this line\nAlso keep"
+        new = "Keep this\nAlso keep"
+        diff = extract_content_diff(old, new)
+        assert "Remove this line" not in diff
+
+    def test_modified_line_captures_new_version(self) -> None:
+        """When a line is changed, the new version appears in diff."""
+        old = "Line 1\nold text here\nLine 3"
+        new = "Line 1\nnew text here\nLine 3"
+        diff = extract_content_diff(old, new)
+        assert "new text here" in diff
+        assert "old text here" not in diff
+
+    def test_old_empty_new_has_content(self) -> None:
+        """Empty old, content in new -> all new content is the diff."""
+        new = "Brand new content\nAnother line"
+        diff = extract_content_diff("", new)
+        assert "Brand new content" in diff
+        assert "Another line" in diff
+
+    def test_old_has_content_new_empty(self) -> None:
+        """Content in old, empty new -> no additions, empty diff."""
+        old = "Some old content\nAnother line"
+        diff = extract_content_diff(old, "")
+        assert diff == ""
+
+    def test_mixed_changes(self) -> None:
+        """Mix of additions, removals, and unchanged lines."""
+        old = "Header\nRemoved line\nUnchanged\nOld footer"
+        new = "Header\nAdded line\nUnchanged\nNew footer"
+        diff = extract_content_diff(old, new)
+        assert "Added line" in diff
+        assert "New footer" in diff
+        assert "Removed line" not in diff
+        assert "Header" not in diff
+        assert "Unchanged" not in diff
+
+    def test_multiline_addition(self) -> None:
+        """Multiple consecutive added lines all captured."""
+        old = "Start"
+        new = "Start\nNew line 1\nNew line 2\nNew line 3"
+        diff = extract_content_diff(old, new)
+        assert "New line 1" in diff
+        assert "New line 2" in diff
+        assert "New line 3" in diff
+
+    def test_keyword_in_both_not_in_diff(self) -> None:
+        """A keyword present in both old and new should NOT appear in the diff.
+
+        This is the core scenario: 'international' in boilerplate that hasn't
+        changed should not trigger significance analysis.
+        """
+        boilerplate = "We are an international company with global partnerships."
+        old = f"Header\n{boilerplate}\nOld content here"
+        new = f"Header\n{boilerplate}\nNew content here"
+        diff = extract_content_diff(old, new)
+        assert "international" not in diff
+        assert "partnerships" not in diff
+        assert "New content here" in diff
+
+    def test_keyword_only_in_new_appears_in_diff(self) -> None:
+        """A keyword added in the new content DOES appear in the diff."""
+        old = "Header\nRegular content"
+        new = "Header\nRegular content\nWe just raised funding in a Series A round"
+        diff = extract_content_diff(old, new)
+        assert "funding" in diff
+        assert "Series A" in diff
 
 
 # ---------------------------------------------------------------------------

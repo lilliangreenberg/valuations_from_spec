@@ -26,6 +26,8 @@ from src.domains.discovery.core.link_extraction import (
     extract_links_from_markdown,
     extract_meta_tag_links,
     extract_schema_org_links,
+    filter_twitter_embeds,
+    is_twitter_embed_url,
 )
 from src.domains.discovery.core.logo_comparison import (
     are_logos_similar,
@@ -374,6 +376,26 @@ class TestExtractLinksFromMarkdown:
         result = extract_links_from_markdown(md)
         assert "https://twitter.com/acme" in result
 
+    def test_markdown_link_with_title_double_quotes(self) -> None:
+        """Markdown title attribute in double quotes should be stripped."""
+        md = '[Follow](https://twitter.com/acme "Follow on X")'
+        result = extract_links_from_markdown(md)
+        assert "https://twitter.com/acme" in result
+        assert not any("Follow on" in u for u in result)
+
+    def test_markdown_link_with_title_single_quotes(self) -> None:
+        """Markdown title attribute in single quotes should be stripped."""
+        md = "[Follow](https://twitter.com/acme 'Follow us on Twitter')"
+        result = extract_links_from_markdown(md)
+        assert "https://twitter.com/acme" in result
+        assert not any("Follow us" in u for u in result)
+
+    def test_markdown_link_no_title_unchanged(self) -> None:
+        """Normal markdown links without title attributes are unaffected."""
+        md = "[Follow](https://twitter.com/acme)"
+        result = extract_links_from_markdown(md)
+        assert "https://twitter.com/acme" in result
+
 
 class TestExtractLinksFromHtml:
     """Tests for extract_links_from_html()."""
@@ -600,6 +622,178 @@ class TestExtractAllSocialLinks:
         result = extract_all_social_links(None, md)
         assert result.index("https://a.com") < result.index("https://b.com")
 
+    def test_filters_twitter_status_embeds(self) -> None:
+        """Embedded tweet /status/ URLs should be removed from results."""
+        md = (
+            "[Tweet](https://twitter.com/TurnerNovak/status/1945570788330942589) "
+            "[Other](https://linkedin.com/company/acme)"
+        )
+        result = extract_all_social_links(None, md)
+        assert "https://linkedin.com/company/acme" in result
+        assert "https://twitter.com/TurnerNovak/status/1945570788330942589" not in result
+
+    def test_filters_all_nontrusted_twitter_when_embeds_present(self) -> None:
+        """All Twitter profiles from markdown/HTML are removed when embeds present.
+
+        Only profiles from structured sources (schema.org, meta, aria) survive.
+        """
+        md = (
+            "[Company](https://twitter.com/howie_ai) "
+            "[Tweet](https://twitter.com/TurnerNovak/status/1945570788330942589) "
+            "[Author](https://twitter.com/TurnerNovak)"
+        )
+        result = extract_all_social_links(None, md)
+        # All Twitter profiles from markdown are untrusted when embeds present
+        assert "https://twitter.com/howie_ai" not in result
+        assert "https://twitter.com/TurnerNovak" not in result
+
+    def test_preserves_trusted_twitter_from_schema_org(self) -> None:
+        """Twitter profiles from schema.org JSON-LD survive embed filtering."""
+        html = """
+        <html>
+        <script type="application/ld+json">{"sameAs": ["https://twitter.com/acmecorp"]}</script>
+        <a href="https://twitter.com/random/status/123">tweet</a>
+        <a href="https://twitter.com/random">author</a>
+        </html>
+        """
+        result = extract_all_social_links(html, None)
+        assert "https://twitter.com/acmecorp" in result
+        assert "https://twitter.com/random" not in result
+
+
+class TestIsTwitterEmbedUrl:
+    """Tests for is_twitter_embed_url()."""
+
+    def test_twitter_status_url(self) -> None:
+        assert is_twitter_embed_url("https://twitter.com/user/status/123456") is True
+
+    def test_x_status_url(self) -> None:
+        assert is_twitter_embed_url("https://x.com/user/status/123456") is True
+
+    def test_twitter_profile_url(self) -> None:
+        assert is_twitter_embed_url("https://twitter.com/acme") is False
+
+    def test_x_profile_url(self) -> None:
+        assert is_twitter_embed_url("https://x.com/acme") is False
+
+    def test_non_twitter_url(self) -> None:
+        assert is_twitter_embed_url("https://linkedin.com/company/acme") is False
+
+    def test_status_with_www(self) -> None:
+        assert is_twitter_embed_url("https://www.twitter.com/user/status/999") is True
+
+
+class TestFilterTwitterEmbeds:
+    """Tests for filter_twitter_embeds()."""
+
+    def test_no_embeds_returns_unchanged(self) -> None:
+        urls = [
+            "https://twitter.com/acme",
+            "https://linkedin.com/company/acme",
+        ]
+        assert filter_twitter_embeds(urls) == urls
+
+    def test_removes_status_urls(self) -> None:
+        urls = [
+            "https://twitter.com/random/status/123",
+            "https://linkedin.com/company/acme",
+        ]
+        result = filter_twitter_embeds(urls)
+        assert "https://twitter.com/random/status/123" not in result
+        assert "https://linkedin.com/company/acme" in result
+
+    def test_removes_all_untrusted_twitter_profiles_when_embeds_present(self) -> None:
+        """All Twitter profiles are removed unless in trusted_urls."""
+        urls = [
+            "https://twitter.com/companyHandle",
+            "https://twitter.com/randomUser/status/123",
+            "https://twitter.com/randomUser",
+        ]
+        result = filter_twitter_embeds(urls)
+        assert "https://twitter.com/companyHandle" not in result
+        assert "https://twitter.com/randomUser" not in result
+
+    def test_trusted_urls_preserved(self) -> None:
+        """Twitter profiles in trusted_urls survive embed filtering."""
+        urls = [
+            "https://twitter.com/companyHandle",
+            "https://twitter.com/randomUser/status/123",
+            "https://twitter.com/randomUser",
+        ]
+        trusted = {"https://twitter.com/companyHandle"}
+        result = filter_twitter_embeds(urls, trusted_urls=trusted)
+        assert "https://twitter.com/companyHandle" in result
+        assert "https://twitter.com/randomUser" not in result
+
+    def test_x_dot_com_embeds(self) -> None:
+        urls = [
+            "https://x.com/companyHandle",
+            "https://x.com/tweeter/status/789",
+            "https://x.com/tweeter",
+        ]
+        trusted = {"https://x.com/companyHandle"}
+        result = filter_twitter_embeds(urls, trusted_urls=trusted)
+        assert "https://x.com/companyHandle" in result
+        assert "https://x.com/tweeter" not in result
+
+    def test_preserves_non_twitter_urls(self) -> None:
+        urls = [
+            "https://twitter.com/author/status/123",
+            "https://linkedin.com/company/acme",
+            "https://github.com/acme",
+            "https://instagram.com/acme",
+        ]
+        result = filter_twitter_embeds(urls)
+        assert "https://linkedin.com/company/acme" in result
+        assert "https://github.com/acme" in result
+        assert "https://instagram.com/acme" in result
+
+    def test_empty_list(self) -> None:
+        assert filter_twitter_embeds([]) == []
+
+    def test_howie_ai_scenario(self) -> None:
+        """Real-world scenario from howie.ai homepage with tweet carousel."""
+        urls = [
+            "https://x.com/howie_ai",
+            "https://twitter.com/howie_ai",
+            "https://twitter.com/ColinGardiner/status/1957089530067955890",
+            "https://twitter.com/TrentMano/status/1948420036500316522",
+            "https://twitter.com/awwstn",
+            "https://twitter.com/maxclark/status/1886919900750356844",
+            "https://twitter.com/ashleevance/status/1900405757138317760",
+            "https://twitter.com/Superhuman",
+            "https://twitter.com/CoraComputer",
+            "https://twitter.com/sequoia",
+            "https://twitter.com/bobmcgrewai",
+            "https://twitter.com/awwstn/status/1935134248794800235",
+            "https://linkedin.com/company/howie-howie",
+            "https://instagram.com/howie_ai",
+        ]
+        # Without trusted_urls, ALL twitter profiles are removed
+        result = filter_twitter_embeds(urls)
+        assert "https://linkedin.com/company/howie-howie" in result
+        assert "https://instagram.com/howie_ai" in result
+        assert not any("/status/" in u for u in result)
+        # ALL twitter/x profiles gone since none are trusted
+        assert "https://x.com/howie_ai" not in result
+        assert "https://twitter.com/howie_ai" not in result
+        assert "https://twitter.com/sequoia" not in result
+        assert "https://twitter.com/Superhuman" not in result
+
+    def test_howie_ai_with_trusted(self) -> None:
+        """With trusted_urls, company's own Twitter handle survives."""
+        urls = [
+            "https://x.com/howie_ai",
+            "https://twitter.com/ColinGardiner/status/1957089530067955890",
+            "https://twitter.com/sequoia",
+            "https://linkedin.com/company/howie-howie",
+        ]
+        trusted = {"https://x.com/howie_ai"}
+        result = filter_twitter_embeds(urls, trusted_urls=trusted)
+        assert "https://x.com/howie_ai" in result
+        assert "https://linkedin.com/company/howie-howie" in result
+        assert "https://twitter.com/sequoia" not in result
+
 
 # ---------------------------------------------------------------------------
 # Module 4: html_region_detector
@@ -740,10 +934,11 @@ class TestDetectBlogUrl:
         assert is_blog is True
         assert blog_type == BlogType.WORDPRESS
 
-    def test_wordpress_wp_content(self) -> None:
+    def test_wordpress_wp_content_not_blog(self) -> None:
+        """wp-content asset URLs are not blogs -- they are static assets."""
         is_blog, blog_type = detect_blog_url("https://acme.com/wp-content/uploads/image.jpg")
-        assert is_blog is True
-        assert blog_type == BlogType.WORDPRESS
+        assert is_blog is False
+        assert blog_type is None
 
     def test_blog_subdomain(self) -> None:
         is_blog, blog_type = detect_blog_url("https://blog.acme.com/2024/01/post")

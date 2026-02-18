@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from src.core.transformers import prepare_snapshot_data
+from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
 from src.utils.progress import ProgressTracker
 
 if TYPE_CHECKING:
@@ -29,6 +30,7 @@ class BatchSnapshotManager:
         self.firecrawl = firecrawl_client
         self.snapshot_repo = snapshot_repo
         self.company_repo = company_repo
+        self._baseline_analyzer = BaselineAnalyzer(snapshot_repo)
 
     def capture_batch_snapshots(
         self,
@@ -80,7 +82,12 @@ class BatchSnapshotManager:
 
                         if company_id is not None:
                             snapshot_data = prepare_snapshot_data(company_id, doc_url, doc)
-                            self.snapshot_repo.store_snapshot(snapshot_data)
+                            snapshot_id = self.snapshot_repo.store_snapshot(snapshot_data)
+
+                            # Auto-run baseline on first scrape
+                            if self.snapshot_repo.count_snapshots_for_company(company_id) == 1:
+                                self._baseline_analyzer.analyze_baseline_for_snapshot(snapshot_id)
+
                             tracker.record_success()
                         else:
                             tracker.record_failure(f"No company match for URL: {doc_url}")

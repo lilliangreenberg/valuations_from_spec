@@ -62,16 +62,22 @@ def _insert_company(
     return cursor.lastrowid or 0
 
 
-def _insert_snapshot(db: Database, company_id: int, captured_at: str | None = None) -> int:
+def _insert_snapshot(
+    db: Database,
+    company_id: int,
+    captured_at: str | None = None,
+    content: str | None = None,
+) -> int:
     """Insert a minimal snapshot and return its ID."""
     captured = captured_at or _now_iso()
+    markdown = content or "# Hello"
     cursor = db.execute(
         """INSERT INTO snapshots
            (company_id, url, content_markdown, content_html, status_code,
             captured_at, has_paywall, has_auth_required, content_checksum)
-           VALUES (?, 'https://example.com', '# Hello',
+           VALUES (?, 'https://example.com', ?,
             '<h1>Hello</h1>', 200, ?, 0, 0, 'abc123')""",
-        (company_id, captured),
+        (company_id, markdown, captured),
     )
     db.connection.commit()
     return cursor.lastrowid or 0
@@ -95,6 +101,7 @@ class TestDatabaseInitialization:
         "news_articles",
         "processing_errors",
         "company_logos",
+        "company_leadership",
     ]
 
     EXPECTED_INDEXES = [
@@ -109,6 +116,8 @@ class TestDatabaseInitialization:
         "idx_news_articles_significance",
         "idx_company_logos_company_id",
         "idx_company_logos_perceptual_hash",
+        "idx_company_leadership_company_id",
+        "idx_company_leadership_title",
     ]
 
     def test_all_tables_created(self, db: Database) -> None:
@@ -119,11 +128,11 @@ class TestDatabaseInitialization:
         for expected in self.EXPECTED_TABLES:
             assert expected in table_names, f"Table '{expected}' missing from schema"
 
-    def test_exactly_nine_tables(self, db: Database) -> None:
+    def test_exactly_ten_tables(self, db: Database) -> None:
         rows = db.fetchall(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
-        assert len(rows) == 9
+        assert len(rows) == 10
 
     def test_all_indexes_created(self, db: Database) -> None:
         rows = db.fetchall(
@@ -155,7 +164,7 @@ class TestDatabaseInitialization:
         rows = database.fetchall(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
-        assert len(rows) == 9
+        assert len(rows) == 10
 
 
 class TestDatabaseTransaction:
@@ -812,6 +821,101 @@ class TestSnapshotRepositoryMultiple:
         cid = _insert_company(db)
         result = repo.get_oldest_snapshot_date(cid)
         assert result is None
+
+
+class TestSnapshotRepositoryBaseline:
+    """Test baseline signal CRUD methods."""
+
+    def test_count_snapshots_for_company(self, db: Database) -> None:
+        repo = SnapshotRepository(db)
+        cid = _insert_company(db, "Count Co", "https://count.com")
+        assert repo.count_snapshots_for_company(cid) == 0
+
+        _insert_snapshot(db, cid, _now_iso())
+        assert repo.count_snapshots_for_company(cid) == 1
+
+        _insert_snapshot(db, cid, _past_iso(5))
+        assert repo.count_snapshots_for_company(cid) == 2
+
+    def test_update_baseline(self, db_with_company: DbWithCompany) -> None:
+        db, company_id = db_with_company
+        repo = SnapshotRepository(db)
+        snap_id = _insert_snapshot(db, company_id, _now_iso())
+
+        repo.update_baseline(
+            snap_id,
+            {
+                "baseline_classification": "significant",
+                "baseline_sentiment": "negative",
+                "baseline_confidence": 0.85,
+                "baseline_keywords": ["shut down", "ceased operations"],
+                "baseline_categories": ["closure"],
+                "baseline_notes": "Pre-existing closure signals",
+            },
+        )
+
+        row = db.fetchone("SELECT * FROM snapshots WHERE id = ?", (snap_id,))
+        assert row is not None
+        assert row["baseline_classification"] == "significant"
+        assert row["baseline_sentiment"] == "negative"
+        assert row["baseline_confidence"] == 0.85
+
+    def test_has_baseline_for_company(self, db: Database) -> None:
+        repo = SnapshotRepository(db)
+        cid = _insert_company(db, "Baseline Co", "https://baseline.com")
+        snap_id = _insert_snapshot(db, cid, _now_iso())
+
+        assert repo.has_baseline_for_company(cid) is False
+
+        repo.update_baseline(
+            snap_id,
+            {
+                "baseline_classification": "insignificant",
+                "baseline_sentiment": "neutral",
+                "baseline_confidence": 0.75,
+                "baseline_keywords": [],
+                "baseline_categories": [],
+                "baseline_notes": None,
+            },
+        )
+
+        assert repo.has_baseline_for_company(cid) is True
+
+    def test_get_snapshots_without_baseline(self, db: Database) -> None:
+        repo = SnapshotRepository(db)
+        cid1 = _insert_company(db, "No Baseline", "https://nobaseline.com")
+        cid2 = _insert_company(db, "Has Baseline", "https://hasbaseline.com")
+
+        _insert_snapshot(db, cid1, _now_iso(), content="Some content")
+        snap2 = _insert_snapshot(db, cid2, _now_iso(), content="Other content")
+
+        # Give cid2 a baseline
+        repo.update_baseline(
+            snap2,
+            {
+                "baseline_classification": "insignificant",
+                "baseline_sentiment": "neutral",
+                "baseline_confidence": 0.75,
+                "baseline_keywords": [],
+                "baseline_categories": [],
+                "baseline_notes": None,
+            },
+        )
+
+        results = repo.get_snapshots_without_baseline()
+        company_ids = [r["company_id"] for r in results]
+        assert cid1 in company_ids
+        assert cid2 not in company_ids
+
+    def test_get_snapshots_without_baseline_for_company(self, db: Database) -> None:
+        repo = SnapshotRepository(db)
+        cid = _insert_company(db, "Filter Co", "https://filter.com")
+        _insert_snapshot(db, cid, _past_iso(5), content="Old content")
+        _insert_snapshot(db, cid, _now_iso(), content="New content")
+
+        results = repo.get_snapshots_without_baseline(company_id=cid)
+        # Should return only 1 (the earliest)
+        assert len(results) == 1
 
 
 # ===========================================================================

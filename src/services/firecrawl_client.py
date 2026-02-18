@@ -16,6 +16,23 @@ logger = structlog.get_logger(__name__)
 _ONLY_MAIN_CONTENT = False
 
 
+def _get_metadata_field(metadata: Any, snake_key: str, camel_key: str) -> Any:
+    """Extract a field from metadata, handling both Pydantic objects and dicts.
+
+    Firecrawl v2 returns DocumentMetadata Pydantic objects (snake_case attrs),
+    but older versions or mocks may return plain dicts (camelCase keys).
+    """
+    if metadata is None:
+        return None
+    # Pydantic object: try snake_case attribute
+    if hasattr(metadata, snake_key):
+        return getattr(metadata, snake_key)
+    # Dict fallback: try camelCase key
+    if isinstance(metadata, dict):
+        return metadata.get(camel_key) or metadata.get(snake_key)
+    return None
+
+
 class FirecrawlClient:
     """Client for Firecrawl web scraping API v2."""
 
@@ -42,9 +59,9 @@ class FirecrawlClient:
                 skip_tls_verification=True,
             )
 
-            # result is a Document object
+            # result is a Document object with Pydantic metadata
             metadata = getattr(result, "metadata", None)
-            status_code = metadata.get("statusCode") if isinstance(metadata, dict) else None
+            status_code = _get_metadata_field(metadata, "status_code", "statusCode")
 
             return {
                 "success": True,
@@ -104,9 +121,7 @@ class FirecrawlClient:
             if hasattr(result, "data") and result.data:
                 for doc in result.data:
                     doc_metadata = getattr(doc, "metadata", None)
-                    source_url = (
-                        doc_metadata.get("sourceURL", "") if isinstance(doc_metadata, dict) else ""
-                    )
+                    source_url = _get_metadata_field(doc_metadata, "source_url", "sourceURL") or ""
                     documents.append(
                         {
                             "markdown": getattr(doc, "markdown", None) or "",
@@ -164,11 +179,7 @@ class FirecrawlClient:
             if hasattr(result, "data") and result.data:
                 for page in result.data:
                     page_metadata = getattr(page, "metadata", None)
-                    source_url = (
-                        page_metadata.get("sourceURL", "")
-                        if isinstance(page_metadata, dict)
-                        else ""
-                    )
+                    source_url = _get_metadata_field(page_metadata, "source_url", "sourceURL") or ""
                     pages.append(
                         {
                             "markdown": getattr(page, "markdown", None) or "",

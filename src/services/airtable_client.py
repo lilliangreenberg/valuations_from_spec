@@ -37,8 +37,13 @@ class AirtableClient:
             table = self.api.table(self.base_id, "Portfolio Companies")
             record = table.get(record_id)
             if record and "fields" in record:
-                # The actual company name field - commonly "Name" or "Company Name"
-                name = record["fields"].get("Name") or record["fields"].get("Company Name")
+                # Prefer display name, fall back to company_name
+                name = (
+                    record["fields"].get("company_display_name")
+                    or record["fields"].get("company_name")
+                    or record["fields"].get("Name")
+                    or record["fields"].get("Company Name")
+                )
                 return str(name) if name else None
         except Exception as exc:
             logger.warning(
@@ -54,3 +59,25 @@ class AirtableClient:
         records = table.all()
         logger.info("fetched_portfolio_companies", count=len(records))
         return [{"id": r["id"], "fields": r["fields"]} for r in records]
+
+    def build_company_name_lookup(self) -> dict[str, str]:
+        """Bulk-fetch all Portfolio Companies and build a record_id -> name mapping.
+
+        Single API call replaces N individual resolve_company_name calls.
+        """
+        records = self.fetch_portfolio_companies()
+        lookup: dict[str, str] = {}
+
+        for record in records:
+            fields = record.get("fields", {})
+            name = (
+                fields.get("company_display_name")
+                or fields.get("company_name")
+                or fields.get("Name")
+                or fields.get("Company Name")
+            )
+            if name:
+                lookup[record["id"]] = str(name)
+
+        logger.info("built_company_name_lookup", entries=len(lookup))
+        return lookup

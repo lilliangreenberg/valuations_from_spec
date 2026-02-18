@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from difflib import SequenceMatcher
+from difflib import SequenceMatcher, unified_diff
 from enum import StrEnum
 
 
@@ -58,3 +58,31 @@ def detect_content_change(
     similarity = calculate_similarity(old_content, new_content)
     magnitude = determine_magnitude(similarity)
     return True, magnitude, similarity
+
+
+def extract_content_diff(old_content: str, new_content: str) -> str:
+    """Extract only the added/modified lines between two content versions.
+
+    Uses unified_diff to identify changes, then collects lines prefixed with '+'
+    (additions) while excluding the '+++' header line. This produces a string
+    containing only the new content that was added or changed -- suitable for
+    keyword-based significance analysis without false positives from static content.
+
+    Returns empty string if inputs are empty or identical.
+    """
+    if not old_content and not new_content:
+        return ""
+
+    old_lines = old_content.splitlines(keepends=True)
+    new_lines = new_content.splitlines(keepends=True)
+
+    diff_lines: list[str] = []
+    for line in unified_diff(old_lines, new_lines, n=0):
+        # Skip diff headers
+        if line.startswith("+++") or line.startswith("---") or line.startswith("@@"):
+            continue
+        # Collect added lines (strip the leading '+')
+        if line.startswith("+"):
+            diff_lines.append(line[1:])
+
+    return "".join(diff_lines)

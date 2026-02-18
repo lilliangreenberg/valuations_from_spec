@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from src.domains.monitoring.core.change_detection import extract_content_diff
 from src.domains.monitoring.core.significance_analysis import (
     analyze_content_significance,
 )
@@ -38,6 +39,9 @@ class SignificanceAnalyzer:
     def backfill_significance(self, dry_run: bool = False) -> dict[str, Any]:
         """Backfill significance for records missing analysis.
 
+        Uses diff-based analysis: compares old and new snapshot content,
+        then runs keyword analysis only on the changed (added) lines.
+
         Returns summary stats.
         """
         records = self.change_record_repo.get_records_without_significance()
@@ -45,13 +49,24 @@ class SignificanceAnalyzer:
 
         for record in records:
             try:
-                snapshot = self.snapshot_repo.get_snapshot_by_id(record["snapshot_id_new"])
-                if not snapshot or not snapshot.get("content_markdown"):
+                old_snapshot = self.snapshot_repo.get_snapshot_by_id(record["snapshot_id_old"])
+                new_snapshot = self.snapshot_repo.get_snapshot_by_id(record["snapshot_id_new"])
+
+                if not new_snapshot or not new_snapshot.get("content_markdown"):
+                    tracker.record_skip()
+                    continue
+
+                old_content = old_snapshot.get("content_markdown", "") if old_snapshot else ""
+                new_content = new_snapshot.get("content_markdown", "") or ""
+
+                diff_text = extract_content_diff(old_content or "", new_content)
+
+                if not diff_text.strip():
                     tracker.record_skip()
                     continue
 
                 result = analyze_content_significance(
-                    snapshot["content_markdown"],
+                    diff_text,
                     magnitude=record.get("change_magnitude", "minor"),
                 )
 
@@ -59,7 +74,7 @@ class SignificanceAnalyzer:
                 if self.llm_enabled and self.llm_client:
                     try:
                         llm_result = self.llm_client.validate_significance(
-                            content_excerpt=snapshot["content_markdown"][:2000],
+                            content_excerpt=diff_text[:2000],
                             keywords=result.matched_keywords,
                             categories=result.matched_categories,
                             initial_classification=result.classification,

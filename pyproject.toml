@@ -18,6 +18,7 @@ dependencies = [
     "imagehash>=4.3.2",
     "beautifulsoup4>=4.14.2",
     "tenacity>=9.1.2",
+    "playwright>=1.50.0",
 ]
 
 [project.scripts]

@@ -27,7 +27,7 @@ BLOG_PLATFORM_PATTERNS: dict[BlogType, re.Pattern[str]] = {
     BlogType.MEDIUM: re.compile(r"(medium\.com/@|\.medium\.com)", re.IGNORECASE),
     BlogType.SUBSTACK: re.compile(r"\.substack\.com", re.IGNORECASE),
     BlogType.GHOST: re.compile(r"\.ghost\.io", re.IGNORECASE),
-    BlogType.WORDPRESS: re.compile(r"(\.wordpress\.com|/wp-content/)", re.IGNORECASE),
+    BlogType.WORDPRESS: re.compile(r"\.wordpress\.com", re.IGNORECASE),
 }
 
 

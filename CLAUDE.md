@@ -1,7 +1,7 @@
 # Portfolio Company Monitoring System - Development Guidelines
 
 Reference guide for development. See TECHNICAL_SPEC.md for complete specification.
-Last updated: 2026-02-17
+Last updated: 2026-02-18
 
 ## CRITICAL: Session Startup Requirements
 
@@ -52,7 +52,7 @@ This is hardcoded in `src/services/firecrawl_client.py:51` and must NEVER be cha
 **Critical Findings**: All libraries updated to latest versions. Fixed Pydantic v2 deprecation warnings by migrating from json_encoders to field_serializer.
 
 **Last Test Cleanup**: 2026-02-13
-**Test Status**: 717 passing, 0 failing, 0 errors (100% pass rate)
+**Test Status**: 1277 passing, 0 failing, 0 errors (100% pass rate)
 **Tests Removed**: 370 deprecated/broken tests (MCP full-site discovery + outdated API contracts)
 
 ## Active Technologies
@@ -60,6 +60,7 @@ This is hardcoded in `src/services/firecrawl_client.py:51` and must NEVER be cha
 - Python 3.12 (existing codebase) (002-website-change-detection)
 - SQLite (existing `data/companies.db`) (002-website-change-detection)
 - Python 3.12 + PIL/Pillow (image processing), imagehash (perceptual hashing) (003-the-program-needs)
+- Playwright (headed browser for LinkedIn scraping) (005-leadership-extraction)
 
 ## Architecture
 
@@ -104,6 +105,10 @@ src/
       core/                  # Verification logic
       repositories/          # News article data access
       services/              # News search and analysis
+    leadership/              # Leadership Extraction domain
+      core/                  # Title detection, profile parsing, change detection
+      repositories/          # Leadership data access
+      services/              # LinkedIn browser, Kagi search, orchestrator
   models/                    # Pydantic models (shared)
   repositories/              # Shared repositories (Company)
   services/                  # Imperative shell (I/O operations)
@@ -136,12 +141,14 @@ See TECHNICAL_SPEC.md Section 2 for complete architecture details.
 - `blog_links` - Discovered blog URLs
 - `company_logos` - Extracted logos with perceptual hashes
 - `news_articles` - News mentions with verification and significance
+- `company_leadership` - Leadership profiles (CEO, CTO, founders) from LinkedIn
 - `processing_errors` - Failed operations for debugging
 
 **Key Constraints:**
 - UNIQUE(name, homepage_url) on companies
 - UNIQUE(company_id, profile_url) on social_media_links
 - UNIQUE(content_url) on news_articles (globally unique)
+- UNIQUE(company_id, linkedin_profile_url) on company_leadership
 - Foreign keys with ON DELETE CASCADE for referential integrity
 
 See TECHNICAL_SPEC.md Section 5 for complete schema details.
@@ -155,6 +162,7 @@ See TECHNICAL_SPEC.md Section 5 for complete schema details.
 - `CompanyStatus` - Operational status (status, confidence, indicators)
 - `SocialMediaLink` - Social media profiles (platform, verification, account type)
 - `NewsArticle` - News mentions (title, URL, verification, significance)
+- `CompanyLeadership` - Leadership profiles (name, title, LinkedIn URL, discovery method)
 
 **Enums:**
 - `ChangeMagnitude`: MINOR (<10%), MODERATE (10-50%), MAJOR (>50%)
@@ -162,6 +170,8 @@ See TECHNICAL_SPEC.md Section 5 for complete schema details.
 - `SignificanceSentiment`: POSITIVE, NEGATIVE, NEUTRAL, MIXED
 - `Platform`: LINKEDIN, TWITTER, YOUTUBE, GITHUB, BLUESKY, etc. (12 platforms + BLOG)
 - `VerificationStatus`: LOGO_MATCHED, UNVERIFIED, MANUALLY_REVIEWED, FLAGGED
+- `LeadershipDiscoveryMethod`: PLAYWRIGHT_SCRAPE, KAGI_SEARCH
+- `LeadershipChangeType`: CEO_DEPARTURE, FOUNDER_DEPARTURE, CTO_DEPARTURE, etc.
 
 See TECHNICAL_SPEC.md Section 4 for complete model specifications.
 
@@ -213,6 +223,8 @@ ANTHROPIC_API_KEY=sk-xxxxx              # For LLM significance validation
 LLM_MODEL=claude-haiku-4-5-20251001     # LLM model ID (default: Haiku 4.5)
 LLM_VALIDATION_ENABLED=false            # Enable LLM validation (default: false)
 KAGI_API_KEY=xxxxx                      # For news monitoring (Feature 004)
+LINKEDIN_HEADLESS=false                 # Run LinkedIn browser headless (default: false)
+LINKEDIN_PROFILE_DIR=data/linkedin_profile  # Persistent browser profile (default)
 ```
 
 **External API Versions:**
@@ -297,9 +309,36 @@ KAGI_API_KEY=your-kagi-api-key-here
 
 **Documentation:** See [docs/kagi_api_integration.md](docs/kagi_api_integration.md) for full details.
 
+### Feature 005: LinkedIn Leadership Extraction
+```bash
+# Single company leadership extraction
+uv run airtable-extractor extract-leadership --company-id 42
+uv run airtable-extractor extract-leadership --company-id 42 --headless
+
+# Batch extract all companies
+uv run airtable-extractor extract-leadership-all
+uv run airtable-extractor extract-leadership-all --limit 10
+
+# Check leadership changes (re-extract and report changes)
+uv run airtable-extractor check-leadership-changes
+uv run airtable-extractor check-leadership-changes --limit 10
+```
+
+**First Run Setup:**
+1. Run `uv run playwright install chromium` to install the browser
+2. Run `uv run airtable-extractor extract-leadership --company-id <id>` -- a browser window opens
+3. Log into LinkedIn manually in the browser window
+4. Session cookies are saved to `data/linkedin_profile/` and reused on subsequent runs
+
+**Leadership Change Detection:**
+- CEO/Founder/CTO/COO departures flagged as CRITICAL (confidence 0.95)
+- Other executive departures flagged as NOTABLE (confidence 0.80)
+- Integrated into existing significance analysis system
+- Changes logged at WARNING level with structured context
+
 ### Testing & Quality
 ```bash
-uv run pytest                                      # Run all tests (717 tests)
+uv run pytest                                      # Run all tests (1277 tests)
 uv run pytest --cov=src --cov-report=term-missing # With coverage
 uv run ruff check .                                # Run linting
 uv run ruff format .                               # Format code
@@ -377,6 +416,21 @@ Python 3.12: Follow standard conventions
 See TECHNICAL_SPEC.md Section 16 for complete constraints and invariants.
 
 ## Recent Changes
+- LinkedIn Leadership Extraction (2026-02-18): COMPLETED - Extract CEO/founder profiles from LinkedIn
+  - Full TDD implementation with 101 new tests (76 unit, 16 contract, 9 integration)
+  - Headed Playwright browser with persistent session for LinkedIn scraping
+  - Kagi search fallback when LinkedIn blocks access
+  - Leadership change detection: CEO/Founder/CTO/COO departures flagged as CRITICAL
+  - CompanyLeadership Pydantic model with LeadershipDiscoveryMethod enum
+  - Added company_leadership table with UNIQUE(company_id, linkedin_profile_url)
+  - Pure functions: title detection (25+ titles with seniority ranking), profile parsing, change detection
+  - LeadershipRepository CRUD with upsert, mark_not_current for departed leaders
+  - LinkedInBrowser: persistent context, auth wall detection, manual login wait
+  - LeadershipSearch: Kagi fallback with CEO/founder/CTO queries
+  - LeadershipManager orchestrator: Playwright-first with Kagi fallback
+  - Extended significance analysis with 18 leadership change keywords
+  - CLI commands: extract-leadership, extract-leadership-all, check-leadership-changes
+  - Feature Status: PRODUCTION READY (requires `uv run playwright install chromium`)
 - News Monitoring with Kagi Search (2026-02-11): COMPLETED - Track news articles about portfolio companies
   - Full TDD implementation with 28 new tests (11 unit, 6 contract, 11 integration)
   - Created NewsArticle model with significance and verification fields

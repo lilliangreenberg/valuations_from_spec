@@ -18,6 +18,9 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 
+# LinkedIn browser profile (session cookies)
+data/linkedin_profile/
+
 # IDE
 .idea/
 .vscode/

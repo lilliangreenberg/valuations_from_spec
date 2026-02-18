@@ -64,6 +64,31 @@ def extract_companies() -> None:
 
 
 @click.command()
+def import_urls() -> None:
+    """Import social media and blog URLs from Airtable."""
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    from src.domains.discovery.repositories.social_media_link_repository import (
+        SocialMediaLinkRepository,
+    )
+    from src.repositories.company_repository import CompanyRepository
+    from src.services.airtable_client import AirtableClient
+    from src.services.extractor import CompanyExtractor
+
+    airtable = AirtableClient(config.airtable_api_key, config.airtable_base_id)
+    company_repo = CompanyRepository(db)
+    social_link_repo = SocialMediaLinkRepository(db)
+    extractor = CompanyExtractor(airtable, company_repo)
+
+    click.echo("[INFO] Importing social media and blog URLs from Airtable...")
+    result = extractor.import_social_urls(social_link_repo)
+    _print_summary("URL import complete", result)
+    db.close()
+
+
+@click.command()
 @click.option("--use-batch-api", is_flag=True, help="Use Firecrawl batch API (8x faster)")
 @click.option("--batch-size", default=20, type=int, help="URLs per batch (max 1000)")
 @click.option("--timeout", default=300, type=int, help="Timeout per batch in seconds")
@@ -103,13 +128,14 @@ def capture_snapshots(use_batch_api: bool, batch_size: int, timeout: int) -> Non
 
 @click.command()
 @click.option("--batch-size", default=50, type=int, help="Companies per batch")
+@click.option("--limit", default=None, type=int, help="Max companies to process")
 @click.option(
     "--output-format",
     default="summary",
     type=click.Choice(["summary", "detailed", "json"]),
     help="Output format",
 )
-def detect_changes(batch_size: int, output_format: str) -> None:
+def detect_changes(batch_size: int, limit: int | None, output_format: str) -> None:
     """Detect content changes between snapshots with significance analysis."""
     config = _get_config()
     configure_logging(config.log_level)
@@ -128,7 +154,7 @@ def detect_changes(batch_size: int, output_format: str) -> None:
     detector = ChangeDetector(snapshot_repo, change_repo, company_repo)
 
     click.echo("[INFO] Detecting changes...")
-    result = detector.detect_all_changes()
+    result = detector.detect_all_changes(limit=limit)
 
     if output_format == "json":
         click.echo(json.dumps(result, indent=2))
@@ -594,8 +620,9 @@ def search_news(company_name: str | None, company_id: int | None) -> None:
 
 @click.command()
 @click.option("--limit", default=None, type=int, help="Process first N companies")
-def search_news_all(limit: int | None) -> None:
-    """Search news for all companies."""
+@click.option("--max-workers", default=5, type=int, help="Parallel workers for Kagi API calls")
+def search_news_all(limit: int | None, max_workers: int) -> None:
+    """Search news for all companies with parallel Kagi API calls."""
     config = _get_config()
     configure_logging(config.log_level)
 
@@ -624,7 +651,260 @@ def search_news_all(limit: int | None) -> None:
 
     manager = NewsMonitorManager(kagi, news_repo, company_repo, snapshot_repo, llm_client)
 
-    click.echo("[INFO] Searching news for all companies...")
-    result = manager.search_all_companies(limit=limit)
+    click.echo(f"[INFO] Searching news for all companies ({max_workers} workers)...")
+    result = manager.search_all_companies(limit=limit, max_workers=max_workers)
     _print_summary("News search complete", result)
     db.close()
+
+
+# --- Feature 005: LinkedIn Leadership Extraction ---
+
+
+@click.command()
+@click.option("--company-id", required=True, type=int, help="Company ID")
+@click.option("--headless", is_flag=True, help="Run browser in headless mode")
+@click.option(
+    "--profile-dir",
+    default=None,
+    type=str,
+    help="Playwright browser profile directory",
+)
+def extract_leadership(company_id: int, headless: bool, profile_dir: str | None) -> None:
+    """Extract leadership profiles from LinkedIn for a single company."""
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    from src.domains.discovery.repositories.social_media_link_repository import (
+        SocialMediaLinkRepository,
+    )
+    from src.domains.leadership.repositories.leadership_repository import (
+        LeadershipRepository,
+    )
+    from src.domains.leadership.services.leadership_manager import LeadershipManager
+    from src.domains.leadership.services.linkedin_browser import LinkedInBrowser
+    from src.repositories.company_repository import CompanyRepository
+
+    browser_headless = headless or config.linkedin_headless
+    browser_profile = profile_dir or config.linkedin_profile_dir
+
+    browser = LinkedInBrowser(headless=browser_headless, profile_dir=browser_profile)
+    leadership_repo = LeadershipRepository(db)
+    social_repo = SocialMediaLinkRepository(db)
+    company_repo = CompanyRepository(db)
+
+    # Set up Kagi fallback
+    search_service = _build_leadership_search(config)
+
+    manager = LeadershipManager(
+        linkedin_browser=browser,
+        leadership_search=search_service,
+        leadership_repo=leadership_repo,
+        social_link_repo=social_repo,
+        company_repo=company_repo,
+    )
+
+    click.echo(f"[INFO] Extracting leadership for company {company_id}...")
+    result = manager.extract_company_leadership(company_id)
+
+    if result.get("error"):
+        click.echo(f"[ERROR] {result['error']}")
+    else:
+        _print_summary("Leadership extraction complete", result)
+        _print_leadership_changes(result.get("leadership_changes", []))
+    db.close()
+
+
+@click.command()
+@click.option("--limit", default=None, type=int, help="Process first N companies")
+@click.option("--headless", is_flag=True, help="Run browser in headless mode")
+@click.option(
+    "--profile-dir",
+    default=None,
+    type=str,
+    help="Playwright browser profile directory",
+)
+@click.option(
+    "--max-workers",
+    default=1,
+    type=int,
+    help="Parallel workers (default 1 for Playwright safety; increase for Kagi-only mode)",
+)
+def extract_leadership_all(
+    limit: int | None,
+    headless: bool,
+    profile_dir: str | None,
+    max_workers: int,
+) -> None:
+    """Extract leadership profiles for all companies."""
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    from src.domains.discovery.repositories.social_media_link_repository import (
+        SocialMediaLinkRepository,
+    )
+    from src.domains.leadership.repositories.leadership_repository import (
+        LeadershipRepository,
+    )
+    from src.domains.leadership.services.leadership_manager import LeadershipManager
+    from src.domains.leadership.services.linkedin_browser import LinkedInBrowser
+    from src.repositories.company_repository import CompanyRepository
+
+    browser_headless = headless or config.linkedin_headless
+    browser_profile = profile_dir or config.linkedin_profile_dir
+
+    browser = LinkedInBrowser(headless=browser_headless, profile_dir=browser_profile)
+    leadership_repo = LeadershipRepository(db)
+    social_repo = SocialMediaLinkRepository(db)
+    company_repo = CompanyRepository(db)
+
+    search_service = _build_leadership_search(config)
+
+    manager = LeadershipManager(
+        linkedin_browser=browser,
+        leadership_search=search_service,
+        leadership_repo=leadership_repo,
+        social_link_repo=social_repo,
+        company_repo=company_repo,
+    )
+
+    click.echo(f"[INFO] Extracting leadership for all companies ({max_workers} workers)...")
+    result = manager.extract_all_leadership(limit=limit, max_workers=max_workers)
+    _print_summary("Leadership extraction complete", result)
+
+    critical = result.get("critical_changes", [])
+    if critical:
+        click.echo(f"\n[CRITICAL] {len(critical)} critical leadership change(s):")
+        for change in critical:
+            click.echo(
+                f"  {change.get('company_name', 'Unknown')} | "
+                f"{change.get('change_type', '')} | "
+                f"{change.get('person_name', '')} ({change.get('title', '')})"
+            )
+    db.close()
+
+
+@click.command()
+@click.option("--limit", default=None, type=int, help="Process first N companies")
+@click.option("--headless", is_flag=True, help="Run browser in headless mode")
+@click.option(
+    "--profile-dir",
+    default=None,
+    type=str,
+    help="Playwright browser profile directory",
+)
+def check_leadership_changes(
+    limit: int | None,
+    headless: bool,
+    profile_dir: str | None,
+) -> None:
+    """Re-extract leadership and report changes only."""
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    from src.domains.discovery.repositories.social_media_link_repository import (
+        SocialMediaLinkRepository,
+    )
+    from src.domains.leadership.repositories.leadership_repository import (
+        LeadershipRepository,
+    )
+    from src.domains.leadership.services.leadership_manager import LeadershipManager
+    from src.domains.leadership.services.linkedin_browser import LinkedInBrowser
+    from src.repositories.company_repository import CompanyRepository
+
+    browser_headless = headless or config.linkedin_headless
+    browser_profile = profile_dir or config.linkedin_profile_dir
+
+    browser = LinkedInBrowser(headless=browser_headless, profile_dir=browser_profile)
+    leadership_repo = LeadershipRepository(db)
+    social_repo = SocialMediaLinkRepository(db)
+    company_repo = CompanyRepository(db)
+
+    search_service = _build_leadership_search(config)
+
+    manager = LeadershipManager(
+        linkedin_browser=browser,
+        leadership_search=search_service,
+        leadership_repo=leadership_repo,
+        social_link_repo=social_repo,
+        company_repo=company_repo,
+    )
+
+    click.echo("[INFO] Checking for leadership changes...")
+    result = manager.extract_all_leadership(limit=limit)
+
+    critical = result.get("critical_changes", [])
+    if critical:
+        click.echo(f"\n[CRITICAL] {len(critical)} critical leadership change(s):")
+        for change in critical:
+            click.echo(
+                f"  {change.get('company_name', 'Unknown')} | "
+                f"{change.get('change_type', '')} | "
+                f"{change.get('person_name', '')} ({change.get('title', '')})"
+            )
+    else:
+        click.echo("[INFO] No critical leadership changes detected.")
+
+    _print_summary("Leadership change check complete", result)
+    db.close()
+
+
+@click.command()
+@click.option("--limit", default=None, type=int, help="Process first N companies")
+@click.option("--dry-run", is_flag=True, help="Preview without updating")
+def analyze_baseline(limit: int | None, dry_run: bool) -> None:
+    """Run baseline signal analysis on company snapshots.
+
+    Computes one-time baseline signals for companies that haven't been analyzed yet.
+    Baselines capture pre-existing positive/negative signals from the full page content.
+    """
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
+    from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
+
+    snapshot_repo = SnapshotRepository(db)
+    analyzer = BaselineAnalyzer(snapshot_repo)
+
+    mode = "DRY RUN" if dry_run else "analyzing"
+    click.echo(f"[INFO] {mode} baseline signals...")
+    result = analyzer.backfill_baselines(limit=limit, dry_run=dry_run)
+    _print_summary("Baseline analysis complete", result)
+    db.close()
+
+
+def _build_leadership_search(config: Config) -> Any:
+    """Build the LeadershipSearch service with Kagi client."""
+    from src.domains.leadership.services.leadership_search import LeadershipSearch
+
+    if config.kagi_api_key:
+        from src.domains.news.services.kagi_client import KagiClient
+
+        kagi = KagiClient(config.kagi_api_key)
+        return LeadershipSearch(kagi)
+
+    # Return a stub that produces empty results if no Kagi key
+    class _StubSearch:
+        def search_leadership(self, company_name: str) -> list[dict[str, str]]:
+            return []
+
+    return _StubSearch()
+
+
+def _print_leadership_changes(changes: list[dict[str, Any]]) -> None:
+    """Print leadership changes."""
+    if not changes:
+        return
+
+    click.echo("\n  Leadership Changes:")
+    for change in changes:
+        severity = change.get("severity", "")
+        prefix = "[CRITICAL]" if severity == "critical" else "[NOTE]"
+        click.echo(
+            f"    {prefix} {change.get('change_type', '')} | "
+            f"{change.get('person_name', '')} ({change.get('title', '')})"
+        )

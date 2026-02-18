@@ -16,10 +16,12 @@ def extract_links_from_markdown(markdown: str) -> list[str]:
     """
     urls: list[str] = []
 
-    # Match markdown links: [text](url)
+    # Match markdown links: [text](url) or [text](url "title")
     md_link_pattern = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
     for match in md_link_pattern.finditer(markdown):
         url = match.group(2).strip()
+        # Strip optional markdown title attribute: (url "title") or (url 'title')
+        url = re.split(r"""\s+["']""", url, maxsplit=1)[0].strip()
         if url.startswith(("http://", "https://")):
             urls.append(url)
 
@@ -147,6 +149,64 @@ def extract_aria_label_links(html: str) -> list[str]:
     return urls
 
 
+_TWITTER_STATUS_PATTERN = re.compile(
+    r"https?://(?:www\.)?(twitter|x)\.com/[^/]+/status/", re.IGNORECASE
+)
+
+_TWITTER_DOMAIN_PATTERN = re.compile(r"https?://(?:www\.)?(twitter|x)\.com/", re.IGNORECASE)
+
+
+def is_twitter_embed_url(url: str) -> bool:
+    """Check if a URL is a Twitter/X status embed (tweet link).
+
+    These appear on pages that embed tweet carousels or testimonials.
+    Both the /status/ URLs and the profile URLs of tweet authors are noise.
+    """
+    return bool(_TWITTER_STATUS_PATTERN.search(url))
+
+
+def filter_twitter_embeds(
+    urls: list[str],
+    trusted_urls: set[str] | None = None,
+) -> list[str]:
+    """Remove Twitter/X URLs that are part of embedded tweet content.
+
+    When a page embeds tweets (testimonials, press mentions), the scraped
+    content includes /status/ links and profile links of third-party users.
+    These are not the company's own social accounts.
+
+    Strategy: if ANY /status/ URL is present, the page has embedded tweets.
+    In that case:
+    - Always remove /status/ URLs
+    - Remove ALL Twitter/X profile URLs UNLESS they appear in trusted_urls
+      (from structured sources like schema.org, meta tags, aria-labels)
+
+    Args:
+        urls: All extracted URLs.
+        trusted_urls: URLs from structured/authoritative sources that should
+            be preserved even when embeds are present.
+    """
+    has_embeds = any(is_twitter_embed_url(u) for u in urls)
+    if not has_embeds:
+        return urls
+
+    safe_urls = trusted_urls or set()
+
+    filtered: list[str] = []
+    for url in urls:
+        # Always drop /status/ URLs
+        if is_twitter_embed_url(url):
+            continue
+
+        # Drop Twitter/X profile URLs unless they came from a trusted source
+        if _TWITTER_DOMAIN_PATTERN.match(url) and url not in safe_urls:
+            continue
+
+        filtered.append(url)
+
+    return filtered
+
+
 def extract_all_social_links(
     html: str | None,
     markdown: str | None,
@@ -155,18 +215,31 @@ def extract_all_social_links(
     """Extract social media links using all strategies.
 
     Combines results from markdown, HTML, Schema.org, meta tags, and aria-labels.
-    Returns deduplicated list.
+    Filters out Twitter/X embed noise. Returns deduplicated list.
     """
     all_urls: list[str] = []
+    # Trusted URLs come from structured/authoritative sources (schema.org,
+    # meta tags, aria-labels). These are preserved even when embed filtering
+    # removes other Twitter/X URLs from the page.
+    trusted_urls: set[str] = set()
 
     if markdown:
         all_urls.extend(extract_links_from_markdown(markdown))
 
     if html:
         all_urls.extend(extract_links_from_html(html, base_url))
-        all_urls.extend(extract_schema_org_links(html))
-        all_urls.extend(extract_meta_tag_links(html))
-        all_urls.extend(extract_aria_label_links(html))
+
+        schema_urls = extract_schema_org_links(html)
+        meta_urls = extract_meta_tag_links(html)
+        aria_urls = extract_aria_label_links(html)
+
+        trusted_urls.update(schema_urls)
+        trusted_urls.update(meta_urls)
+        trusted_urls.update(aria_urls)
+
+        all_urls.extend(schema_urls)
+        all_urls.extend(meta_urls)
+        all_urls.extend(aria_urls)
 
     # Deduplicate while preserving order
     seen: set[str] = set()
@@ -175,5 +248,8 @@ def extract_all_social_links(
         if url not in seen:
             seen.add(url)
             unique_urls.append(url)
+
+    # Filter out Twitter/X embed noise
+    unique_urls = filter_twitter_embeds(unique_urls, trusted_urls)
 
     return unique_urls

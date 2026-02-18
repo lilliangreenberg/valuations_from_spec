@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -84,3 +85,76 @@ class SnapshotRepository:
             (company_id,),
         )
         return row["oldest"] if row else None
+
+    def count_snapshots_for_company(self, company_id: int) -> int:
+        """Count total snapshots for a company."""
+        row = self.db.fetchone(
+            "SELECT COUNT(*) as cnt FROM snapshots WHERE company_id = ?",
+            (company_id,),
+        )
+        return row["cnt"] if row else 0
+
+    def update_baseline(self, snapshot_id: int, data: dict[str, Any]) -> None:
+        """Store baseline signal analysis results on a snapshot."""
+        self.db.execute(
+            """UPDATE snapshots SET
+               baseline_classification = ?,
+               baseline_sentiment = ?,
+               baseline_confidence = ?,
+               baseline_keywords = ?,
+               baseline_categories = ?,
+               baseline_notes = ?
+               WHERE id = ?""",
+            (
+                data.get("baseline_classification"),
+                data.get("baseline_sentiment"),
+                data.get("baseline_confidence"),
+                json.dumps(data.get("baseline_keywords", [])),
+                json.dumps(data.get("baseline_categories", [])),
+                data.get("baseline_notes"),
+                snapshot_id,
+            ),
+        )
+        self.db.connection.commit()
+
+    def has_baseline_for_company(self, company_id: int) -> bool:
+        """Check if any snapshot for this company has baseline analysis."""
+        row = self.db.fetchone(
+            """SELECT COUNT(*) as cnt FROM snapshots
+               WHERE company_id = ? AND baseline_classification IS NOT NULL""",
+            (company_id,),
+        )
+        return (row["cnt"] if row else 0) > 0
+
+    def get_snapshots_without_baseline(self, company_id: int | None = None) -> list[dict[str, Any]]:
+        """Get snapshots that need baseline analysis.
+
+        Returns only the earliest snapshot per company (baseline is once per company).
+        If company_id is provided, filters to that company.
+        """
+        if company_id is not None:
+            rows = self.db.fetchall(
+                """SELECT s.* FROM snapshots s
+                   WHERE s.company_id = ?
+                   AND s.baseline_classification IS NULL
+                   AND s.content_markdown IS NOT NULL
+                   ORDER BY s.captured_at ASC
+                   LIMIT 1""",
+                (company_id,),
+            )
+        else:
+            # One snapshot per company: the earliest one without baseline
+            rows = self.db.fetchall(
+                """SELECT s.* FROM snapshots s
+                   INNER JOIN (
+                       SELECT company_id, MIN(captured_at) as min_date
+                       FROM snapshots
+                       WHERE baseline_classification IS NULL
+                       AND content_markdown IS NOT NULL
+                       GROUP BY company_id
+                   ) earliest ON s.company_id = earliest.company_id
+                       AND s.captured_at = earliest.min_date
+                   WHERE s.baseline_classification IS NULL
+                   AND s.content_markdown IS NOT NULL"""
+            )
+        return [dict(row) for row in rows]

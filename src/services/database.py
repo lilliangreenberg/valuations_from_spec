@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -300,5 +301,46 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_company_logos_perceptual_hash"
                 " ON company_logos(perceptual_hash)"
             )
+
+            # company_leadership table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS company_leadership (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    company_id INTEGER NOT NULL,
+                    person_name TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    linkedin_profile_url TEXT NOT NULL,
+                    discovery_method TEXT NOT NULL,
+                    confidence REAL NOT NULL DEFAULT 0.0,
+                    is_current INTEGER NOT NULL DEFAULT 1,
+                    discovered_at TEXT NOT NULL,
+                    last_verified_at TEXT,
+                    source_company_linkedin_url TEXT,
+                    FOREIGN KEY (company_id)
+                        REFERENCES companies(id) ON DELETE CASCADE,
+                    UNIQUE(company_id, linkedin_profile_url)
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_company_leadership_company_id"
+                " ON company_leadership(company_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_company_leadership_title"
+                " ON company_leadership(title)"
+            )
+
+        # Migrations: add baseline columns to snapshots table
+        baseline_columns = [
+            ("baseline_classification", "TEXT"),
+            ("baseline_sentiment", "TEXT"),
+            ("baseline_confidence", "REAL"),
+            ("baseline_keywords", "TEXT"),
+            ("baseline_categories", "TEXT"),
+            ("baseline_notes", "TEXT"),
+        ]
+        for col_name, col_type in baseline_columns:
+            with contextlib.suppress(sqlite3.OperationalError):
+                self.execute(f"ALTER TABLE snapshots ADD COLUMN {col_name} {col_type}")
 
         logger.info("database_initialized", path=self.db_path)
