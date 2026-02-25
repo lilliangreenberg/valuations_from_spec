@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import click
@@ -98,6 +99,10 @@ def capture_snapshots(use_batch_api: bool, batch_size: int, timeout: int) -> Non
     configure_logging(config.log_level)
     db = _get_db(config)
 
+    from src.domains.discovery.repositories.social_media_link_repository import (
+        SocialMediaLinkRepository,
+    )
+    from src.domains.discovery.services.branding_logo_processor import BrandingLogoProcessor
     from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
     from src.repositories.company_repository import CompanyRepository
     from src.services.firecrawl_client import FirecrawlClient
@@ -105,17 +110,29 @@ def capture_snapshots(use_batch_api: bool, batch_size: int, timeout: int) -> Non
     firecrawl = FirecrawlClient(config.firecrawl_api_key)
     snapshot_repo = SnapshotRepository(db)
     company_repo = CompanyRepository(db)
+    logo_repo = SocialMediaLinkRepository(db)
+    logo_processor = BrandingLogoProcessor(logo_repo)
 
     if use_batch_api:
         from src.services.batch_snapshot_manager import BatchSnapshotManager
 
-        manager = BatchSnapshotManager(firecrawl, snapshot_repo, company_repo)
+        manager = BatchSnapshotManager(
+            firecrawl,
+            snapshot_repo,
+            company_repo,
+            logo_processor=logo_processor,
+        )
         click.echo(f"[INFO] Capturing snapshots using batch API (batch size: {batch_size})...")
         result = manager.capture_batch_snapshots(batch_size=batch_size, timeout=timeout)
     else:
         from src.services.snapshot_manager import SnapshotManager
 
-        manager = SnapshotManager(firecrawl, snapshot_repo, company_repo)  # type: ignore[assignment]
+        manager = SnapshotManager(
+            firecrawl,
+            snapshot_repo,
+            company_repo,
+            logo_processor=logo_processor,
+        )  # type: ignore[assignment]
         click.echo("[INFO] Capturing snapshots sequentially...")
         result = manager.capture_all_snapshots()
 
@@ -566,6 +583,146 @@ def discover_social_batch(
     result = batch_discovery.discover_batch(ids, max_workers=max_workers)
     _print_summary("Batch discovery complete", result)
     db.close()
+
+
+# --- Logo Refresh ---
+
+
+@click.command()
+@click.option("--force", is_flag=True, help="Refresh all logos regardless of staleness")
+@click.option("--staleness-days", default=90, type=int, help="Refresh logos older than N days")
+@click.option("--limit", default=None, type=int, help="Process first N companies")
+@click.option("--batch-size", default=50, type=int, help="URLs per Firecrawl batch")
+@click.option("--timeout", default=300, type=int, help="Timeout per batch in seconds")
+def refresh_logos(
+    force: bool,
+    staleness_days: int,
+    limit: int | None,
+    batch_size: int,
+    timeout: int,
+) -> None:
+    """Refresh company logos using Firecrawl branding data.
+
+    By default, only refreshes logos that are missing or older than --staleness-days.
+    Use --force to refresh all logos.
+    """
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    from src.domains.discovery.repositories.social_media_link_repository import (
+        SocialMediaLinkRepository,
+    )
+    from src.domains.discovery.services.branding_logo_processor import BrandingLogoProcessor
+    from src.repositories.company_repository import CompanyRepository
+    from src.services.firecrawl_client import FirecrawlClient
+    from src.utils.progress import ProgressTracker
+
+    firecrawl = FirecrawlClient(config.firecrawl_api_key)
+    company_repo = CompanyRepository(db)
+    logo_repo = SocialMediaLinkRepository(db)
+    logo_processor = BrandingLogoProcessor(logo_repo)
+
+    companies = company_repo.get_companies_with_homepage()
+    if limit:
+        companies = companies[:limit]
+
+    # Determine which companies need logo refresh
+    companies_to_process = _filter_companies_for_logo_refresh(
+        logo_repo,
+        companies,
+        force=force,
+        staleness_days=staleness_days,
+    )
+
+    if not companies_to_process:
+        click.echo("[INFO] No companies need logo refresh.")
+        db.close()
+        return
+
+    click.echo(
+        f"[INFO] Refreshing logos for {len(companies_to_process)} companies "
+        f"(batch size: {batch_size})..."
+    )
+
+    tracker = ProgressTracker(total=len(companies_to_process))
+
+    # Build URL -> company_id mapping
+    url_to_company: dict[str, int] = {}
+    urls: list[str] = []
+    for company in companies_to_process:
+        url = company["homepage_url"]
+        url_to_company[url] = company["id"]
+        urls.append(url)
+
+    # Scrape homepages with branding format using batch API
+    for i in range(0, len(urls), batch_size):
+        batch_urls = urls[i : i + batch_size]
+        try:
+            result = firecrawl.batch_capture_snapshots(batch_urls, timeout=timeout)
+            if result["success"]:
+                for doc in result.get("documents", []):
+                    doc_url = doc.get("url", "")
+                    company_id = url_to_company.get(doc_url)
+                    if company_id is None:
+                        for orig_url, cid in url_to_company.items():
+                            if doc_url and orig_url in doc_url:
+                                company_id = cid
+                                break
+                    if company_id is not None:
+                        branding = doc.get("branding")
+                        if branding:
+                            stored = logo_processor.process_branding_logo(
+                                company_id,
+                                branding,
+                            )
+                            if stored:
+                                tracker.record_success()
+                            else:
+                                tracker.record_failure(
+                                    f"No valid logo for company {company_id}",
+                                )
+                        else:
+                            tracker.record_failure(f"No branding data for {doc_url}")
+                    else:
+                        tracker.record_failure(f"No company match for URL: {doc_url}")
+            else:
+                for _url in batch_urls:
+                    tracker.record_failure(
+                        f"Batch failed: {result.get('errors', [])}",
+                    )
+        except Exception as exc:
+            for _url in batch_urls:
+                tracker.record_failure(str(exc))
+
+        tracker.log_progress(every_n=1)
+
+    _print_summary("Logo refresh complete", tracker.summary())
+    db.close()
+
+
+def _filter_companies_for_logo_refresh(
+    logo_repo: Any,
+    companies: list[dict[str, Any]],
+    *,
+    force: bool,
+    staleness_days: int,
+) -> list[dict[str, Any]]:
+    """Filter companies that need logo refresh based on staleness threshold."""
+    if force:
+        return companies
+
+    cutoff = (datetime.now(tz=UTC) - timedelta(days=staleness_days)).isoformat()
+    result: list[dict[str, Any]] = []
+    for company in companies:
+        logo = logo_repo.get_company_logo(company["id"])
+        if logo is None:
+            # No logo at all
+            result.append(company)
+        elif logo.get("extracted_at", "") < cutoff:
+            # Logo is stale
+            result.append(company)
+    return result
 
 
 # --- Feature 004: News Monitoring ---

@@ -1603,3 +1603,505 @@ class TestNewsAnalyzer:
             company_name="Alpha Inc",
         )
         assert result["significance_classification"] in ("insignificant", "uncertain")
+
+
+# ===========================================================================
+# 12. BrandingLogoProcessor
+# ===========================================================================
+
+
+class TestBrandingLogoProcessor:
+    """Contract tests for BrandingLogoProcessor with mocked HTTP downloads."""
+
+    def test_process_branding_logo_stores_logo(self, db: Database) -> None:
+        """Happy path: branding logo is downloaded and stored."""
+        from io import BytesIO
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from PIL import Image
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        processor = BrandingLogoProcessor(logo_repo)
+
+        # Create a valid small PNG image
+        img = Image.new("RGB", (64, 64), color="red")
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        mock_response = MagicMock()
+        mock_response.content = png_bytes
+        mock_response.headers = {"Content-Type": "image/png"}
+        mock_response.raise_for_status = MagicMock()
+
+        branding = SimpleNamespace(
+            logo="https://alpha.com/logo.png",
+            images=None,
+        )
+
+        with patch(
+            "src.domains.discovery.services.branding_logo_processor.requests.get",
+            return_value=mock_response,
+        ):
+            result = processor.process_branding_logo(cid, branding)
+
+        assert result is True
+        stored = logo_repo.get_company_logo(cid)
+        assert stored is not None
+        assert stored["source_url"] == "https://alpha.com/logo.png"
+        assert stored["extraction_location"] == "branding"
+        assert stored["perceptual_hash"] != ""
+        assert stored["image_format"] == "PNG"
+
+    def test_process_branding_logo_returns_false_when_no_url(
+        self,
+        db: Database,
+    ) -> None:
+        """Returns False when branding data has no valid logo URL."""
+        from types import SimpleNamespace
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        processor = BrandingLogoProcessor(logo_repo)
+
+        branding = SimpleNamespace(logo=None, images=None)
+        result = processor.process_branding_logo(cid, branding)
+
+        assert result is False
+        assert logo_repo.get_company_logo(cid) is None
+
+    def test_process_branding_logo_handles_download_failure(
+        self,
+        db: Database,
+    ) -> None:
+        """Returns False on download failure without crashing."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        processor = BrandingLogoProcessor(logo_repo)
+
+        branding = SimpleNamespace(
+            logo="https://alpha.com/logo.png",
+            images=None,
+        )
+
+        with patch(
+            "src.domains.discovery.services.branding_logo_processor.requests.get",
+            side_effect=ConnectionError("timeout"),
+        ):
+            result = processor.process_branding_logo(cid, branding)
+
+        assert result is False
+        assert logo_repo.get_company_logo(cid) is None
+
+    def test_process_branding_logo_handles_non_image_response(
+        self,
+        db: Database,
+    ) -> None:
+        """Returns False when response is not an image."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        processor = BrandingLogoProcessor(logo_repo)
+
+        mock_response = MagicMock()
+        mock_response.content = b"<html>Not an image</html>"
+        mock_response.headers = {"Content-Type": "text/html"}
+        mock_response.raise_for_status = MagicMock()
+
+        branding = SimpleNamespace(
+            logo="https://alpha.com/logo.png",
+            images=None,
+        )
+
+        with patch(
+            "src.domains.discovery.services.branding_logo_processor.requests.get",
+            return_value=mock_response,
+        ):
+            result = processor.process_branding_logo(cid, branding)
+
+        assert result is False
+
+    def test_company_has_logo_true_when_exists(self, db: Database) -> None:
+        """company_has_logo returns True when logo exists in DB."""
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        processor = BrandingLogoProcessor(logo_repo)
+
+        # Insert a logo directly
+        logo_repo.store_company_logo(
+            {
+                "company_id": cid,
+                "image_data": b"fake-data",
+                "image_format": "PNG",
+                "perceptual_hash": "abcdef1234567890",
+                "source_url": "https://alpha.com/logo.png",
+                "extraction_location": "branding",
+                "width": 64,
+                "height": 64,
+                "extracted_at": datetime.now(UTC).isoformat(),
+            }
+        )
+
+        assert processor.company_has_logo(cid) is True
+
+    def test_company_has_logo_false_when_missing(self, db: Database) -> None:
+        """company_has_logo returns False when no logo exists."""
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        processor = BrandingLogoProcessor(logo_repo)
+
+        assert processor.company_has_logo(cid) is False
+
+
+# ===========================================================================
+# 13. SnapshotManager with Branding Logo Integration
+# ===========================================================================
+
+
+class TestSnapshotManagerBrandingIntegration:
+    """Tests for SnapshotManager branding logo processing during capture."""
+
+    def test_stores_branding_logo_when_company_has_no_logo(
+        self,
+        db: Database,
+    ) -> None:
+        """Branding logo is stored for company without existing logo."""
+        from io import BytesIO
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from PIL import Image
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        logo_processor = BrandingLogoProcessor(logo_repo)
+
+        # Create valid PNG for download mock
+        img = Image.new("RGB", (64, 64), color="blue")
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        mock_download = MagicMock()
+        mock_download.content = png_bytes
+        mock_download.headers = {"Content-Type": "image/png"}
+        mock_download.raise_for_status = MagicMock()
+
+        branding_data = SimpleNamespace(
+            logo="https://alpha.com/brand-logo.png",
+            images=None,
+        )
+
+        mock_firecrawl = MagicMock()
+        mock_firecrawl.capture_snapshot.return_value = {
+            "success": True,
+            "markdown": "# Alpha",
+            "html": "<h1>Alpha</h1>",
+            "statusCode": 200,
+            "metadata": {},
+            "has_paywall": False,
+            "has_auth_required": False,
+            "error": None,
+            "branding": branding_data,
+        }
+
+        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db)
+        manager = SnapshotManager(
+            mock_firecrawl,
+            snapshot_repo,
+            company_repo,
+            logo_processor=logo_processor,
+        )
+
+        with patch(
+            "src.domains.discovery.services.branding_logo_processor.requests.get",
+            return_value=mock_download,
+        ):
+            summary = manager.capture_all_snapshots()
+
+        assert summary["successful"] == 1
+        stored_logo = logo_repo.get_company_logo(cid)
+        assert stored_logo is not None
+        assert stored_logo["source_url"] == "https://alpha.com/brand-logo.png"
+        assert stored_logo["extraction_location"] == "branding"
+
+    def test_skips_logo_when_company_already_has_one(self, db: Database) -> None:
+        """Branding logo is NOT downloaded when company already has a logo."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        logo_processor = BrandingLogoProcessor(logo_repo)
+
+        # Pre-insert a logo
+        logo_repo.store_company_logo(
+            {
+                "company_id": cid,
+                "image_data": b"existing-logo",
+                "image_format": "PNG",
+                "perceptual_hash": "existinghash1234",
+                "source_url": "https://alpha.com/old-logo.png",
+                "extraction_location": "header",
+                "width": 100,
+                "height": 50,
+                "extracted_at": datetime.now(UTC).isoformat(),
+            }
+        )
+
+        branding_data = SimpleNamespace(
+            logo="https://alpha.com/new-brand-logo.png",
+            images=None,
+        )
+
+        mock_firecrawl = MagicMock()
+        mock_firecrawl.capture_snapshot.return_value = {
+            "success": True,
+            "markdown": "# Alpha",
+            "html": "<h1>Alpha</h1>",
+            "statusCode": 200,
+            "metadata": {},
+            "has_paywall": False,
+            "has_auth_required": False,
+            "error": None,
+            "branding": branding_data,
+        }
+
+        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db)
+        manager = SnapshotManager(
+            mock_firecrawl,
+            snapshot_repo,
+            company_repo,
+            logo_processor=logo_processor,
+        )
+
+        # requests.get should NOT be called since company has logo
+        with patch(
+            "src.domains.discovery.services.branding_logo_processor.requests.get",
+        ) as mock_get:
+            summary = manager.capture_all_snapshots()
+
+        assert summary["successful"] == 1
+        mock_get.assert_not_called()
+
+        # Verify the old logo is still there, not overwritten
+        stored = logo_repo.get_company_logo(cid)
+        assert stored is not None
+        assert stored["source_url"] == "https://alpha.com/old-logo.png"
+
+    def test_works_without_logo_processor(self, db: Database) -> None:
+        """Backward compatible: no logo_processor means no logo processing."""
+        _insert_company(db, "Alpha Inc", "https://alpha.com")
+
+        mock_firecrawl = MagicMock()
+        mock_firecrawl.capture_snapshot.return_value = {
+            "success": True,
+            "markdown": "# Alpha",
+            "html": "<h1>Alpha</h1>",
+            "statusCode": 200,
+            "metadata": {},
+            "has_paywall": False,
+            "has_auth_required": False,
+            "error": None,
+            "branding": None,
+        }
+
+        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db)
+        # No logo_processor passed (default None)
+        manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
+
+        summary = manager.capture_all_snapshots()
+        assert summary["successful"] == 1
+
+
+# ===========================================================================
+# 14. BatchSnapshotManager with Branding Logo Integration
+# ===========================================================================
+
+
+class TestBatchSnapshotManagerBrandingIntegration:
+    """Tests for BatchSnapshotManager branding logo processing."""
+
+    def test_batch_processes_branding_logos(self, db: Database) -> None:
+        """Branding logos are stored during batch capture."""
+        from io import BytesIO
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from PIL import Image
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        logo_processor = BrandingLogoProcessor(logo_repo)
+
+        # Create valid PNG
+        img = Image.new("RGB", (64, 64), color="green")
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        mock_download = MagicMock()
+        mock_download.content = png_bytes
+        mock_download.headers = {"Content-Type": "image/png"}
+        mock_download.raise_for_status = MagicMock()
+
+        branding_data = SimpleNamespace(
+            logo="https://alpha.com/brand-logo.png",
+            images=None,
+        )
+
+        mock_firecrawl = MagicMock()
+        mock_firecrawl.batch_capture_snapshots.return_value = {
+            "success": True,
+            "documents": [
+                {
+                    "url": "https://alpha.com",
+                    "markdown": "# Alpha",
+                    "html": "<h1>Alpha</h1>",
+                    "metadata": {"statusCode": 200},
+                    "branding": branding_data,
+                },
+            ],
+            "total": 1,
+            "completed": 1,
+            "failed": 0,
+            "errors": [],
+        }
+
+        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db)
+        manager = BatchSnapshotManager(
+            mock_firecrawl,
+            snapshot_repo,
+            company_repo,
+            logo_processor=logo_processor,
+        )
+
+        with patch(
+            "src.domains.discovery.services.branding_logo_processor.requests.get",
+            return_value=mock_download,
+        ):
+            summary = manager.capture_batch_snapshots(batch_size=10)
+
+        assert summary["successful"] == 1
+        stored = logo_repo.get_company_logo(cid)
+        assert stored is not None
+        assert stored["extraction_location"] == "branding"
+
+    def test_batch_skips_logos_when_already_exist(self, db: Database) -> None:
+        """Batch mode skips logo download for companies with existing logos."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        logo_processor = BrandingLogoProcessor(logo_repo)
+
+        # Pre-insert a logo
+        logo_repo.store_company_logo(
+            {
+                "company_id": cid,
+                "image_data": b"existing",
+                "image_format": "PNG",
+                "perceptual_hash": "existinghash5678",
+                "source_url": "https://alpha.com/old.png",
+                "extraction_location": "header",
+                "width": 100,
+                "height": 50,
+                "extracted_at": datetime.now(UTC).isoformat(),
+            }
+        )
+
+        branding_data = SimpleNamespace(
+            logo="https://alpha.com/new-logo.png",
+            images=None,
+        )
+
+        mock_firecrawl = MagicMock()
+        mock_firecrawl.batch_capture_snapshots.return_value = {
+            "success": True,
+            "documents": [
+                {
+                    "url": "https://alpha.com",
+                    "markdown": "# Alpha",
+                    "html": "<h1>Alpha</h1>",
+                    "metadata": {"statusCode": 200},
+                    "branding": branding_data,
+                },
+            ],
+            "total": 1,
+            "completed": 1,
+            "failed": 0,
+            "errors": [],
+        }
+
+        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db)
+        manager = BatchSnapshotManager(
+            mock_firecrawl,
+            snapshot_repo,
+            company_repo,
+            logo_processor=logo_processor,
+        )
+
+        with patch(
+            "src.domains.discovery.services.branding_logo_processor.requests.get",
+        ) as mock_get:
+            summary = manager.capture_batch_snapshots(batch_size=10)
+
+        assert summary["successful"] == 1
+        mock_get.assert_not_called()
+
+        stored = logo_repo.get_company_logo(cid)
+        assert stored is not None
+        assert stored["source_url"] == "https://alpha.com/old.png"

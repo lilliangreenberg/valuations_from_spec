@@ -11,6 +11,7 @@ from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
 from src.utils.progress import ProgressTracker
 
 if TYPE_CHECKING:
+    from src.domains.discovery.services.branding_logo_processor import BrandingLogoProcessor
     from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
     from src.repositories.company_repository import CompanyRepository
     from src.services.firecrawl_client import FirecrawlClient
@@ -26,11 +27,13 @@ class BatchSnapshotManager:
         firecrawl_client: FirecrawlClient,
         snapshot_repo: SnapshotRepository,
         company_repo: CompanyRepository,
+        logo_processor: BrandingLogoProcessor | None = None,
     ) -> None:
         self.firecrawl = firecrawl_client
         self.snapshot_repo = snapshot_repo
         self.company_repo = company_repo
         self._baseline_analyzer = BaselineAnalyzer(snapshot_repo)
+        self._logo_processor = logo_processor
 
     def capture_batch_snapshots(
         self,
@@ -87,6 +90,18 @@ class BatchSnapshotManager:
                             # Auto-run baseline on first scrape
                             if self.snapshot_repo.count_snapshots_for_company(company_id) == 1:
                                 self._baseline_analyzer.analyze_baseline_for_snapshot(snapshot_id)
+
+                            # Process branding logo if available and company has no logo
+                            branding = doc.get("branding")
+                            if (
+                                branding
+                                and self._logo_processor
+                                and not self._logo_processor.company_has_logo(company_id)
+                            ):
+                                self._logo_processor.process_branding_logo(
+                                    company_id,
+                                    branding,
+                                )
 
                             tracker.record_success()
                         else:

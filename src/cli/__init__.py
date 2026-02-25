@@ -22,6 +22,7 @@ from src.cli.commands import (
     list_inactive,
     list_significant_changes,
     list_uncertain_changes,
+    refresh_logos,
     search_news,
     search_news_all,
     show_changes,
@@ -55,3 +56,4 @@ cli.add_command(extract_leadership)
 cli.add_command(extract_leadership_all)
 cli.add_command(check_leadership_changes)
 cli.add_command(analyze_baseline)
+cli.add_command(refresh_logos)
