@@ -1,0 +1,492 @@
+{
+  "_metadata": {
+    "description": "Golden dataset for testing the Portfolio Company Monitoring System",
+    "created": "2026-02-25",
+    "last_updated": "2026-02-25",
+    "database_snapshot_dates": ["2025-10-02", "2025-10-03", "2026-02-09"],
+    "total_companies_in_db": 759,
+    "data_correction_applied": "2026-02-25: Remapped 1,268 snapshots to correct company_id (97.9% were misattributed due to off-by-one shift bug in original capture). Merged 9 duplicate companies. Backup at data/companies_pre_remap_backup_20260225_133803.db",
+    "notes": "Company IDs reference data/companies.db. Expected values are assertions for test validation. All change_records are from the first 28 companies processed by detect-changes."
+  },
+  "categories": {
+    "significant_positive_change": {
+      "description": "Companies with website changes classified as SIGNIFICANT with POSITIVE sentiment. These show real business activity: product launches, funding, partnerships.",
+      "companies": [
+        {
+          "company_id": 12,
+          "name": "Pow Genetic Solutions, Inc.",
+          "homepage_url": "http://pow.bio",
+          "expected": {
+            "has_changed": true,
+            "change_magnitude": "moderate",
+            "significance_classification": "significant",
+            "significance_sentiment": "positive",
+            "significance_confidence_min": 0.85,
+            "matched_categories_include": ["product_launch", "funding_investment", "partnerships", "recognition"],
+            "matched_keywords_include": ["series a", "release", "partnership", "collaboration", "winner"]
+          },
+          "notes": "Multi-signal positive: Series A round, Buhler partnership, Mars collaboration via Unreasonable Group, 'clear winner' cost comparison. Strong canonical example of a thriving company with genuine business signals."
+        },
+        {
+          "company_id": 23,
+          "name": "Quantum Space, Llc",
+          "homepage_url": "https://quantumspace.us/",
+          "expected": {
+            "has_changed": true,
+            "change_magnitude": "moderate",
+            "significance_classification": "significant",
+            "significance_sentiment": "positive",
+            "significance_confidence_min": 0.85,
+            "matched_categories_include": ["product_launch", "funding_investment"],
+            "matched_keywords_include": ["series a", "release"]
+          },
+          "notes": "Quantum Space secured $40M Series A Extension and published multiple press releases. Genuine funding and product launch signals."
+        },
+        {
+          "company_id": 27,
+          "name": "One K Financial, Inc",
+          "homepage_url": "https://facet.com/",
+          "expected": {
+            "has_changed": true,
+            "change_magnitude": "moderate",
+            "significance_classification": "significant",
+            "significance_sentiment": "positive",
+            "significance_confidence_min": 0.85,
+            "matched_categories_include": ["funding_investment", "recognition"],
+            "matched_keywords_include": ["funding", "award", "recognized"]
+          },
+          "notes": "Financial planning company with savings/funding strategies, equity award planning, and industry recognition. Multiple positive categories."
+        }
+      ]
+    },
+    "insignificant_change": {
+      "description": "Companies whose websites changed but the changes have no business significance. Content reorganization, cosmetic updates, or technical changes with no keyword signals.",
+      "companies": [
+        {
+          "company_id": 4,
+          "name": "Additive Space Technologies Inc.",
+          "homepage_url": "https://solideon.com/",
+          "expected": {
+            "has_changed": true,
+            "change_magnitude": "minor",
+            "significance_classification": "insignificant",
+            "significance_confidence_min": 0.70,
+            "matched_keywords": [],
+            "matched_categories": []
+          },
+          "notes": "Minor content change with zero keyword matches. Pure cosmetic or technical update."
+        },
+        {
+          "company_id": 5,
+          "name": "Unlock Ventures, Inc.",
+          "homepage_url": "https://unlockvp.com/philosophy",
+          "expected": {
+            "has_changed": true,
+            "change_magnitude": "major",
+            "significance_classification": "insignificant",
+            "significance_confidence_min": 0.70,
+            "matched_keywords": [],
+            "matched_categories": []
+          },
+          "notes": "Major content change (190% growth) but no business keywords detected. Site expanded significantly with purely organizational/investment content."
+        },
+        {
+          "company_id": 7,
+          "name": "Lemurian Labs Inc",
+          "homepage_url": "http://www.lemurianlabs.com",
+          "expected": {
+            "has_changed": true,
+            "change_magnitude": "major",
+            "significance_classification": "insignificant",
+            "significance_confidence_min": 0.70,
+            "matched_keywords": [],
+            "matched_categories": []
+          },
+          "notes": "Major content change but no keyword matches. Content shrank from 6,471 to 4,157 chars (36% reduction)."
+        }
+      ]
+    },
+    "false_positive_keywords": {
+      "description": "Companies where significance keywords matched but are NOT actually business signals. Tests the system's ability to detect industry jargon, technical terms, and domain-specific language that triggers false positives.",
+      "companies": [
+        {
+          "company_id": 24,
+          "name": "Consync Corporation",
+          "homepage_url": "https://tryroger.com/",
+          "expected": {
+            "has_changed": true,
+            "significance_classification": "significant",
+            "significance_sentiment": "positive",
+            "matched_keywords_include": ["buyout", "award"],
+            "matched_categories_include": ["acquisition", "recognition"]
+          },
+          "false_positive_detail": {
+            "keyword_buyout": "Reduce buyout Driven Delays -- construction industry jargon for trade cost buyout (final subcontractor pricing), not corporate M&A",
+            "keyword_award": "resolving RFIs before award -- construction contract award, not recognition/prize",
+            "keyword_partner_is_true_positive": "partner with Roger Today -- genuine partnership language"
+          },
+          "notes": "Construction scope management company (Roger). 'buyout' and 'award' are construction-domain terms, not M&A/recognition signals. Only 'partner' is a genuine positive keyword."
+        },
+        {
+          "company_id": 6,
+          "name": "Signoz, Inc.",
+          "homepage_url": "https://signoz.io",
+          "expected": {
+            "has_changed": true,
+            "change_magnitude": "minor",
+            "significance_classification": "uncertain",
+            "significance_sentiment": "neutral",
+            "significance_confidence_max": 0.55,
+            "matched_keywords_include": ["fine"],
+            "matched_categories_include": ["legal_issues"]
+          },
+          "false_positive_detail": {
+            "keyword": "fine",
+            "actual_context": "fine-tuned database calls to improve our backend API",
+            "expected_correct_classification": "insignificant",
+            "why_false_positive": "The word 'fine' appears as part of 'fine-tuned' (a technical term for optimization), not as a legal penalty/fine"
+          },
+          "notes": "Observability platform using 'fine-tuned' in engineering context. System correctly gave low confidence (0.5) and classified as UNCERTAIN. Tests Rule 5: '1 keyword + minor magnitude -> UNCERTAIN'."
+        },
+        {
+          "company_id": 21,
+          "name": "Alfred Technologies Corp.",
+          "homepage_url": "https://www.alfredtechnologies.com/",
+          "expected": {
+            "has_changed": true,
+            "significance_classification": "significant",
+            "significance_sentiment": "positive",
+            "matched_keywords_include": ["partnership", "fine"],
+            "matched_categories_include": ["legal_issues", "partnerships"]
+          },
+          "false_positive_detail": {
+            "keyword": "fine",
+            "actual_context": "fine-tune strategy, and support long-term success",
+            "keyword_partnership_is_true_positive": "This partnership isn't just transforming our present (x3) -- genuine partnership language",
+            "why_false_positive": "'fine' appears as 'fine-tune' (optimize), not legal penalty. Overall classification is correct due to 3x partnership, but legal_issues category should not be present."
+          },
+          "notes": "Mixed true/false positive: 3x 'partnership' keywords are genuine, but 'fine' from 'fine-tune' incorrectly adds legal_issues to matched categories."
+        }
+      ]
+    },
+    "significant_negative_change": {
+      "description": "Companies with website changes classified as SIGNIFICANT with NEGATIVE sentiment. These indicate potential business distress, closure, or major adverse events.",
+      "companies": [
+        {
+          "company_id": 13,
+          "name": "Astra Space Inc.",
+          "homepage_url": "https://astra.com/",
+          "expected": {
+            "has_changed": true,
+            "change_magnitude": "major",
+            "significance_classification": "significant",
+            "significance_sentiment": "negative",
+            "significance_confidence_min": 0.90,
+            "matched_keywords_include": ["closing"],
+            "matched_categories_include": ["closure"]
+          },
+          "notes": "Astra Space's own website content contains 4x 'closing' references to 'Astra Announces closing of Take-Private Transaction'. This is a TRUE positive -- Astra did go through a take-private transaction. Highest-confidence negative signal in the dataset."
+        }
+      ],
+      "notes": "Only 1 company in existing change_records has NEGATIVE sentiment. Expanding change detection to all companies would likely surface more."
+    },
+    "dead_websites": {
+      "description": "Companies whose websites are completely non-functional. Returns 502/504 errors, 'Site Not Found', or similar. Persistently dead across both snapshot captures.",
+      "companies": [
+        {
+          "company_id": 675,
+          "name": "Tryby, Inc.",
+          "homepage_url": "https://www.tryby.ai/",
+          "expected": {
+            "snapshot_count_min": 2,
+            "latest_content_contains": "Site Not Found",
+            "latest_content_length_max": 100,
+            "all_snapshots_dead": true
+          },
+          "notes": "Domain returns 'Site Not Found' consistently. Domain likely unconfigured/expired."
+        },
+        {
+          "company_id": 276,
+          "name": "Trustpoint, Inc.",
+          "homepage_url": "http://www.trustpointgps.com/",
+          "expected": {
+            "latest_content_contains": "502 Bad Gateway",
+            "latest_content_length_max": 100,
+            "all_snapshots_dead": true
+          },
+          "notes": "Returns '502 Bad Gateway - Host Not Found' on both captures. Server infrastructure gone."
+        },
+        {
+          "company_id": 102,
+          "name": "Train Fitness Inc.",
+          "homepage_url": "http://trainfitness.ai",
+          "expected": {
+            "latest_content_contains": "502 Bad Gateway",
+            "latest_content_length_max": 100,
+            "all_snapshots_dead": true
+          },
+          "notes": "Returns '502 Bad Gateway - Host Not Found' persistently. AI fitness startup gone."
+        }
+      ]
+    },
+    "domain_hijacked_or_sold": {
+      "description": "Companies whose domain now serves content belonging to a completely different, unrelated company. The original company is effectively gone. Unlike redirects, these show no corporate relationship.",
+      "companies": [
+        {
+          "company_id": 545,
+          "name": "Alegria Neurotech, Inc.",
+          "homepage_url": "https://www.alegrianeurotech.com/",
+          "expected": {
+            "latest_content_contains": "Alegria",
+            "latest_content_length_max": 100,
+            "all_snapshots_show_same_content": true
+          },
+          "notes": "Domain shows 'Alegria - We're building a magical brain-computer interface for humanity' -- 74 chars of content. Same on both captures. Could be a minimal landing page from the original company or domain parked by a new owner."
+        },
+        {
+          "company_id": 225,
+          "name": "Localby Labs, Inc.",
+          "homepage_url": "https://localby.co/",
+          "expected": {
+            "latest_content_contains": "Handmade items",
+            "latest_content_length_max": 100
+          },
+          "notes": "Domain localby.co now shows 'Handmade items by local makers' with minimal marketplace content. Original company's tech product replaced by artisan marketplace."
+        },
+        {
+          "company_id": 223,
+          "name": "Onethree Biotech, Inc.",
+          "homepage_url": "https://onethreebio.squarespace.com/",
+          "expected": {
+            "latest_content_contains": "Crear",
+            "latest_content_does_not_contain": "Onethree"
+          },
+          "notes": "Squarespace site now shows crear.ai content ('CREAR' logo, 'Next Generation Search'). Original biotech company gone, Squarespace site reused by AI search company."
+        }
+      ]
+    },
+    "alive_to_dead": {
+      "description": "Companies that had functioning websites in Oct 2025 but are dead/unreachable in Feb 2026. Represents companies that shut down between snapshot captures.",
+      "companies": [
+        {
+          "company_id": 561,
+          "name": "Talar, Inc.",
+          "homepage_url": "https://www.jupiter.co/home",
+          "expected": {
+            "old_content_length_min": 40000,
+            "latest_content_length_max": 100,
+            "latest_content_contains": "404"
+          },
+          "notes": "jupiter.co went from 49,995 chars (full creator platform website) to 46 chars ('404 - This page could not be found. 14.ai'). Largest content drop in the dataset. Domain appears transferred to 14.ai."
+        },
+        {
+          "company_id": 332,
+          "name": "Carbon Crusher, Inc.",
+          "homepage_url": "http://www.carboncrusher.io/",
+          "expected": {
+            "old_content_length_min": 3000,
+            "latest_content_length_max": 100,
+            "latest_content_contains": "502 Bad Gateway"
+          },
+          "notes": "carboncrusher.io went from 5,266 chars (road construction content) to 59 chars ('502 Bad Gateway'). Infrastructure company gone."
+        },
+        {
+          "company_id": 386,
+          "name": "Tortuga Agricultural Technologies, Inc.",
+          "homepage_url": "http://www.tortugaagtech.com",
+          "expected": {
+            "old_content_length_min": 5000,
+            "latest_content_length_max": 100,
+            "latest_content_contains": "502 Bad Gateway",
+            "old_content_contains": "Oishii"
+          },
+          "notes": "tortugaagtech.com went from 8,236 chars to 59 chars. Oct 2025 content mentions 'Tortuga AgTech joins Oishii' (IP/team acquired by Oishii), confirming the company was absorbed. Domain lapsed after acquisition."
+        }
+      ]
+    },
+    "dead_to_alive": {
+      "description": "Companies that had minimal/empty websites in Oct 2025 but have substantial content in Feb 2026. Represents relaunches, rebrands, or domain transfers.",
+      "companies": [
+        {
+          "company_id": 241,
+          "name": "Odyssey Systems Inc.",
+          "homepage_url": "https://odyssey.world/",
+          "expected": {
+            "old_content_length_max": 500,
+            "latest_content_length_min": 50000,
+            "old_content_contains": "superimagination",
+            "latest_content_contains": "odyssey.ml"
+          },
+          "notes": "Went from 240 chars ('We're building superimagination' teaser from DeepMind/Waymo/Tesla/Meta researchers) to 105,600 chars (full odyssey.ml product site). Massive relaunch. Largest content growth in dataset."
+        },
+        {
+          "company_id": 13,
+          "name": "Astra Space Inc.",
+          "homepage_url": "https://astra.com/",
+          "expected": {
+            "old_content_length_max": 200,
+            "latest_content_length_min": 10000
+          },
+          "notes": "Went from 144 chars (minimal redirect stub) to 15,238 chars (full corporate site). The small Oct 2025 snapshot was likely captured during a site migration."
+        }
+      ],
+      "notes": "Only 2 companies show this pattern (small content to large). Astra also appears in significant_negative_change because the newly visible content contains 'closing of Take-Private Transaction'."
+    },
+    "no_snapshots": {
+      "description": "Companies where Firecrawl was unable to capture any snapshots at all. Represents complete scraping failures or companies with no web presence.",
+      "companies": [
+        {
+          "company_id": 80,
+          "name": "Sane Holdings Inc.",
+          "homepage_url": "https://sane.fyi/",
+          "expected": {
+            "snapshot_count": 0,
+            "social_media_link_count": 0
+          },
+          "notes": "Zero data collected: no snapshots, no social media links. Completely dark company."
+        },
+        {
+          "company_id": 32,
+          "name": "Serial Manufacturing Inc.",
+          "homepage_url": "https://www.serial.io/",
+          "expected": {
+            "snapshot_count": 0
+          },
+          "notes": "No snapshots captured despite having a homepage URL. Scraping failed on all attempts."
+        },
+        {
+          "company_id": 88,
+          "name": "Eigen Therapeutics Inc.",
+          "homepage_url": "https://www.eigentx.com/",
+          "expected": {
+            "snapshot_count": 0
+          },
+          "notes": "No snapshots captured. Therapeutics company with no captured web presence."
+        }
+      ]
+    },
+    "false_positive_from_redirected_content": {
+      "description": "Companies where the monitored domain redirects to or serves content from a different company. Significance analysis produces technically correct keyword matches, but all keywords come from the wrong company's content. The redirect itself is the real signal.",
+      "companies": [
+        {
+          "company_id": 416,
+          "name": "Candoriq",
+          "homepage_url": "https://www.candoriq.com/",
+          "expected": {
+            "has_changed": true,
+            "significance_classification": "significant",
+            "significance_sentiment": "mixed",
+            "significance_confidence_max": 0.70,
+            "matched_keywords_count_min": 20,
+            "matched_categories_include": ["acquisition", "closure", "growth_success"]
+          },
+          "redirect_detail": {
+            "note": "CandorIQ's own website content -- not redirected. These keywords are from CandorIQ's HR platform marketing copy.",
+            "false_positive_keywords": {
+              "closing": "Closing Pay Equity Gaps, Closing Candidates Faster -- HR workflow descriptions",
+              "acquisition": "Talent Acquisition & Hiring Teams -- product feature name",
+              "hiring": "Product marketing copy about HR hiring workflows"
+            }
+          },
+          "notes": "All 27 keywords are HR product marketing terminology. 'closing' means closing candidate pipelines, not business closure. 'acquisition' means talent acquisition, not corporate M&A. The system has no domain-specific disambiguation. MIXED sentiment is technically correct but all signals are false positives."
+        },
+        {
+          "company_id": 14,
+          "name": "Researchhub Technologies, Inc.",
+          "homepage_url": "https://www.researchhub.com/",
+          "expected": {
+            "has_changed": true,
+            "change_magnitude": "major",
+            "significance_classification": "significant",
+            "significance_sentiment": "neutral",
+            "matched_keywords_include": ["recognized"],
+            "matched_categories_include": ["recognition"]
+          },
+          "redirect_detail": {
+            "note": "researchhub.com now serves content about 'recognized heterogeneity of OA' -- scientific/academic content, not business recognition",
+            "false_positive_keywords": {
+              "recognized": "recognized heterogeneity of OA -- scientific terminology, not business recognition"
+            }
+          },
+          "notes": "After remap correction, this record now shows ResearchHub's actual content comparison. The 'recognized' keyword is from scientific text about osteoarthritis research, not business recognition. Major content change (3,201 to 56,086 chars) suggests the site expanded significantly."
+        },
+        {
+          "company_id": 1,
+          "name": "Odeko Inc.",
+          "homepage_url": "https://odeko.com/",
+          "expected": {
+            "has_changed": true,
+            "change_magnitude": "minor",
+            "significance_classification": "significant",
+            "significance_sentiment": "positive",
+            "matched_categories_include": ["partnerships", "recognition"],
+            "matched_keywords_include": ["collaboration", "named to"]
+          },
+          "notes": "True positive example for comparison: Odeko has genuine 'collaboration' (Birch Coffee, Joe Coffee partnerships) and 'named to' (Deloitte Technology Fast 500). These are real business signals, not domain-specific jargon."
+        }
+      ]
+    },
+    "uncertain_classification": {
+      "description": "Companies where the significance analysis produced UNCERTAIN classification, indicating the system could not confidently determine business significance. Candidates for manual review or LLM validation.",
+      "companies": [
+        {
+          "company_id": 6,
+          "name": "Signoz, Inc.",
+          "homepage_url": "https://signoz.io",
+          "expected": {
+            "has_changed": true,
+            "change_magnitude": "minor",
+            "significance_classification": "uncertain",
+            "significance_confidence_max": 0.55,
+            "matched_keywords_include": ["fine"],
+            "matched_categories_include": ["legal_issues"]
+          },
+          "notes": "Single keyword match ('fine' from 'fine-tuned') with minor magnitude triggers Rule 5: '1 keyword + minor magnitude -> UNCERTAIN (50% confidence)'. The system correctly expressed low confidence rather than a definitive classification. Also appears in false_positive_keywords."
+        }
+      ],
+      "notes": "Only 1 company in existing change_records has UNCERTAIN classification. This is inherently a rare edge case -- most companies fall clearly into SIGNIFICANT or INSIGNIFICANT."
+    },
+    "mixed_sentiment": {
+      "description": "Companies where both positive and negative keywords were detected, producing MIXED sentiment. Tests the system's handling of contradictory signals.",
+      "companies": [
+        {
+          "company_id": 416,
+          "name": "Candoriq",
+          "homepage_url": "https://www.candoriq.com/",
+          "expected": {
+            "has_changed": true,
+            "significance_classification": "significant",
+            "significance_sentiment": "mixed",
+            "significance_confidence_max": 0.70,
+            "matched_categories_include": ["expansion", "partnerships", "recognition", "acquisition", "closure", "growth_success"],
+            "matched_keywords_count_min": 20
+          },
+          "notes": "27 keywords spanning both positive (hiring x15, doubled, collaboration, scale up) and negative (closing x6, acquisition). All are HR product marketing copy (see false_positive_from_redirected_content). MIXED classification is technically correct given keyword inputs, but every keyword is a false positive."
+        }
+      ],
+      "notes": "Only 1 company in existing change_records has MIXED sentiment. Also appears in false_positive_from_redirected_content."
+    }
+  },
+  "cross_category_index": {
+    "description": "Index showing which companies appear in multiple categories.",
+    "multi_category_companies": {
+      "6": {
+        "name": "Signoz, Inc.",
+        "categories": ["false_positive_keywords", "uncertain_classification"]
+      },
+      "13": {
+        "name": "Astra Space Inc.",
+        "categories": ["significant_negative_change", "dead_to_alive"]
+      },
+      "14": {
+        "name": "Researchhub Technologies, Inc.",
+        "categories": ["false_positive_from_redirected_content"]
+      },
+      "416": {
+        "name": "Candoriq",
+        "categories": ["false_positive_from_redirected_content", "mixed_sentiment"]
+      }
+    }
+  },
+  "all_company_ids": [1, 4, 5, 6, 7, 12, 13, 14, 21, 23, 24, 27, 32, 80, 88, 102, 223, 225, 241, 276, 332, 386, 416, 545, 561, 675]
+}
