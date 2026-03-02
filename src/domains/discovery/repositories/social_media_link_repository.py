@@ -136,3 +136,8 @@ class SocialMediaLinkRepository:
             (company_id,),
         )
         return dict(row) if row else None
+
+    def get_company_ids_with_logos(self) -> set[int]:
+        """Get the set of company IDs that have at least one stored logo."""
+        rows = self.db.fetchall("SELECT DISTINCT company_id FROM company_logos")
+        return {row["company_id"] for row in rows}
