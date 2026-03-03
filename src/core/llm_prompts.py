@@ -1,58 +1,188 @@
-"""LLM prompt templates for significance validation and company verification."""
+"""LLM prompt templates for significance classification and company verification.
+
+Prompts are designed so the LLM acts as the PRIMARY classifier, not a validator.
+Keyword matches from the automated scanner are passed as hints/context, but the
+LLM makes its own independent determination without being anchored by the keyword
+system's conclusion.
+"""
 
 from __future__ import annotations
 
-SIGNIFICANCE_VALIDATION_SYSTEM_PROMPT = (
+# --- Change Significance Classification ---
+
+SIGNIFICANCE_CLASSIFICATION_SYSTEM_PROMPT = (
     "You are analyzing website content changes for a venture capital portfolio"
     " monitoring system.\n"
-    "Your task is to validate whether detected changes are genuinely significant"
-    " for business monitoring purposes.\n\n"
+    "Your task is to independently classify whether detected changes represent"
+    " genuinely significant business events.\n\n"
+    "You will receive a content excerpt showing what changed, the magnitude of"
+    " the change, and keyword hints from an automated scanner. The keyword hints"
+    " may contain false positives or miss important context. Use them as starting"
+    " points for your analysis, but make your own independent judgment.\n\n"
+    "Common false positives to watch for:\n"
+    "- 'talent acquisition' or 'customer acquisition' (not company acquisition)\n"
+    "- 'funding opportunities' or 'funding sources' (not a funding round)\n"
+    "- Navigation menu or footer changes containing business terms\n"
+    "- Marketing language that sounds significant but is routine\n"
+    "- Copyright year updates, CSS changes, analytics tracking\n\n"
     "Respond with a JSON object containing:\n"
     '- classification: "significant", "insignificant", or "uncertain"\n'
     '- sentiment: "positive", "negative", "neutral", or "mixed"\n'
     "- confidence: float between 0.0 and 1.0\n"
-    "- reasoning: brief explanation of your classification\n"
-    "- validated_keywords: list of keywords you confirm are relevant\n"
-    "- false_positives: list of keywords that are false positives"
+    "- reasoning: (REQUIRED) 1-3 sentences explaining WHY you classified this way."
+    " What specific evidence drove your decision? If insignificant, explain what"
+    " the keywords actually refer to in context.\n"
+    "- validated_keywords: list of keyword hints you confirm are relevant\n"
+    "- false_positives: list of keyword hints that are false positives"
 )
 
-SIGNIFICANCE_VALIDATION_USER_TEMPLATE = (
-    "Analyze this content change:\n\n"
-    "Content excerpt:\n{content_excerpt}\n\n"
-    "Detected keywords: {keywords}\n"
-    "Detected categories: {categories}\n"
-    "Initial classification: {initial_classification}\n"
+SIGNIFICANCE_CLASSIFICATION_USER_TEMPLATE = (
+    "Analyze this website content change for business significance:\n\n"
+    "Content excerpt (changed/added text):\n{content_excerpt}\n\n"
     "Change magnitude: {magnitude}\n\n"
-    "Validate whether this change is genuinely significant for a VC portfolio"
-    " monitoring system.\n"
+    "Keyword hints from automated scanner:\n"
+    "  Detected terms: {keywords}\n"
+    "  Categories: {categories}\n\n"
+    "Classify this change independently. The keyword hints may be false positives.\n"
     "Respond with JSON only."
 )
 
 
-NEWS_SIGNIFICANCE_SYSTEM_PROMPT = (
-    "You are analyzing news articles for a venture capital portfolio monitoring"
-    " system.\n"
-    "Determine if the article represents a significant business event.\n\n"
+def build_significance_classification_prompt(
+    content_excerpt: str,
+    keywords: list[str],
+    categories: list[str],
+    magnitude: str,
+) -> tuple[str, str]:
+    """Build system and user prompts for significance classification.
+
+    Keywords and categories are passed as hints, not as the answer.
+    No initial_classification is provided to avoid anchoring bias.
+
+    Returns (system_prompt, user_prompt).
+    """
+    user_prompt = SIGNIFICANCE_CLASSIFICATION_USER_TEMPLATE.format(
+        content_excerpt=content_excerpt[:2000],
+        keywords=", ".join(keywords) if keywords else "none detected",
+        categories=", ".join(categories) if categories else "none",
+        magnitude=magnitude,
+    )
+    return SIGNIFICANCE_CLASSIFICATION_SYSTEM_PROMPT, user_prompt
+
+
+# --- Baseline Classification ---
+
+BASELINE_CLASSIFICATION_SYSTEM_PROMPT = (
+    "You are analyzing a company's website content for a venture capital portfolio"
+    " monitoring system.\n"
+    "This is a BASELINE analysis of the company's full website content, captured"
+    " for the first time. Your task is to identify any pre-existing signals about"
+    " the company's health and operational status.\n\n"
+    "Look for indicators such as:\n"
+    "- Company is operational and active (product pages, recent updates, hiring)\n"
+    "- Company has been acquired ('now part of X', 'acquired by X')\n"
+    "- Company has shut down or is winding down\n"
+    "- Recent funding announcements still on the homepage\n"
+    "- Signs of financial distress or legal issues\n"
+    "- Product launches or growth indicators\n\n"
+    "You will receive keyword hints from an automated scanner. These may contain"
+    " false positives -- use them as starting points but make your own judgment.\n\n"
     "Respond with a JSON object containing:\n"
     '- classification: "significant", "insignificant", or "uncertain"\n'
     '- sentiment: "positive", "negative", "neutral", or "mixed"\n'
     "- confidence: float between 0.0 and 1.0\n"
-    "- reasoning: brief explanation\n"
+    "- reasoning: (REQUIRED) 1-3 sentences explaining WHY you classified this way."
+    " What specific evidence did you find about the company's operational status?"
+    " If insignificant, explain why the keyword hints are not meaningful.\n"
+    "- validated_keywords: list of keyword hints you confirm are relevant\n"
+    "- false_positives: list of keyword hints that are false positives"
+)
+
+BASELINE_CLASSIFICATION_USER_TEMPLATE = (
+    "Analyze this company's website content for pre-existing health signals:\n\n"
+    "Website content excerpt:\n{content_excerpt}\n\n"
+    "Keyword hints from automated scanner:\n"
+    "  Detected terms: {keywords}\n"
+    "  Categories: {categories}\n\n"
+    "Determine if this company shows any significant pre-existing signals"
+    " (positive or negative) about its operational health.\n"
+    "Respond with JSON only."
+)
+
+
+def build_baseline_classification_prompt(
+    content_excerpt: str,
+    keywords: list[str],
+    categories: list[str],
+) -> tuple[str, str]:
+    """Build prompts for baseline significance classification.
+
+    Baseline analysis examines full website content (not a diff) to detect
+    pre-existing signals about company health.
+
+    Returns (system_prompt, user_prompt).
+    """
+    user_prompt = BASELINE_CLASSIFICATION_USER_TEMPLATE.format(
+        content_excerpt=content_excerpt[:2000],
+        keywords=", ".join(keywords) if keywords else "none detected",
+        categories=", ".join(categories) if categories else "none",
+    )
+    return BASELINE_CLASSIFICATION_SYSTEM_PROMPT, user_prompt
+
+
+# --- News Significance Classification ---
+
+NEWS_CLASSIFICATION_SYSTEM_PROMPT = (
+    "You are analyzing news articles for a venture capital portfolio monitoring"
+    " system.\n"
+    "Your task is to independently determine if a news article represents a"
+    " significant business event for the specified company.\n\n"
+    "You will receive keyword hints from an automated scanner. These may contain"
+    " false positives -- use them as starting points but classify independently.\n\n"
+    "Respond with a JSON object containing:\n"
+    '- classification: "significant", "insignificant", or "uncertain"\n'
+    '- sentiment: "positive", "negative", "neutral", or "mixed"\n'
+    "- confidence: float between 0.0 and 1.0\n"
+    "- reasoning: (REQUIRED) 1-3 sentences explaining WHY you classified this way."
+    " What makes this article significant or not for the company?\n"
     "- validated_keywords: list of confirmed relevant keywords\n"
     "- false_positives: list of false positive keywords"
 )
 
-NEWS_SIGNIFICANCE_USER_TEMPLATE = (
-    "Analyze this news article:\n\n"
+NEWS_CLASSIFICATION_USER_TEMPLATE = (
+    "Analyze this news article for business significance:\n\n"
+    "Company: {company_name}\n"
     "Title: {title}\n"
     "Source: {source}\n"
     "Content: {content}\n\n"
-    "Detected keywords: {keywords}\n"
-    "Company: {company_name}\n\n"
-    "Is this article significant for VC portfolio monitoring?"
-    " Respond with JSON only."
+    "Keyword hints from automated scanner: {keywords}\n\n"
+    "Is this article a significant business event for {company_name}?\n"
+    "Respond with JSON only."
 )
 
+
+def build_news_classification_prompt(
+    title: str,
+    source: str,
+    content: str,
+    keywords: list[str],
+    company_name: str,
+) -> tuple[str, str]:
+    """Build prompts for news significance classification.
+
+    Returns (system_prompt, user_prompt).
+    """
+    user_prompt = NEWS_CLASSIFICATION_USER_TEMPLATE.format(
+        title=title,
+        source=source,
+        content=content[:2000],
+        keywords=", ".join(keywords) if keywords else "none detected",
+        company_name=company_name,
+    )
+    return NEWS_CLASSIFICATION_SYSTEM_PROMPT, user_prompt
+
+
+# --- Company Verification (unchanged) ---
 
 COMPANY_VERIFICATION_SYSTEM_PROMPT = (
     "You are verifying whether a news article is about a specific company.\n"
@@ -73,45 +203,6 @@ COMPANY_VERIFICATION_USER_TEMPLATE = (
     " name?\n"
     "Respond with JSON only."
 )
-
-
-def build_significance_validation_prompt(
-    content_excerpt: str,
-    keywords: list[str],
-    categories: list[str],
-    initial_classification: str,
-    magnitude: str,
-) -> tuple[str, str]:
-    """Build system and user prompts for significance validation.
-
-    Returns (system_prompt, user_prompt).
-    """
-    user_prompt = SIGNIFICANCE_VALIDATION_USER_TEMPLATE.format(
-        content_excerpt=content_excerpt[:2000],
-        keywords=", ".join(keywords),
-        categories=", ".join(categories),
-        initial_classification=initial_classification,
-        magnitude=magnitude,
-    )
-    return SIGNIFICANCE_VALIDATION_SYSTEM_PROMPT, user_prompt
-
-
-def build_news_significance_prompt(
-    title: str,
-    source: str,
-    content: str,
-    keywords: list[str],
-    company_name: str,
-) -> tuple[str, str]:
-    """Build prompts for news significance validation."""
-    user_prompt = NEWS_SIGNIFICANCE_USER_TEMPLATE.format(
-        title=title,
-        source=source,
-        content=content[:2000],
-        keywords=", ".join(keywords),
-        company_name=company_name,
-    )
-    return NEWS_SIGNIFICANCE_SYSTEM_PROMPT, user_prompt
 
 
 def build_company_verification_prompt(

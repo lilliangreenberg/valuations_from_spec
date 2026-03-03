@@ -1,7 +1,8 @@
 """Baseline signal analysis service.
 
 Computes one-time baseline signals for a company's first snapshot by running
-keyword-based significance analysis on the full page content. This captures
+keyword-based significance analysis on the full page content, then using LLM
+classification to validate/override the keyword results. This captures
 pre-existing positive/negative signals (e.g., a company already shut down
 before the first snapshot was taken).
 
@@ -24,12 +25,21 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
+_LLM_CONTENT_LIMIT = 2000
+
 
 class BaselineAnalyzer:
     """Computes baseline signal analysis for company snapshots."""
 
-    def __init__(self, snapshot_repo: SnapshotRepository) -> None:
+    def __init__(
+        self,
+        snapshot_repo: SnapshotRepository,
+        llm_client: Any | None = None,
+        llm_enabled: bool = False,
+    ) -> None:
         self.snapshot_repo = snapshot_repo
+        self.llm_client = llm_client
+        self.llm_enabled = llm_enabled
 
     def analyze_baseline_for_snapshot(self, snapshot_id: int) -> dict[str, Any] | None:
         """Run baseline analysis on a single snapshot.
@@ -40,10 +50,33 @@ class BaselineAnalyzer:
         if not snapshot or not snapshot.get("content_markdown"):
             return None
 
+        content = snapshot["content_markdown"]
+
         result = analyze_content_significance(
-            snapshot["content_markdown"],
+            content,
             magnitude="minor",
         )
+
+        # LLM as primary classifier for baseline -- keywords passed as hints
+        if self.llm_enabled and self.llm_client:
+            try:
+                llm_result = self.llm_client.classify_baseline(
+                    content_excerpt=content[:_LLM_CONTENT_LIMIT],
+                    keywords=result.matched_keywords,
+                    categories=result.matched_categories,
+                )
+                if not llm_result.get("error"):
+                    result.classification = llm_result.get("classification", result.classification)
+                    result.sentiment = llm_result.get("sentiment", result.sentiment)
+                    result.confidence = llm_result.get("confidence", result.confidence)
+                    if llm_result.get("reasoning"):
+                        result.notes = llm_result["reasoning"]
+            except Exception as exc:
+                logger.warning(
+                    "llm_baseline_classification_failed",
+                    snapshot_id=snapshot_id,
+                    error=str(exc),
+                )
 
         baseline_data: dict[str, Any] = {
             "baseline_classification": result.classification,
@@ -108,6 +141,29 @@ class BaselineAnalyzer:
                     continue
 
                 result = analyze_content_significance(content, magnitude="minor")
+
+                # LLM as primary classifier for baseline -- keywords passed as hints
+                if self.llm_enabled and self.llm_client:
+                    try:
+                        llm_result = self.llm_client.classify_baseline(
+                            content_excerpt=content[:_LLM_CONTENT_LIMIT],
+                            keywords=result.matched_keywords,
+                            categories=result.matched_categories,
+                        )
+                        if not llm_result.get("error"):
+                            result.classification = llm_result.get(
+                                "classification", result.classification
+                            )
+                            result.sentiment = llm_result.get("sentiment", result.sentiment)
+                            result.confidence = llm_result.get("confidence", result.confidence)
+                            if llm_result.get("reasoning"):
+                                result.notes = llm_result["reasoning"]
+                    except Exception as exc:
+                        logger.warning(
+                            "llm_baseline_classification_failed",
+                            snapshot_id=snapshot["id"],
+                            error=str(exc),
+                        )
 
                 if not dry_run:
                     baseline_data: dict[str, Any] = {

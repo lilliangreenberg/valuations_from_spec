@@ -27,7 +27,7 @@ class Config(BaseSettings):
     max_retry_attempts: int = 2
     anthropic_api_key: str | None = None
     llm_model: str = "claude-haiku-4-5-20251001"
-    llm_validation_enabled: bool = False
+    llm_validation_enabled: bool = True
     kagi_api_key: str | None = None
     linkedin_headless: bool = False
     linkedin_profile_dir: str = "data/linkedin_profile"

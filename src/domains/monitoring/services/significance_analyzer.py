@@ -70,14 +70,13 @@ class SignificanceAnalyzer:
                     magnitude=record.get("change_magnitude", "minor"),
                 )
 
-                # Optional LLM validation
+                # LLM as primary classifier — keywords passed as hints
                 if self.llm_enabled and self.llm_client:
                     try:
-                        llm_result = self.llm_client.validate_significance(
+                        llm_result = self.llm_client.classify_significance(
                             content_excerpt=diff_text[:2000],
                             keywords=result.matched_keywords,
                             categories=result.matched_categories,
-                            initial_classification=result.classification,
                             magnitude=record.get("change_magnitude", "minor"),
                         )
                         if not llm_result.get("error"):
@@ -86,8 +85,10 @@ class SignificanceAnalyzer:
                             )
                             result.sentiment = llm_result.get("sentiment", result.sentiment)
                             result.confidence = llm_result.get("confidence", result.confidence)
+                            if llm_result.get("reasoning"):
+                                result.notes = llm_result["reasoning"]
                     except Exception as exc:
-                        logger.warning("llm_validation_failed", error=str(exc))
+                        logger.warning("llm_classification_failed", error=str(exc))
 
                 if not dry_run:
                     self.change_record_repo.update_significance(

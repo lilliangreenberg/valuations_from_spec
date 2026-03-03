@@ -1,4 +1,9 @@
-"""Anthropic LLM client for significance validation and company verification."""
+"""Anthropic LLM client for significance classification and company verification.
+
+The LLM acts as the PRIMARY classifier for significance analysis. Keyword matches
+from the automated scanner are passed as hints/context, but the LLM makes its own
+independent determination without being anchored by the keyword system's conclusion.
+"""
 
 from __future__ import annotations
 
@@ -9,9 +14,10 @@ import anthropic
 import structlog
 
 from src.core.llm_prompts import (
+    build_baseline_classification_prompt,
     build_company_verification_prompt,
-    build_news_significance_prompt,
-    build_significance_validation_prompt,
+    build_news_classification_prompt,
+    build_significance_classification_prompt,
 )
 from src.utils.retry import retry_with_logging
 
@@ -24,6 +30,15 @@ _RETRYABLE_ANTHROPIC_EXCEPTIONS = (
     anthropic.APIStatusError,
 )
 
+_FALLBACK_RESULT: dict[str, Any] = {
+    "classification": "uncertain",
+    "sentiment": "neutral",
+    "confidence": 0.5,
+    "reasoning": "",
+    "validated_keywords": [],
+    "false_positives": [],
+}
+
 
 class LLMClient:
     """Client for Anthropic LLM API."""
@@ -31,56 +46,54 @@ class LLMClient:
     def __init__(
         self,
         api_key: str,
-        model: str = "claude-haiku-4-5-20250924",
+        model: str = "claude-haiku-4-5-20251001",
     ) -> None:
         self.client = anthropic.Anthropic(api_key=api_key)
         self.model = model
 
     @retry_with_logging(max_attempts=2)
-    def validate_significance(
+    def classify_significance(
         self,
         content_excerpt: str,
         keywords: list[str],
         categories: list[str],
-        initial_classification: str,
         magnitude: str,
     ) -> dict[str, Any]:
-        """Validate significance classification using LLM.
+        """Classify significance of a content change using LLM as primary classifier.
+
+        Keywords and categories are passed as hints from the automated scanner,
+        not as the answer. The LLM makes an independent determination.
 
         Returns dict with: classification, sentiment, confidence, reasoning,
         validated_keywords, false_positives, error.
         """
-        system_prompt, user_prompt = build_significance_validation_prompt(
-            content_excerpt, keywords, categories, initial_classification, magnitude
+        system_prompt, user_prompt = build_significance_classification_prompt(
+            content_excerpt, keywords, categories, magnitude
         )
-
-        try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=500,
-                temperature=0.0,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
-            )
-
-            text = response.content[0].text
-            return self._parse_json_response(text)
-        except _RETRYABLE_ANTHROPIC_EXCEPTIONS:
-            raise  # Let retry handle these
-        except Exception as exc:
-            logger.warning("llm_validation_failed", error=str(exc))
-            return {
-                "classification": "uncertain",
-                "sentiment": "neutral",
-                "confidence": 0.5,
-                "reasoning": f"LLM validation failed: {exc}",
-                "validated_keywords": [],
-                "false_positives": [],
-                "error": str(exc),
-            }
+        return self._call_llm(system_prompt, user_prompt, "classify_significance")
 
     @retry_with_logging(max_attempts=2)
-    def validate_news_significance(
+    def classify_baseline(
+        self,
+        content_excerpt: str,
+        keywords: list[str],
+        categories: list[str],
+    ) -> dict[str, Any]:
+        """Classify baseline signals from a company's first website snapshot.
+
+        Analyzes full page content (not a diff) for pre-existing health signals
+        like company closure, acquisition, or active operations.
+
+        Returns dict with: classification, sentiment, confidence, reasoning,
+        validated_keywords, false_positives, error.
+        """
+        system_prompt, user_prompt = build_baseline_classification_prompt(
+            content_excerpt, keywords, categories
+        )
+        return self._call_llm(system_prompt, user_prompt, "classify_baseline")
+
+    @retry_with_logging(max_attempts=2)
+    def classify_news_significance(
         self,
         title: str,
         source: str,
@@ -88,35 +101,15 @@ class LLMClient:
         keywords: list[str],
         company_name: str,
     ) -> dict[str, Any]:
-        """Validate news article significance using LLM."""
-        system_prompt, user_prompt = build_news_significance_prompt(
+        """Classify significance of a news article using LLM as primary classifier.
+
+        Returns dict with: classification, sentiment, confidence, reasoning,
+        validated_keywords, false_positives, error.
+        """
+        system_prompt, user_prompt = build_news_classification_prompt(
             title, source, content, keywords, company_name
         )
-
-        try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=500,
-                temperature=0.0,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
-            )
-
-            text = response.content[0].text
-            return self._parse_json_response(text)
-        except _RETRYABLE_ANTHROPIC_EXCEPTIONS:
-            raise
-        except Exception as exc:
-            logger.warning("llm_news_validation_failed", error=str(exc))
-            return {
-                "classification": "uncertain",
-                "sentiment": "neutral",
-                "confidence": 0.5,
-                "reasoning": f"LLM validation failed: {exc}",
-                "validated_keywords": [],
-                "false_positives": [],
-                "error": str(exc),
-            }
+        return self._call_llm(system_prompt, user_prompt, "classify_news_significance")
 
     @retry_with_logging(max_attempts=2)
     def verify_company_identity(
@@ -154,6 +147,38 @@ class LLMClient:
         except Exception as exc:
             logger.warning("llm_company_verification_failed", error=str(exc))
             return False, f"Verification failed: {exc}"
+
+    def _call_llm(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        operation: str,
+    ) -> dict[str, Any]:
+        """Common LLM call pattern for classification methods.
+
+        Returns parsed JSON dict on success, or dict with 'error' key on failure.
+        Callers should check for the 'error' key to determine if fallback is needed.
+        """
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=800,
+                temperature=0.0,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+
+            text = response.content[0].text
+            return self._parse_json_response(text)
+        except _RETRYABLE_ANTHROPIC_EXCEPTIONS:
+            raise  # Let retry handle these
+        except Exception as exc:
+            logger.warning(f"{operation}_failed", error=str(exc))
+            return {
+                **_FALLBACK_RESULT,
+                "reasoning": f"LLM classification failed: {exc}",
+                "error": str(exc),
+            }
 
     def _parse_json_response(self, text: str) -> dict[str, Any]:
         """Parse a JSON response from the LLM, handling markdown code blocks."""
