@@ -282,9 +282,33 @@ class NewsMonitorManager:
                 llm_match=llm_match,
             )
 
-            sig_result = analyze_content_significance(
-                article.get("snippet", "") + " " + article.get("title", ""),
-            )
+            combined_text = article.get("snippet", "") + " " + article.get("title", "")
+            sig_result = analyze_content_significance(combined_text)
+
+            # LLM as primary classifier -- keywords passed as hints
+            if self.llm_client:
+                try:
+                    llm_result = self.llm_client.classify_news_significance(
+                        title=article.get("title", ""),
+                        source=article.get("source", ""),
+                        content=article.get("snippet", ""),
+                        keywords=sig_result.matched_keywords,
+                        company_name=company_name,
+                    )
+                    if not llm_result.get("error"):
+                        sig_result.classification = llm_result.get(
+                            "classification", sig_result.classification
+                        )
+                        sig_result.sentiment = llm_result.get("sentiment", sig_result.sentiment)
+                        sig_result.confidence = llm_result.get("confidence", sig_result.confidence)
+                        if llm_result.get("reasoning"):
+                            sig_result.notes = llm_result["reasoning"]
+                except Exception as exc:
+                    logger.warning(
+                        "llm_news_classification_failed",
+                        article_url=article.get("url", ""),
+                        error=str(exc),
+                    )
 
             self.news_repo.store_news_article(
                 {

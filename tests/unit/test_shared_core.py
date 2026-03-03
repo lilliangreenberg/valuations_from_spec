@@ -25,9 +25,10 @@ from src.core.data_access import (
 from src.core.duplicate_resolver import deduplicate_blog_links, deduplicate_links
 from src.core.link_aggregator import aggregate_links_from_pages, merge_discovery_results
 from src.core.llm_prompts import (
+    build_baseline_classification_prompt,
     build_company_verification_prompt,
-    build_news_significance_prompt,
-    build_significance_validation_prompt,
+    build_news_classification_prompt,
+    build_significance_classification_prompt,
 )
 from src.core.result_aggregation import aggregate_batch_results, format_batch_summary
 from src.core.social_account_extractor import extract_handle
@@ -962,73 +963,152 @@ class TestExtractHandle:
 # ──────────────────────────────────────────────────────────────────────
 
 
-class TestBuildSignificanceValidationPrompt:
-    """Tests for build_significance_validation_prompt."""
+class TestBuildSignificanceClassificationPrompt:
+    """Tests for build_significance_classification_prompt."""
 
     def test_returns_tuple(self) -> None:
-        system, user = build_significance_validation_prompt(
+        system, user = build_significance_classification_prompt(
             content_excerpt="company raised $10M",
             keywords=["raised", "funding"],
             categories=["funding"],
-            initial_classification="significant",
             magnitude="MAJOR",
         )
         assert isinstance(system, str)
         assert isinstance(user, str)
 
     def test_content_in_user_prompt(self) -> None:
-        _, user = build_significance_validation_prompt(
+        _, user = build_significance_classification_prompt(
             content_excerpt="company raised $10M",
             keywords=["raised"],
             categories=["funding"],
-            initial_classification="significant",
             magnitude="MAJOR",
         )
         assert "company raised $10M" in user
         assert "raised" in user
         assert "funding" in user
-        assert "significant" in user
         assert "MAJOR" in user
 
+    def test_no_initial_classification_in_prompt(self) -> None:
+        """The prompt must NOT contain 'Initial classification' to avoid anchoring."""
+        system, user = build_significance_classification_prompt(
+            content_excerpt="company raised $10M",
+            keywords=["raised"],
+            categories=["funding"],
+            magnitude="MAJOR",
+        )
+        assert "initial classification" not in user.lower()
+        assert "initial classification" not in system.lower()
+
     def test_system_prompt_mentions_vc(self) -> None:
-        system, _ = build_significance_validation_prompt(
+        system, _ = build_significance_classification_prompt(
             content_excerpt="x",
             keywords=[],
             categories=[],
-            initial_classification="uncertain",
             magnitude="MINOR",
         )
         assert "venture capital" in system.lower()
 
+    def test_system_prompt_mentions_false_positives(self) -> None:
+        system, _ = build_significance_classification_prompt(
+            content_excerpt="x",
+            keywords=[],
+            categories=[],
+            magnitude="MINOR",
+        )
+        assert "false positive" in system.lower()
+
     def test_content_truncated_to_2000(self) -> None:
         long_content = "x" * 5000
-        _, user = build_significance_validation_prompt(
+        _, user = build_significance_classification_prompt(
             content_excerpt=long_content,
             keywords=[],
             categories=[],
-            initial_classification="uncertain",
             magnitude="MINOR",
         )
-        # The truncated content should appear, but not the full 5000 chars
         assert "x" * 2000 in user
         assert "x" * 2001 not in user
 
-    def test_empty_keywords(self) -> None:
-        _, user = build_significance_validation_prompt(
+    def test_empty_keywords_shows_none_detected(self) -> None:
+        _, user = build_significance_classification_prompt(
             content_excerpt="text",
             keywords=[],
             categories=[],
-            initial_classification="uncertain",
             magnitude="MINOR",
         )
-        assert "Detected keywords:" in user
+        assert "none detected" in user
+
+    def test_keywords_framed_as_hints(self) -> None:
+        _, user = build_significance_classification_prompt(
+            content_excerpt="text",
+            keywords=["funding"],
+            categories=["funding_investment"],
+            magnitude="MINOR",
+        )
+        assert "hint" in user.lower() or "Keyword hints" in user
 
 
-class TestBuildNewsSignificancePrompt:
-    """Tests for build_news_significance_prompt."""
+class TestBuildBaselineClassificationPrompt:
+    """Tests for build_baseline_classification_prompt."""
 
     def test_returns_tuple(self) -> None:
-        system, user = build_news_significance_prompt(
+        system, user = build_baseline_classification_prompt(
+            content_excerpt="Welcome to Acme Corp",
+            keywords=["expansion"],
+            categories=["expansion"],
+        )
+        assert isinstance(system, str)
+        assert isinstance(user, str)
+
+    def test_no_magnitude_parameter(self) -> None:
+        """Baseline analysis has no change magnitude -- it's full page content."""
+        _, user = build_baseline_classification_prompt(
+            content_excerpt="Welcome to Acme Corp",
+            keywords=[],
+            categories=[],
+        )
+        assert "magnitude" not in user.lower()
+
+    def test_system_prompt_mentions_baseline(self) -> None:
+        system, _ = build_baseline_classification_prompt(
+            content_excerpt="x",
+            keywords=[],
+            categories=[],
+        )
+        assert "baseline" in system.lower() or "first time" in system.lower()
+
+    def test_system_prompt_mentions_operational_status(self) -> None:
+        system, _ = build_baseline_classification_prompt(
+            content_excerpt="x",
+            keywords=[],
+            categories=[],
+        )
+        assert "operational" in system.lower() or "shut down" in system.lower()
+
+    def test_no_initial_classification_in_prompt(self) -> None:
+        system, user = build_baseline_classification_prompt(
+            content_excerpt="x",
+            keywords=[],
+            categories=[],
+        )
+        assert "initial classification" not in user.lower()
+        assert "initial classification" not in system.lower()
+
+    def test_content_truncated_to_2000(self) -> None:
+        long_content = "z" * 5000
+        _, user = build_baseline_classification_prompt(
+            content_excerpt=long_content,
+            keywords=[],
+            categories=[],
+        )
+        assert "z" * 2000 in user
+        assert "z" * 2001 not in user
+
+
+class TestBuildNewsClassificationPrompt:
+    """Tests for build_news_classification_prompt."""
+
+    def test_returns_tuple(self) -> None:
+        system, user = build_news_classification_prompt(
             title="Acme raises $50M",
             source="techcrunch.com",
             content="Acme Corp announced...",
@@ -1039,7 +1119,7 @@ class TestBuildNewsSignificancePrompt:
         assert isinstance(user, str)
 
     def test_all_fields_present_in_user_prompt(self) -> None:
-        _, user = build_news_significance_prompt(
+        _, user = build_news_classification_prompt(
             title="Big News",
             source="reuters.com",
             content="The company announced...",
@@ -1052,9 +1132,20 @@ class TestBuildNewsSignificancePrompt:
         assert "announced" in user
         assert "Test Inc" in user
 
+    def test_no_initial_classification_in_prompt(self) -> None:
+        system, user = build_news_classification_prompt(
+            title="T",
+            source="S",
+            content="C",
+            keywords=[],
+            company_name="X",
+        )
+        assert "initial classification" not in user.lower()
+        assert "initial classification" not in system.lower()
+
     def test_content_truncated_to_2000(self) -> None:
         long_content = "a" * 4000
-        _, user = build_news_significance_prompt(
+        _, user = build_news_classification_prompt(
             title="T",
             source="S",
             content=long_content,

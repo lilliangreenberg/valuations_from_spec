@@ -25,6 +25,8 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
+_LLM_CONTENT_LIMIT = 2000
+
 
 class ChangeDetector:
     """Orchestrates change detection between snapshots."""
@@ -34,10 +36,14 @@ class ChangeDetector:
         snapshot_repo: SnapshotRepository,
         change_record_repo: ChangeRecordRepository,
         company_repo: CompanyRepository,
+        llm_client: Any | None = None,
+        llm_enabled: bool = False,
     ) -> None:
         self.snapshot_repo = snapshot_repo
         self.change_record_repo = change_record_repo
         self.company_repo = company_repo
+        self.llm_client = llm_client
+        self.llm_enabled = llm_enabled
 
     def detect_all_changes(self, limit: int | None = None) -> dict[str, Any]:
         """Detect changes for companies with 2+ snapshots.
@@ -97,6 +103,35 @@ class ChangeDetector:
                             diff_text,
                             magnitude=magnitude.value,
                         )
+
+                        # LLM as primary classifier — keywords passed as hints
+                        if self.llm_enabled and self.llm_client:
+                            try:
+                                llm_result = self.llm_client.classify_significance(
+                                    content_excerpt=diff_text[:_LLM_CONTENT_LIMIT],
+                                    keywords=sig_result.matched_keywords,
+                                    categories=sig_result.matched_categories,
+                                    magnitude=magnitude.value,
+                                )
+                                if not llm_result.get("error"):
+                                    sig_result.classification = llm_result.get(
+                                        "classification", sig_result.classification
+                                    )
+                                    sig_result.sentiment = llm_result.get(
+                                        "sentiment", sig_result.sentiment
+                                    )
+                                    sig_result.confidence = llm_result.get(
+                                        "confidence", sig_result.confidence
+                                    )
+                                    if llm_result.get("reasoning"):
+                                        sig_result.notes = llm_result["reasoning"]
+                            except Exception as exc:
+                                logger.warning(
+                                    "llm_classification_failed",
+                                    company_id=company_id,
+                                    error=str(exc),
+                                )
+
                         record_data.update(
                             {
                                 "significance_classification": sig_result.classification,

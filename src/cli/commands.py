@@ -151,7 +151,20 @@ def detect_changes(batch_size: int, limit: int | None, output_format: str) -> No
     snapshot_repo = SnapshotRepository(db)
     change_repo = ChangeRecordRepository(db)
     company_repo = CompanyRepository(db)
-    detector = ChangeDetector(snapshot_repo, change_repo, company_repo)
+
+    llm_client = None
+    if config.llm_validation_enabled and config.anthropic_api_key:
+        from src.services.llm_client import LLMClient
+
+        llm_client = LLMClient(config.anthropic_api_key, config.llm_model)
+
+    detector = ChangeDetector(
+        snapshot_repo,
+        change_repo,
+        company_repo,
+        llm_client=llm_client,
+        llm_enabled=bool(llm_client),
+    )
 
     click.echo("[INFO] Detecting changes...")
     result = detector.detect_all_changes(limit=limit)
@@ -868,7 +881,18 @@ def analyze_baseline(limit: int | None, dry_run: bool) -> None:
     from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
 
     snapshot_repo = SnapshotRepository(db)
-    analyzer = BaselineAnalyzer(snapshot_repo)
+
+    llm_client = None
+    if config.llm_validation_enabled and config.anthropic_api_key:
+        from src.services.llm_client import LLMClient
+
+        llm_client = LLMClient(config.anthropic_api_key, config.llm_model)
+
+    analyzer = BaselineAnalyzer(
+        snapshot_repo,
+        llm_client=llm_client,
+        llm_enabled=bool(llm_client),
+    )
 
     mode = "DRY RUN" if dry_run else "analyzing"
     click.echo(f"[INFO] {mode} baseline signals...")

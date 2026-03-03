@@ -32,9 +32,10 @@ class NewsAnalyzer:
         combined = f"{title} {content}"
         result = analyze_content_significance(combined)
 
+        # LLM as primary classifier -- keywords passed as hints
         if self.llm_enabled and self.llm_client:
             try:
-                llm_result = self.llm_client.validate_news_significance(
+                llm_result = self.llm_client.classify_news_significance(
                     title=title,
                     source="",
                     content=content,
@@ -45,8 +46,10 @@ class NewsAnalyzer:
                     result.classification = llm_result.get("classification", result.classification)
                     result.sentiment = llm_result.get("sentiment", result.sentiment)
                     result.confidence = llm_result.get("confidence", result.confidence)
+                    if llm_result.get("reasoning"):
+                        result.notes = llm_result["reasoning"]
             except Exception as exc:
-                logger.warning("llm_news_analysis_failed", error=str(exc))
+                logger.warning("llm_news_classification_failed", error=str(exc))
 
         return {
             "significance_classification": result.classification,
