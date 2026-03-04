@@ -50,7 +50,7 @@ class FirecrawlClient:
         try:
             result = self.client.scrape(
                 url,
-                formats=["markdown", "html"],
+                formats=["markdown", "html", "branding"],
                 only_main_content=_ONLY_MAIN_CONTENT,
                 block_ads=False,
                 wait_for=2000,
@@ -62,6 +62,7 @@ class FirecrawlClient:
             # result is a Document object with Pydantic metadata
             metadata = getattr(result, "metadata", None)
             status_code = _get_metadata_field(metadata, "status_code", "statusCode")
+            branding = getattr(result, "branding", None)
 
             return {
                 "success": True,
@@ -73,6 +74,7 @@ class FirecrawlClient:
                 "has_paywall": False,
                 "has_auth_required": False,
                 "error": None,
+                "branding": branding,
             }
         except Exception as exc:
             logger.error("firecrawl_scrape_failed", url=url, error=str(exc))
@@ -86,6 +88,7 @@ class FirecrawlClient:
                 "has_paywall": False,
                 "has_auth_required": False,
                 "error": str(exc),
+                "branding": None,
             }
 
     def batch_capture_snapshots(
@@ -103,7 +106,7 @@ class FirecrawlClient:
         try:
             batch_kwargs: dict[str, Any] = {
                 "urls": urls,
-                "formats": ["markdown", "html"],
+                "formats": ["markdown", "html", "branding"],
                 "only_main_content": _ONLY_MAIN_CONTENT,
                 "block_ads": False,
                 "wait_for": 2000,
@@ -122,12 +125,14 @@ class FirecrawlClient:
                 for doc in result.data:
                     doc_metadata = getattr(doc, "metadata", None)
                     source_url = _get_metadata_field(doc_metadata, "source_url", "sourceURL") or ""
+                    doc_branding = getattr(doc, "branding", None)
                     documents.append(
                         {
                             "markdown": getattr(doc, "markdown", None) or "",
                             "html": getattr(doc, "html", None) or "",
                             "metadata": doc_metadata,
                             "url": source_url,
+                            "branding": doc_branding,
                         }
                     )
 
@@ -168,7 +173,7 @@ class FirecrawlClient:
                 url=url,
                 limit=max_pages,
                 scrape_options={
-                    "formats": ["markdown", "html"],
+                    "formats": ["markdown", "html", "branding"],
                     "only_main_content": _ONLY_MAIN_CONTENT,
                     "wait_for": 2000,
                     "timeout": 30000,
@@ -180,12 +185,14 @@ class FirecrawlClient:
                 for page in result.data:
                     page_metadata = getattr(page, "metadata", None)
                     source_url = _get_metadata_field(page_metadata, "source_url", "sourceURL") or ""
+                    page_branding = getattr(page, "branding", None)
                     pages.append(
                         {
                             "markdown": getattr(page, "markdown", None) or "",
                             "html": getattr(page, "html", None) or "",
                             "metadata": page_metadata,
                             "url": source_url,
+                            "branding": page_branding,
                         }
                     )
 

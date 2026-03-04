@@ -19,6 +19,9 @@ class ExtractionLocation(StrEnum):
     NAV = "nav"
     FAVICON = "favicon"
     OG_IMAGE = "og_image"
+    JSONLD = "jsonld"
+    BODY = "body"
+    BRANDING = "branding"
 
 
 class CompanyLogo(BaseModel):

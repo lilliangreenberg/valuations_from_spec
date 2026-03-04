@@ -1085,38 +1085,219 @@ class TestAccountClassifier:
 
 
 class TestLogoService:
-    """Contract tests for LogoService HTML extraction."""
+    """Contract tests for LogoService HTML extraction.
 
-    def test_extracts_og_image(self) -> None:
-        """og:image meta tag is found and returned."""
+    Strategy priority order:
+      0. JSON-LD schema.org Organization logo
+      1. Header/nav image linked to homepage
+      2. First img with 'logo' in class/id/alt (outside third-party sections)
+      3. Favicon / apple-touch-icon
+      4. og:image (lowest priority)
+    """
+
+    # -- Strategy 0: JSON-LD --
+
+    def test_jsonld_organization_logo_is_highest_priority(self) -> None:
+        """JSON-LD Organization logo wins over all other strategies."""
         service = LogoService()
         html = (
             "<html><head>"
-            '<meta property="og:image" '
-            'content="https://example.com/logo.png">'
+            '<script type="application/ld+json">'
+            '{"@type": "Organization", "name": "Acme", '
+            '"logo": "https://acme.com/brand-logo.svg"}'
+            "</script>"
+            '<meta property="og:image" content="https://acme.com/banner.png">'
+            "</head><body>"
+            '<header><a href="/"><img src="/header-logo.png" alt="Logo"></a></header>'
+            "</body></html>"
+        )
+        result = service.extract_logo_from_html(html, "https://acme.com")
+        assert result is not None
+        assert result["source_url"] == "https://acme.com/brand-logo.svg"
+        assert result["extraction_location"] == "jsonld"
+
+    def test_jsonld_logo_as_object_with_url(self) -> None:
+        """JSON-LD logo can be an object with a 'url' property."""
+        service = LogoService()
+        html = (
+            "<html><head>"
+            '<script type="application/ld+json">'
+            '{"@type": "Organization", "logo": '
+            '{"@type": "ImageObject", "url": "https://acme.com/logo.png"}}'
+            "</script>"
             "</head><body></body></html>"
         )
-        result = service.extract_logo_from_html(html, "https://example.com")
+        result = service.extract_logo_from_html(html, "https://acme.com")
         assert result is not None
-        assert result["source_url"] == "https://example.com/logo.png"
-        assert result["extraction_location"] == "og_image"
+        assert result["source_url"] == "https://acme.com/logo.png"
+        assert result["extraction_location"] == "jsonld"
 
-    def test_extracts_logo_img_tag(self) -> None:
-        """img tag with 'logo' in alt or class is found."""
+    def test_jsonld_nested_in_array(self) -> None:
+        """JSON-LD with @graph array containing Organization."""
+        service = LogoService()
+        html = (
+            "<html><head>"
+            '<script type="application/ld+json">'
+            '[{"@type": "WebSite"}, '
+            '{"@type": "Organization", "logo": "https://acme.com/logo.svg"}]'
+            "</script>"
+            "</head><body></body></html>"
+        )
+        result = service.extract_logo_from_html(html, "https://acme.com")
+        assert result is not None
+        assert result["source_url"] == "https://acme.com/logo.svg"
+
+    def test_jsonld_skips_third_party_logo_url(self) -> None:
+        """JSON-LD logo is skipped if it matches a third-party URL pattern."""
+        service = LogoService()
+        html = (
+            "<html><head>"
+            '<script type="application/ld+json">'
+            '{"@type": "Organization", '
+            '"logo": "https://ycombinator.com/logo.png"}'
+            "</script>"
+            '<link rel="icon" href="/favicon.ico">'
+            "</head><body></body></html>"
+        )
+        result = service.extract_logo_from_html(html, "https://acme.com")
+        assert result is not None
+        # Falls through to favicon
+        assert result["source_url"] == "/favicon.ico"
+
+    def test_jsonld_handles_malformed_json(self) -> None:
+        """Malformed JSON-LD does not crash; falls through to next strategy."""
+        service = LogoService()
+        html = (
+            "<html><head>"
+            '<script type="application/ld+json">{not valid json</script>'
+            '<link rel="icon" href="/favicon.ico">'
+            "</head><body></body></html>"
+        )
+        result = service.extract_logo_from_html(html, "https://acme.com")
+        assert result is not None
+        assert result["source_url"] == "/favicon.ico"
+
+    # -- Strategy 1: Header/nav linked to homepage --
+
+    def test_header_nav_logo_linked_to_homepage(self) -> None:
+        """Image in <header> inside <a href="/"> is extracted."""
         service = LogoService()
         html = (
             "<html><head></head><body>"
-            '<img src="/img/logo.svg" alt="Company Logo" '
-            'class="site-logo">'
+            '<header><a href="/"><img src="/brand.svg" alt="Home"></a></header>'
+            "</body></html>"
+        )
+        result = service.extract_logo_from_html(html, "https://example.com")
+        assert result is not None
+        assert result["source_url"] == "/brand.svg"
+        assert result["extraction_location"] == "header"
+
+    def test_nav_logo_linked_to_domain(self) -> None:
+        """Image in <nav> linked to the full domain URL is extracted."""
+        service = LogoService()
+        html = (
+            "<html><head></head><body>"
+            '<nav><a href="https://example.com/">'
+            '<img src="/logo.png" alt="Example">'
+            "</a></nav>"
+            "</body></html>"
+        )
+        result = service.extract_logo_from_html(html, "https://example.com")
+        assert result is not None
+        assert result["source_url"] == "/logo.png"
+        assert result["extraction_location"] == "header"
+
+    def test_header_logo_with_logo_class_fallback(self) -> None:
+        """Image in <header> with 'logo' class found even without homepage link."""
+        service = LogoService()
+        html = (
+            "<html><head></head><body>"
+            '<header><img src="/site-logo.svg" class="logo" alt=""></header>'
+            "</body></html>"
+        )
+        result = service.extract_logo_from_html(html, "https://example.com")
+        assert result is not None
+        assert result["source_url"] == "/site-logo.svg"
+        assert result["extraction_location"] == "header"
+
+    def test_header_logo_beats_body_logo(self) -> None:
+        """Header logo wins over a logo in the body."""
+        service = LogoService()
+        html = (
+            "<html><head></head><body>"
+            '<header><a href="/"><img src="/header-logo.svg"></a></header>'
+            '<section><img src="/partner-logo.png" class="logo"></section>'
+            "</body></html>"
+        )
+        result = service.extract_logo_from_html(html, "https://example.com")
+        assert result is not None
+        assert result["source_url"] == "/header-logo.svg"
+
+    # -- Strategy 2: Logo keyword img (outside third-party sections) --
+
+    def test_logo_keyword_in_body_found(self) -> None:
+        """img with 'logo' in class found in body when no header/nav match."""
+        service = LogoService()
+        html = (
+            "<html><head></head><body>"
+            '<img src="/img/logo.svg" alt="Company Logo" class="site-logo">'
             "</body></html>"
         )
         result = service.extract_logo_from_html(html, "https://example.com")
         assert result is not None
         assert result["source_url"] == "/img/logo.svg"
-        assert result["extraction_location"] == "header"
+        assert result["extraction_location"] == "body"
+
+    def test_logo_inside_backed_by_section_is_skipped(self) -> None:
+        """Logo inside a 'Backed by' section is rejected as third-party."""
+        service = LogoService()
+        html = (
+            "<html><head></head><body>"
+            "<section>"
+            "<h3>Backed by</h3>"
+            '<img src="/investor-logo.png" class="logo">'
+            "</section>"
+            '<link rel="icon" href="/favicon.ico">'
+            "</body></html>"
+        )
+        result = service.extract_logo_from_html(html, "https://example.com")
+        assert result is not None
+        # Falls through to favicon
+        assert result["source_url"] == "/favicon.ico"
+
+    def test_logo_inside_trusted_by_section_is_skipped(self) -> None:
+        """Logo inside a 'Trusted by' section is rejected."""
+        service = LogoService()
+        html = (
+            "<html><head></head><body>"
+            '<div class="social-proof">'
+            "<h2>Trusted by leading companies</h2>"
+            '<img src="/client1.png" class="logo">'
+            '<img src="/client2.png" class="logo">'
+            "</div>"
+            "</body></html>"
+        )
+        result = service.extract_logo_from_html(html, "https://example.com")
+        assert result is None
+
+    def test_logo_inside_partner_logo_grid_is_skipped(self) -> None:
+        """Logo inside a container with partner-logo class is rejected."""
+        service = LogoService()
+        html = (
+            "<html><head></head><body>"
+            '<div class="partner-logo-grid">'
+            '<img src="/yc.png" class="logo">'
+            '<img src="/a16z.png" class="logo">'
+            "</div>"
+            "</body></html>"
+        )
+        result = service.extract_logo_from_html(html, "https://example.com")
+        assert result is None
+
+    # -- Strategy 3: Favicon --
 
     def test_extracts_favicon(self) -> None:
-        """Favicon link tag found when no og:image or logo img."""
+        """Favicon link tag found when no higher-priority match."""
         service = LogoService()
         html = '<html><head><link rel="icon" href="/favicon.ico"></head><body></body></html>'
         result = service.extract_logo_from_html(html, "https://example.com")
@@ -1124,10 +1305,68 @@ class TestLogoService:
         assert result["source_url"] == "/favicon.ico"
         assert result["extraction_location"] == "favicon"
 
+    def test_prefers_apple_touch_icon_over_favicon(self) -> None:
+        """Apple touch icon (larger) is preferred over favicon (smaller)."""
+        service = LogoService()
+        html = (
+            "<html><head>"
+            '<link rel="apple-touch-icon" href="/apple-icon-180.png">'
+            '<link rel="icon" href="/favicon.ico">'
+            "</head><body></body></html>"
+        )
+        result = service.extract_logo_from_html(html, "https://example.com")
+        assert result is not None
+        assert result["source_url"] == "/apple-icon-180.png"
+
+    # -- Strategy 4: og:image (lowest priority) --
+
+    def test_og_image_is_lowest_priority(self) -> None:
+        """og:image only returned when no other strategy matches."""
+        service = LogoService()
+        html = (
+            "<html><head>"
+            '<meta property="og:image" content="https://example.com/banner.png">'
+            "</head><body></body></html>"
+        )
+        result = service.extract_logo_from_html(html, "https://example.com")
+        assert result is not None
+        assert result["source_url"] == "https://example.com/banner.png"
+        assert result["extraction_location"] == "og_image"
+
+    def test_og_image_loses_to_header_logo(self) -> None:
+        """og:image is not returned when a header logo exists."""
+        service = LogoService()
+        html = (
+            "<html><head>"
+            '<meta property="og:image" content="https://example.com/banner.png">'
+            "</head><body>"
+            '<header><a href="/"><img src="/real-logo.svg"></a></header>'
+            "</body></html>"
+        )
+        result = service.extract_logo_from_html(html, "https://example.com")
+        assert result is not None
+        assert result["source_url"] == "/real-logo.svg"
+        assert result["extraction_location"] == "header"
+
+    # -- General --
+
     def test_returns_none_when_nothing_found(self) -> None:
         """Returns None when no logo-related elements found."""
         service = LogoService()
         html = "<html><head></head><body><p>No logos here</p></body></html>"
+        result = service.extract_logo_from_html(html, "https://example.com")
+        assert result is None
+
+    def test_skips_yc_logo_url(self) -> None:
+        """Known third-party URLs (YC) are filtered at all strategy levels."""
+        service = LogoService()
+        html = (
+            "<html><head></head><body>"
+            '<header><a href="/">'
+            '<img src="https://ycombinator.com/logo.png" class="logo">'
+            "</a></header>"
+            "</body></html>"
+        )
         result = service.extract_logo_from_html(html, "https://example.com")
         assert result is None
 
@@ -1371,3 +1610,505 @@ class TestNewsAnalyzer:
             company_name="Alpha Inc",
         )
         assert result["significance_classification"] in ("insignificant", "uncertain")
+
+
+# ===========================================================================
+# 12. BrandingLogoProcessor
+# ===========================================================================
+
+
+class TestBrandingLogoProcessor:
+    """Contract tests for BrandingLogoProcessor with mocked HTTP downloads."""
+
+    def test_process_branding_logo_stores_logo(self, db: Database) -> None:
+        """Happy path: branding logo is downloaded and stored."""
+        from io import BytesIO
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from PIL import Image
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        processor = BrandingLogoProcessor(logo_repo)
+
+        # Create a valid small PNG image
+        img = Image.new("RGB", (64, 64), color="red")
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        mock_response = MagicMock()
+        mock_response.content = png_bytes
+        mock_response.headers = {"Content-Type": "image/png"}
+        mock_response.raise_for_status = MagicMock()
+
+        branding = SimpleNamespace(
+            logo="https://alpha.com/logo.png",
+            images=None,
+        )
+
+        with patch(
+            "src.domains.discovery.services.branding_logo_processor.requests.get",
+            return_value=mock_response,
+        ):
+            result = processor.process_branding_logo(cid, branding)
+
+        assert result is True
+        stored = logo_repo.get_company_logo(cid)
+        assert stored is not None
+        assert stored["source_url"] == "https://alpha.com/logo.png"
+        assert stored["extraction_location"] == "branding"
+        assert stored["perceptual_hash"] != ""
+        assert stored["image_format"] == "PNG"
+
+    def test_process_branding_logo_returns_false_when_no_url(
+        self,
+        db: Database,
+    ) -> None:
+        """Returns False when branding data has no valid logo URL."""
+        from types import SimpleNamespace
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        processor = BrandingLogoProcessor(logo_repo)
+
+        branding = SimpleNamespace(logo=None, images=None)
+        result = processor.process_branding_logo(cid, branding)
+
+        assert result is False
+        assert logo_repo.get_company_logo(cid) is None
+
+    def test_process_branding_logo_handles_download_failure(
+        self,
+        db: Database,
+    ) -> None:
+        """Returns False on download failure without crashing."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        processor = BrandingLogoProcessor(logo_repo)
+
+        branding = SimpleNamespace(
+            logo="https://alpha.com/logo.png",
+            images=None,
+        )
+
+        with patch(
+            "src.domains.discovery.services.branding_logo_processor.requests.get",
+            side_effect=ConnectionError("timeout"),
+        ):
+            result = processor.process_branding_logo(cid, branding)
+
+        assert result is False
+        assert logo_repo.get_company_logo(cid) is None
+
+    def test_process_branding_logo_handles_non_image_response(
+        self,
+        db: Database,
+    ) -> None:
+        """Returns False when response is not an image."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        processor = BrandingLogoProcessor(logo_repo)
+
+        mock_response = MagicMock()
+        mock_response.content = b"<html>Not an image</html>"
+        mock_response.headers = {"Content-Type": "text/html"}
+        mock_response.raise_for_status = MagicMock()
+
+        branding = SimpleNamespace(
+            logo="https://alpha.com/logo.png",
+            images=None,
+        )
+
+        with patch(
+            "src.domains.discovery.services.branding_logo_processor.requests.get",
+            return_value=mock_response,
+        ):
+            result = processor.process_branding_logo(cid, branding)
+
+        assert result is False
+
+    def test_company_has_logo_true_when_exists(self, db: Database) -> None:
+        """company_has_logo returns True when logo exists in DB."""
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        processor = BrandingLogoProcessor(logo_repo)
+
+        # Insert a logo directly
+        logo_repo.store_company_logo(
+            {
+                "company_id": cid,
+                "image_data": b"fake-data",
+                "image_format": "PNG",
+                "perceptual_hash": "abcdef1234567890",
+                "source_url": "https://alpha.com/logo.png",
+                "extraction_location": "branding",
+                "width": 64,
+                "height": 64,
+                "extracted_at": datetime.now(UTC).isoformat(),
+            }
+        )
+
+        assert processor.company_has_logo(cid) is True
+
+    def test_company_has_logo_false_when_missing(self, db: Database) -> None:
+        """company_has_logo returns False when no logo exists."""
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        processor = BrandingLogoProcessor(logo_repo)
+
+        assert processor.company_has_logo(cid) is False
+
+
+# ===========================================================================
+# 13. SnapshotManager with Branding Logo Integration
+# ===========================================================================
+
+
+class TestSnapshotManagerBrandingIntegration:
+    """Tests for SnapshotManager branding logo processing during capture."""
+
+    def test_stores_branding_logo_when_company_has_no_logo(
+        self,
+        db: Database,
+    ) -> None:
+        """Branding logo is stored for company without existing logo."""
+        from io import BytesIO
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from PIL import Image
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        logo_processor = BrandingLogoProcessor(logo_repo)
+
+        # Create valid PNG for download mock
+        img = Image.new("RGB", (64, 64), color="blue")
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        mock_download = MagicMock()
+        mock_download.content = png_bytes
+        mock_download.headers = {"Content-Type": "image/png"}
+        mock_download.raise_for_status = MagicMock()
+
+        branding_data = SimpleNamespace(
+            logo="https://alpha.com/brand-logo.png",
+            images=None,
+        )
+
+        mock_firecrawl = MagicMock()
+        mock_firecrawl.capture_snapshot.return_value = {
+            "success": True,
+            "markdown": "# Alpha",
+            "html": "<h1>Alpha</h1>",
+            "statusCode": 200,
+            "metadata": {},
+            "has_paywall": False,
+            "has_auth_required": False,
+            "error": None,
+            "branding": branding_data,
+        }
+
+        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db)
+        manager = SnapshotManager(
+            mock_firecrawl,
+            snapshot_repo,
+            company_repo,
+            logo_processor=logo_processor,
+        )
+
+        with patch(
+            "src.domains.discovery.services.branding_logo_processor.requests.get",
+            return_value=mock_download,
+        ):
+            summary = manager.capture_all_snapshots()
+
+        assert summary["successful"] == 1
+        stored_logo = logo_repo.get_company_logo(cid)
+        assert stored_logo is not None
+        assert stored_logo["source_url"] == "https://alpha.com/brand-logo.png"
+        assert stored_logo["extraction_location"] == "branding"
+
+    def test_skips_logo_when_company_already_has_one(self, db: Database) -> None:
+        """Branding logo is NOT downloaded when company already has a logo."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        logo_processor = BrandingLogoProcessor(logo_repo)
+
+        # Pre-insert a logo
+        logo_repo.store_company_logo(
+            {
+                "company_id": cid,
+                "image_data": b"existing-logo",
+                "image_format": "PNG",
+                "perceptual_hash": "existinghash1234",
+                "source_url": "https://alpha.com/old-logo.png",
+                "extraction_location": "header",
+                "width": 100,
+                "height": 50,
+                "extracted_at": datetime.now(UTC).isoformat(),
+            }
+        )
+
+        branding_data = SimpleNamespace(
+            logo="https://alpha.com/new-brand-logo.png",
+            images=None,
+        )
+
+        mock_firecrawl = MagicMock()
+        mock_firecrawl.capture_snapshot.return_value = {
+            "success": True,
+            "markdown": "# Alpha",
+            "html": "<h1>Alpha</h1>",
+            "statusCode": 200,
+            "metadata": {},
+            "has_paywall": False,
+            "has_auth_required": False,
+            "error": None,
+            "branding": branding_data,
+        }
+
+        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db)
+        manager = SnapshotManager(
+            mock_firecrawl,
+            snapshot_repo,
+            company_repo,
+            logo_processor=logo_processor,
+        )
+
+        # requests.get should NOT be called since company has logo
+        with patch(
+            "src.domains.discovery.services.branding_logo_processor.requests.get",
+        ) as mock_get:
+            summary = manager.capture_all_snapshots()
+
+        assert summary["successful"] == 1
+        mock_get.assert_not_called()
+
+        # Verify the old logo is still there, not overwritten
+        stored = logo_repo.get_company_logo(cid)
+        assert stored is not None
+        assert stored["source_url"] == "https://alpha.com/old-logo.png"
+
+    def test_works_without_logo_processor(self, db: Database) -> None:
+        """Backward compatible: no logo_processor means no logo processing."""
+        _insert_company(db, "Alpha Inc", "https://alpha.com")
+
+        mock_firecrawl = MagicMock()
+        mock_firecrawl.capture_snapshot.return_value = {
+            "success": True,
+            "markdown": "# Alpha",
+            "html": "<h1>Alpha</h1>",
+            "statusCode": 200,
+            "metadata": {},
+            "has_paywall": False,
+            "has_auth_required": False,
+            "error": None,
+            "branding": None,
+        }
+
+        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db)
+        # No logo_processor passed (default None)
+        manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
+
+        summary = manager.capture_all_snapshots()
+        assert summary["successful"] == 1
+
+
+# ===========================================================================
+# 14. BatchSnapshotManager with Branding Logo Integration
+# ===========================================================================
+
+
+class TestBatchSnapshotManagerBrandingIntegration:
+    """Tests for BatchSnapshotManager branding logo processing."""
+
+    def test_batch_processes_branding_logos(self, db: Database) -> None:
+        """Branding logos are stored during batch capture."""
+        from io import BytesIO
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from PIL import Image
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        logo_processor = BrandingLogoProcessor(logo_repo)
+
+        # Create valid PNG
+        img = Image.new("RGB", (64, 64), color="green")
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        mock_download = MagicMock()
+        mock_download.content = png_bytes
+        mock_download.headers = {"Content-Type": "image/png"}
+        mock_download.raise_for_status = MagicMock()
+
+        branding_data = SimpleNamespace(
+            logo="https://alpha.com/brand-logo.png",
+            images=None,
+        )
+
+        mock_firecrawl = MagicMock()
+        mock_firecrawl.batch_capture_snapshots.return_value = {
+            "success": True,
+            "documents": [
+                {
+                    "url": "https://alpha.com",
+                    "markdown": "# Alpha",
+                    "html": "<h1>Alpha</h1>",
+                    "metadata": {"statusCode": 200},
+                    "branding": branding_data,
+                },
+            ],
+            "total": 1,
+            "completed": 1,
+            "failed": 0,
+            "errors": [],
+        }
+
+        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db)
+        manager = BatchSnapshotManager(
+            mock_firecrawl,
+            snapshot_repo,
+            company_repo,
+            logo_processor=logo_processor,
+        )
+
+        with patch(
+            "src.domains.discovery.services.branding_logo_processor.requests.get",
+            return_value=mock_download,
+        ):
+            summary = manager.capture_batch_snapshots(batch_size=10)
+
+        assert summary["successful"] == 1
+        stored = logo_repo.get_company_logo(cid)
+        assert stored is not None
+        assert stored["extraction_location"] == "branding"
+
+    def test_batch_skips_logos_when_already_exist(self, db: Database) -> None:
+        """Batch mode skips logo download for companies with existing logos."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from src.domains.discovery.services.branding_logo_processor import (
+            BrandingLogoProcessor,
+        )
+
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        logo_repo = SocialMediaLinkRepository(db)
+        logo_processor = BrandingLogoProcessor(logo_repo)
+
+        # Pre-insert a logo
+        logo_repo.store_company_logo(
+            {
+                "company_id": cid,
+                "image_data": b"existing",
+                "image_format": "PNG",
+                "perceptual_hash": "existinghash5678",
+                "source_url": "https://alpha.com/old.png",
+                "extraction_location": "header",
+                "width": 100,
+                "height": 50,
+                "extracted_at": datetime.now(UTC).isoformat(),
+            }
+        )
+
+        branding_data = SimpleNamespace(
+            logo="https://alpha.com/new-logo.png",
+            images=None,
+        )
+
+        mock_firecrawl = MagicMock()
+        mock_firecrawl.batch_capture_snapshots.return_value = {
+            "success": True,
+            "documents": [
+                {
+                    "url": "https://alpha.com",
+                    "markdown": "# Alpha",
+                    "html": "<h1>Alpha</h1>",
+                    "metadata": {"statusCode": 200},
+                    "branding": branding_data,
+                },
+            ],
+            "total": 1,
+            "completed": 1,
+            "failed": 0,
+            "errors": [],
+        }
+
+        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db)
+        manager = BatchSnapshotManager(
+            mock_firecrawl,
+            snapshot_repo,
+            company_repo,
+            logo_processor=logo_processor,
+        )
+
+        with patch(
+            "src.domains.discovery.services.branding_logo_processor.requests.get",
+        ) as mock_get:
+            summary = manager.capture_batch_snapshots(batch_size=10)
+
+        assert summary["successful"] == 1
+        mock_get.assert_not_called()
+
+        stored = logo_repo.get_company_logo(cid)
+        assert stored is not None
+        assert stored["source_url"] == "https://alpha.com/old.png"
