@@ -972,6 +972,8 @@ class TestBuildSignificanceClassificationPrompt:
             keywords=["raised", "funding"],
             categories=["funding"],
             magnitude="MAJOR",
+            company_name="Acme Corp",
+            homepage_url="https://acme.com",
         )
         assert isinstance(system, str)
         assert isinstance(user, str)
@@ -982,11 +984,25 @@ class TestBuildSignificanceClassificationPrompt:
             keywords=["raised"],
             categories=["funding"],
             magnitude="MAJOR",
+            company_name="Acme Corp",
+            homepage_url="https://acme.com",
         )
         assert "company raised $10M" in user
         assert "raised" in user
         assert "funding" in user
         assert "MAJOR" in user
+
+    def test_company_name_in_user_prompt(self) -> None:
+        _, user = build_significance_classification_prompt(
+            content_excerpt="some changes",
+            keywords=[],
+            categories=[],
+            magnitude="MINOR",
+            company_name="Recall AI",
+            homepage_url="https://www.recall.ai/",
+        )
+        assert "Recall AI" in user
+        assert "recall.ai" in user
 
     def test_no_initial_classification_in_prompt(self) -> None:
         """The prompt must NOT contain 'Initial classification' to avoid anchoring."""
@@ -995,6 +1011,8 @@ class TestBuildSignificanceClassificationPrompt:
             keywords=["raised"],
             categories=["funding"],
             magnitude="MAJOR",
+            company_name="Acme Corp",
+            homepage_url="https://acme.com",
         )
         assert "initial classification" not in user.lower()
         assert "initial classification" not in system.lower()
@@ -1005,6 +1023,8 @@ class TestBuildSignificanceClassificationPrompt:
             keywords=[],
             categories=[],
             magnitude="MINOR",
+            company_name="X",
+            homepage_url="https://x.com",
         )
         assert "venture capital" in system.lower()
 
@@ -1014,8 +1034,22 @@ class TestBuildSignificanceClassificationPrompt:
             keywords=[],
             categories=[],
             magnitude="MINOR",
+            company_name="X",
+            homepage_url="https://x.com",
         )
         assert "false positive" in system.lower()
+
+    def test_system_prompt_warns_about_company_name_matches(self) -> None:
+        """System prompt should warn about company name keyword matches."""
+        system, _ = build_significance_classification_prompt(
+            content_excerpt="x",
+            keywords=[],
+            categories=[],
+            magnitude="MINOR",
+            company_name="X",
+            homepage_url="https://x.com",
+        )
+        assert "company" in system.lower() and "name" in system.lower()
 
     def test_content_truncated_to_2000(self) -> None:
         long_content = "x" * 5000
@@ -1024,6 +1058,8 @@ class TestBuildSignificanceClassificationPrompt:
             keywords=[],
             categories=[],
             magnitude="MINOR",
+            company_name="X",
+            homepage_url="https://x.com",
         )
         assert "x" * 2000 in user
         assert "x" * 2001 not in user
@@ -1034,6 +1070,8 @@ class TestBuildSignificanceClassificationPrompt:
             keywords=[],
             categories=[],
             magnitude="MINOR",
+            company_name="X",
+            homepage_url="https://x.com",
         )
         assert "none detected" in user
 
@@ -1043,6 +1081,8 @@ class TestBuildSignificanceClassificationPrompt:
             keywords=["funding"],
             categories=["funding_investment"],
             magnitude="MINOR",
+            company_name="X",
+            homepage_url="https://x.com",
         )
         assert "hint" in user.lower() or "Keyword hints" in user
 
@@ -1055,9 +1095,22 @@ class TestBuildBaselineClassificationPrompt:
             content_excerpt="Welcome to Acme Corp",
             keywords=["expansion"],
             categories=["expansion"],
+            company_name="Acme Corp",
+            homepage_url="https://acme.com",
         )
         assert isinstance(system, str)
         assert isinstance(user, str)
+
+    def test_company_name_in_user_prompt(self) -> None:
+        _, user = build_baseline_classification_prompt(
+            content_excerpt="Welcome to Acme Corp",
+            keywords=[],
+            categories=[],
+            company_name="Acme Corp",
+            homepage_url="https://acme.com",
+        )
+        assert "Acme Corp" in user
+        assert "acme.com" in user
 
     def test_no_magnitude_parameter(self) -> None:
         """Baseline analysis has no change magnitude -- it's full page content."""
@@ -1065,6 +1118,8 @@ class TestBuildBaselineClassificationPrompt:
             content_excerpt="Welcome to Acme Corp",
             keywords=[],
             categories=[],
+            company_name="Acme Corp",
+            homepage_url="https://acme.com",
         )
         assert "magnitude" not in user.lower()
 
@@ -1073,6 +1128,8 @@ class TestBuildBaselineClassificationPrompt:
             content_excerpt="x",
             keywords=[],
             categories=[],
+            company_name="X",
+            homepage_url="https://x.com",
         )
         assert "baseline" in system.lower() or "first time" in system.lower()
 
@@ -1081,14 +1138,29 @@ class TestBuildBaselineClassificationPrompt:
             content_excerpt="x",
             keywords=[],
             categories=[],
+            company_name="X",
+            homepage_url="https://x.com",
         )
         assert "operational" in system.lower() or "shut down" in system.lower()
+
+    def test_system_prompt_warns_about_company_name_matches(self) -> None:
+        """System prompt should warn about keyword matches on the company name."""
+        system, _ = build_baseline_classification_prompt(
+            content_excerpt="x",
+            keywords=[],
+            categories=[],
+            company_name="X",
+            homepage_url="https://x.com",
+        )
+        assert "company" in system.lower() and "name" in system.lower()
 
     def test_no_initial_classification_in_prompt(self) -> None:
         system, user = build_baseline_classification_prompt(
             content_excerpt="x",
             keywords=[],
             categories=[],
+            company_name="X",
+            homepage_url="https://x.com",
         )
         assert "initial classification" not in user.lower()
         assert "initial classification" not in system.lower()
@@ -1099,6 +1171,8 @@ class TestBuildBaselineClassificationPrompt:
             content_excerpt=long_content,
             keywords=[],
             categories=[],
+            company_name="X",
+            homepage_url="https://x.com",
         )
         assert "z" * 2000 in user
         assert "z" * 2001 not in user

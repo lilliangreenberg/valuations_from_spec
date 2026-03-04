@@ -582,7 +582,8 @@ class TestSignificanceAnalyzer:
 
         change_repo = ChangeRecordRepository(db)
         snapshot_repo = SnapshotRepository(db)
-        analyzer = SignificanceAnalyzer(change_repo, snapshot_repo)
+        company_repo = CompanyRepository(db)
+        analyzer = SignificanceAnalyzer(change_repo, snapshot_repo, company_repo)
 
         summary = analyzer.backfill_significance()
 
@@ -618,7 +619,8 @@ class TestSignificanceAnalyzer:
 
         change_repo = ChangeRecordRepository(db)
         snapshot_repo = SnapshotRepository(db)
-        analyzer = SignificanceAnalyzer(change_repo, snapshot_repo)
+        company_repo = CompanyRepository(db)
+        analyzer = SignificanceAnalyzer(change_repo, snapshot_repo, company_repo)
 
         summary = analyzer.backfill_significance(dry_run=True)
 
@@ -735,7 +737,8 @@ class TestDiffBasedSignificance:
 
         change_repo = ChangeRecordRepository(db)
         snapshot_repo = SnapshotRepository(db)
-        analyzer = SignificanceAnalyzer(change_repo, snapshot_repo)
+        company_repo = CompanyRepository(db)
+        analyzer = SignificanceAnalyzer(change_repo, snapshot_repo, company_repo)
 
         analyzer.backfill_significance()
 
@@ -766,7 +769,8 @@ class TestBaselineAnalyzer:
         snapshot_repo = SnapshotRepository(db)
         from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
 
-        analyzer = BaselineAnalyzer(snapshot_repo)
+        company_repo = CompanyRepository(db)
+        analyzer = BaselineAnalyzer(snapshot_repo, company_repo)
         result = analyzer.analyze_baseline_for_snapshot(snap_id)
 
         assert result is not None
@@ -791,7 +795,8 @@ class TestBaselineAnalyzer:
         snapshot_repo = SnapshotRepository(db)
         from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
 
-        analyzer = BaselineAnalyzer(snapshot_repo)
+        company_repo = CompanyRepository(db)
+        analyzer = BaselineAnalyzer(snapshot_repo, company_repo)
 
         # First run -- should compute baseline
         result1 = analyzer.analyze_baseline_for_company(cid)
@@ -811,7 +816,8 @@ class TestBaselineAnalyzer:
         snapshot_repo = SnapshotRepository(db)
         from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
 
-        analyzer = BaselineAnalyzer(snapshot_repo)
+        company_repo = CompanyRepository(db)
+        analyzer = BaselineAnalyzer(snapshot_repo, company_repo)
         summary = analyzer.backfill_baselines()
 
         assert summary["successful"] == 2
@@ -826,7 +832,8 @@ class TestBaselineAnalyzer:
         snapshot_repo = SnapshotRepository(db)
         from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
 
-        analyzer = BaselineAnalyzer(snapshot_repo)
+        company_repo = CompanyRepository(db)
+        analyzer = BaselineAnalyzer(snapshot_repo, company_repo)
         summary = analyzer.backfill_baselines(dry_run=True)
 
         assert summary["successful"] == 1

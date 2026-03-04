@@ -58,17 +58,26 @@ class LLMClient:
         keywords: list[str],
         categories: list[str],
         magnitude: str,
+        company_name: str,
+        homepage_url: str,
     ) -> dict[str, Any]:
         """Classify significance of a content change using LLM as primary classifier.
 
         Keywords and categories are passed as hints from the automated scanner,
         not as the answer. The LLM makes an independent determination.
+        Company name and URL are provided so the LLM can identify false positives
+        where keyword matches are just the company's own name.
 
         Returns dict with: classification, sentiment, confidence, reasoning,
         validated_keywords, false_positives, error.
         """
         system_prompt, user_prompt = build_significance_classification_prompt(
-            content_excerpt, keywords, categories, magnitude
+            content_excerpt,
+            keywords,
+            categories,
+            magnitude,
+            company_name,
+            homepage_url,
         )
         return self._call_llm(system_prompt, user_prompt, "classify_significance")
 
@@ -78,17 +87,25 @@ class LLMClient:
         content_excerpt: str,
         keywords: list[str],
         categories: list[str],
+        company_name: str,
+        homepage_url: str,
     ) -> dict[str, Any]:
         """Classify baseline signals from a company's first website snapshot.
 
         Analyzes full page content (not a diff) for pre-existing health signals
         like company closure, acquisition, or active operations.
+        Company name and URL are provided so the LLM can identify false positives
+        where keyword matches are just the company's own name.
 
         Returns dict with: classification, sentiment, confidence, reasoning,
         validated_keywords, false_positives, error.
         """
         system_prompt, user_prompt = build_baseline_classification_prompt(
-            content_excerpt, keywords, categories
+            content_excerpt,
+            keywords,
+            categories,
+            company_name,
+            homepage_url,
         )
         return self._call_llm(system_prompt, user_prompt, "classify_baseline")
 

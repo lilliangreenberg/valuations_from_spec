@@ -16,12 +16,14 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from src.domains.monitoring.core.significance_analysis import (
+    HOMEPAGE_EXCLUDED_CATEGORIES,
     analyze_content_significance,
 )
 from src.utils.progress import ProgressTracker
 
 if TYPE_CHECKING:
     from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
+    from src.repositories.company_repository import CompanyRepository
 
 logger = structlog.get_logger(__name__)
 
@@ -34,10 +36,12 @@ class BaselineAnalyzer:
     def __init__(
         self,
         snapshot_repo: SnapshotRepository,
+        company_repo: CompanyRepository,
         llm_client: Any | None = None,
         llm_enabled: bool = False,
     ) -> None:
         self.snapshot_repo = snapshot_repo
+        self.company_repo = company_repo
         self.llm_client = llm_client
         self.llm_enabled = llm_enabled
 
@@ -50,11 +54,17 @@ class BaselineAnalyzer:
         if not snapshot or not snapshot.get("content_markdown"):
             return None
 
+        company_id = snapshot["company_id"]
+        company = self.company_repo.get_company_by_id(company_id)
+        company_name = company["name"] if company else f"Company {company_id}"
+        company_url = company.get("homepage_url", "") if company else ""
+
         content = snapshot["content_markdown"]
 
         result = analyze_content_significance(
             content,
             magnitude="minor",
+            exclude_categories=HOMEPAGE_EXCLUDED_CATEGORIES,
         )
 
         # LLM as primary classifier for baseline -- keywords passed as hints
@@ -64,6 +74,8 @@ class BaselineAnalyzer:
                     content_excerpt=content[:_LLM_CONTENT_LIMIT],
                     keywords=result.matched_keywords,
                     categories=result.matched_categories,
+                    company_name=company_name,
+                    homepage_url=company_url,
                 )
                 if not llm_result.get("error"):
                     result.classification = llm_result.get("classification", result.classification)
@@ -131,7 +143,8 @@ class BaselineAnalyzer:
 
         for snapshot in snapshots:
             try:
-                if self.snapshot_repo.has_baseline_for_company(snapshot["company_id"]):
+                company_id = snapshot["company_id"]
+                if self.snapshot_repo.has_baseline_for_company(company_id):
                     tracker.record_skip()
                     continue
 
@@ -140,7 +153,15 @@ class BaselineAnalyzer:
                     tracker.record_skip()
                     continue
 
-                result = analyze_content_significance(content, magnitude="minor")
+                company = self.company_repo.get_company_by_id(company_id)
+                company_name = company["name"] if company else f"Company {company_id}"
+                company_url = company.get("homepage_url", "") if company else ""
+
+                result = analyze_content_significance(
+                    content,
+                    magnitude="minor",
+                    exclude_categories=HOMEPAGE_EXCLUDED_CATEGORIES,
+                )
 
                 # LLM as primary classifier for baseline -- keywords passed as hints
                 if self.llm_enabled and self.llm_client:
@@ -149,6 +170,8 @@ class BaselineAnalyzer:
                             content_excerpt=content[:_LLM_CONTENT_LIMIT],
                             keywords=result.matched_keywords,
                             categories=result.matched_categories,
+                            company_name=company_name,
+                            homepage_url=company_url,
                         )
                         if not llm_result.get("error"):
                             result.classification = llm_result.get(

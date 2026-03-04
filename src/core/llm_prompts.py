@@ -19,7 +19,13 @@ SIGNIFICANCE_CLASSIFICATION_SYSTEM_PROMPT = (
     " the change, and keyword hints from an automated scanner. The keyword hints"
     " may contain false positives or miss important context. Use them as starting"
     " points for your analysis, but make your own independent judgment.\n\n"
+    "IMPORTANT: You will be told the company's name and homepage URL. If a keyword\n"
+    "match is simply the company's own name or a word derived from it, that is a\n"
+    "false positive -- not a real signal. For example, a company called 'Recall'\n"
+    "appearing on recall.ai will trigger 'recall' as a product_failures keyword,\n"
+    "but that is just the company name, not a product recall event.\n\n"
     "Common false positives to watch for:\n"
+    "- Keywords that match the company's own name or domain\n"
     "- 'talent acquisition' or 'customer acquisition' (not company acquisition)\n"
     "- 'funding opportunities' or 'funding sources' (not a funding round)\n"
     "- Navigation menu or footer changes containing business terms\n"
@@ -38,6 +44,8 @@ SIGNIFICANCE_CLASSIFICATION_SYSTEM_PROMPT = (
 
 SIGNIFICANCE_CLASSIFICATION_USER_TEMPLATE = (
     "Analyze this website content change for business significance:\n\n"
+    "Company: {company_name}\n"
+    "Homepage: {homepage_url}\n\n"
     "Content excerpt (changed/added text):\n{content_excerpt}\n\n"
     "Change magnitude: {magnitude}\n\n"
     "Keyword hints from automated scanner:\n"
@@ -53,11 +61,14 @@ def build_significance_classification_prompt(
     keywords: list[str],
     categories: list[str],
     magnitude: str,
+    company_name: str,
+    homepage_url: str,
 ) -> tuple[str, str]:
     """Build system and user prompts for significance classification.
 
     Keywords and categories are passed as hints, not as the answer.
-    No initial_classification is provided to avoid anchoring bias.
+    Company name and URL are included so the LLM can identify false positives
+    where keyword matches are just the company's own name.
 
     Returns (system_prompt, user_prompt).
     """
@@ -66,6 +77,8 @@ def build_significance_classification_prompt(
         keywords=", ".join(keywords) if keywords else "none detected",
         categories=", ".join(categories) if categories else "none",
         magnitude=magnitude,
+        company_name=company_name,
+        homepage_url=homepage_url,
     )
     return SIGNIFICANCE_CLASSIFICATION_SYSTEM_PROMPT, user_prompt
 
@@ -87,6 +100,9 @@ BASELINE_CLASSIFICATION_SYSTEM_PROMPT = (
     "- Product launches or growth indicators\n\n"
     "You will receive keyword hints from an automated scanner. These may contain"
     " false positives -- use them as starting points but make your own judgment.\n\n"
+    "IMPORTANT: You will be told the company's name and homepage URL. If a keyword\n"
+    "match is simply the company's own name or a word derived from it, that is a\n"
+    "false positive -- not a real signal.\n\n"
     "Respond with a JSON object containing:\n"
     '- classification: "significant", "insignificant", or "uncertain"\n'
     '- sentiment: "positive", "negative", "neutral", or "mixed"\n'
@@ -100,6 +116,8 @@ BASELINE_CLASSIFICATION_SYSTEM_PROMPT = (
 
 BASELINE_CLASSIFICATION_USER_TEMPLATE = (
     "Analyze this company's website content for pre-existing health signals:\n\n"
+    "Company: {company_name}\n"
+    "Homepage: {homepage_url}\n\n"
     "Website content excerpt:\n{content_excerpt}\n\n"
     "Keyword hints from automated scanner:\n"
     "  Detected terms: {keywords}\n"
@@ -114,11 +132,15 @@ def build_baseline_classification_prompt(
     content_excerpt: str,
     keywords: list[str],
     categories: list[str],
+    company_name: str,
+    homepage_url: str,
 ) -> tuple[str, str]:
     """Build prompts for baseline significance classification.
 
     Baseline analysis examines full website content (not a diff) to detect
-    pre-existing signals about company health.
+    pre-existing signals about company health. Company name and URL are
+    included so the LLM can identify false positives from the company's
+    own name.
 
     Returns (system_prompt, user_prompt).
     """
@@ -126,6 +148,8 @@ def build_baseline_classification_prompt(
         content_excerpt=content_excerpt[:2000],
         keywords=", ".join(keywords) if keywords else "none detected",
         categories=", ".join(categories) if categories else "none",
+        company_name=company_name,
+        homepage_url=homepage_url,
     )
     return BASELINE_CLASSIFICATION_SYSTEM_PROMPT, user_prompt
 

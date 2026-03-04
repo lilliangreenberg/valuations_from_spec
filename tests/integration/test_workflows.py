@@ -524,7 +524,8 @@ class TestSignificanceBackfillWorkflow:
 
         change_repo = ChangeRecordRepository(db)
         snapshot_repo = SnapshotRepository(db)
-        analyzer = SignificanceAnalyzer(change_repo, snapshot_repo)
+        company_repo = CompanyRepository(db)
+        analyzer = SignificanceAnalyzer(change_repo, snapshot_repo, company_repo)
 
         summary = analyzer.backfill_significance()
 
@@ -569,7 +570,8 @@ class TestSignificanceBackfillWorkflow:
 
         change_repo = ChangeRecordRepository(db)
         snapshot_repo = SnapshotRepository(db)
-        analyzer = SignificanceAnalyzer(change_repo, snapshot_repo)
+        company_repo = CompanyRepository(db)
+        analyzer = SignificanceAnalyzer(change_repo, snapshot_repo, company_repo)
 
         summary = analyzer.backfill_significance(dry_run=True)
 
@@ -615,7 +617,8 @@ class TestSignificanceBackfillWorkflow:
 
         change_repo = ChangeRecordRepository(db)
         snapshot_repo = SnapshotRepository(db)
-        analyzer = SignificanceAnalyzer(change_repo, snapshot_repo)
+        company_repo = CompanyRepository(db)
+        analyzer = SignificanceAnalyzer(change_repo, snapshot_repo, company_repo)
 
         summary = analyzer.backfill_significance()
 
@@ -650,7 +653,8 @@ class TestSignificanceBackfillWorkflow:
         assert detect_summary["changes_found"] >= 1
 
         # Step 2: Backfill should find nothing to do
-        analyzer = SignificanceAnalyzer(change_repo, snapshot_repo)
+        company_repo = CompanyRepository(db)
+        analyzer = SignificanceAnalyzer(change_repo, snapshot_repo, company_repo)
         analyzer.backfill_significance()
 
         records = change_repo.get_changes_for_company(cid)
@@ -771,7 +775,8 @@ class TestBaselineSignalWorkflow:
         snapshot_repo = SnapshotRepository(db)
         from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
 
-        analyzer = BaselineAnalyzer(snapshot_repo)
+        company_repo = CompanyRepository(db)
+        analyzer = BaselineAnalyzer(snapshot_repo, company_repo)
         summary = analyzer.backfill_baselines()
 
         assert summary["successful"] == 2
@@ -807,7 +812,8 @@ class TestBaselineSignalWorkflow:
         snapshot_repo = SnapshotRepository(db)
         from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
 
-        baseline = BaselineAnalyzer(snapshot_repo)
+        company_repo = CompanyRepository(db)
+        baseline = BaselineAnalyzer(snapshot_repo, company_repo)
         first_snaps = snapshot_repo.get_snapshots_for_company(cid)
         baseline.analyze_baseline_for_snapshot(first_snaps[0]["id"])
 
