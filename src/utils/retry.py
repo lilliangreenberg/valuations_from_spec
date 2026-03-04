@@ -48,18 +48,26 @@ def _log_retry(retry_state: RetryCallState) -> None:
     )
 
 
-def retry_with_logging(max_attempts: int = 3) -> Callable[[Callable[P, T]], Callable[P, T]]:
+def retry_with_logging(
+    max_attempts: int = 3,
+    max_wait: int = 10,
+) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """Decorator using tenacity with structured logging.
 
     Retries on: ConnectionError, TimeoutError, OSError, and
     Anthropic API errors (APIConnectionError, APITimeoutError, APIStatusError).
-    Uses exponential backoff starting at 2s, capped at 10s.
+    Uses exponential backoff starting at 2s, capped at max_wait seconds.
+
+    Args:
+        max_attempts: Total number of attempts (including the initial call).
+        max_wait: Maximum backoff delay in seconds between retries. Use higher
+            values (e.g. 60) for APIs that return 529/overloaded responses.
     """
 
     def decorator(func: Callable[P, T]) -> Callable[P, T]:
         @retry(
             stop=stop_after_attempt(max_attempts),
-            wait=wait_exponential(multiplier=1, min=2, max=10),
+            wait=wait_exponential(multiplier=1, min=2, max=max_wait),
             retry=retry_if_exception_type(_RETRYABLE_EXCEPTIONS),
             before_sleep=_log_retry,
             reraise=True,
@@ -68,6 +76,6 @@ def retry_with_logging(max_attempts: int = 3) -> Callable[[Callable[P, T]], Call
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             return func(*args, **kwargs)
 
-        return wrapper  # type: ignore[return-value]
+        return wrapper
 
     return decorator

@@ -8,6 +8,7 @@ independent determination without being anchored by the keyword system's conclus
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import anthropic
@@ -30,6 +31,10 @@ _RETRYABLE_ANTHROPIC_EXCEPTIONS = (
     anthropic.APIStatusError,
 )
 
+# Delay between successive API calls to avoid triggering overload (529) responses.
+# Applied after each successful call; retry backoff handles spacing between failures.
+_INTER_REQUEST_DELAY_SECONDS = 0.2
+
 _FALLBACK_RESULT: dict[str, Any] = {
     "classification": "uncertain",
     "sentiment": "neutral",
@@ -51,7 +56,7 @@ class LLMClient:
         self.client = anthropic.Anthropic(api_key=api_key)
         self.model = model
 
-    @retry_with_logging(max_attempts=2)
+    @retry_with_logging(max_attempts=4, max_wait=60)
     def classify_significance(
         self,
         content_excerpt: str,
@@ -81,7 +86,7 @@ class LLMClient:
         )
         return self._call_llm(system_prompt, user_prompt, "classify_significance")
 
-    @retry_with_logging(max_attempts=2)
+    @retry_with_logging(max_attempts=4, max_wait=60)
     def classify_baseline(
         self,
         content_excerpt: str,
@@ -109,7 +114,7 @@ class LLMClient:
         )
         return self._call_llm(system_prompt, user_prompt, "classify_baseline")
 
-    @retry_with_logging(max_attempts=2)
+    @retry_with_logging(max_attempts=4, max_wait=60)
     def classify_news_significance(
         self,
         title: str,
@@ -128,7 +133,7 @@ class LLMClient:
         )
         return self._call_llm(system_prompt, user_prompt, "classify_news_significance")
 
-    @retry_with_logging(max_attempts=2)
+    @retry_with_logging(max_attempts=4, max_wait=60)
     def verify_company_identity(
         self,
         company_name: str,
@@ -155,6 +160,7 @@ class LLMClient:
             )
 
             text = response.content[0].text
+            time.sleep(_INTER_REQUEST_DELAY_SECONDS)
             result = self._parse_json_response(text)
             is_match = result.get("is_match", False)
             reasoning = result.get("reasoning", "No reasoning provided")
@@ -186,6 +192,7 @@ class LLMClient:
             )
 
             text = response.content[0].text
+            time.sleep(_INTER_REQUEST_DELAY_SECONDS)
             return self._parse_json_response(text)
         except _RETRYABLE_ANTHROPIC_EXCEPTIONS:
             raise  # Let retry handle these
