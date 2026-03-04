@@ -222,6 +222,80 @@ class TestSnapshotManager:
         assert summary["successful"] == 1
 
 
+    def test_captures_single_company_snapshot(self, db: Database) -> None:
+        """capture_snapshot_for_company captures a snapshot for one company."""
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+        _insert_company(db, "Beta Inc", "https://beta.com")
+
+        mock_firecrawl = MagicMock()
+        mock_firecrawl.capture_snapshot.return_value = {
+            "success": True,
+            "markdown": "# Alpha",
+            "html": "<h1>Alpha</h1>",
+            "statusCode": 200,
+            "metadata": {},
+            "has_paywall": False,
+            "has_auth_required": False,
+            "error": None,
+        }
+
+        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db)
+        manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
+
+        summary = manager.capture_snapshot_for_company(cid)
+
+        assert summary["successful"] == 1
+        assert summary["failed"] == 0
+        assert mock_firecrawl.capture_snapshot.call_count == 1
+        mock_firecrawl.capture_snapshot.assert_called_once_with("https://alpha.com")
+
+        snaps = snapshot_repo.get_latest_snapshots(cid, limit=1)
+        assert len(snaps) == 1
+
+    def test_single_company_not_found_raises(self, db: Database) -> None:
+        """capture_snapshot_for_company raises ValueError for missing company."""
+        mock_firecrawl = MagicMock()
+        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db)
+        manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
+
+        import pytest
+
+        with pytest.raises(ValueError, match="not found"):
+            manager.capture_snapshot_for_company(9999)
+
+    def test_single_company_no_url_raises(self, db: Database) -> None:
+        """capture_snapshot_for_company raises ValueError when company has no URL."""
+        cid = _insert_company(db, "No URL Corp", None)
+
+        mock_firecrawl = MagicMock()
+        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db)
+        manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
+
+        import pytest
+
+        with pytest.raises(ValueError, match="no homepage URL"):
+            manager.capture_snapshot_for_company(cid)
+
+    def test_single_company_failure_recorded(self, db: Database) -> None:
+        """capture_snapshot_for_company records failures in summary."""
+        cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
+
+        mock_firecrawl = MagicMock()
+        mock_firecrawl.capture_snapshot.side_effect = ConnectionError("timeout")
+
+        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db)
+        manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
+
+        summary = manager.capture_snapshot_for_company(cid)
+
+        assert summary["successful"] == 0
+        assert summary["failed"] == 1
+
+
 # ===========================================================================
 # 2. BatchSnapshotManager
 # ===========================================================================
