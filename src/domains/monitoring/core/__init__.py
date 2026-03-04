@@ -16,6 +16,7 @@ from src.domains.monitoring.core.http_headers import (
     parse_last_modified,
 )
 from src.domains.monitoring.core.significance_analysis import (
+    HOMEPAGE_EXCLUDED_CATEGORIES,
     KeywordMatchResult,
     SignificanceResult,
     analyze_content_significance,
@@ -48,6 +49,7 @@ __all__ = [
     "is_html_content",
     "parse_last_modified",
     # significance_analysis
+    "HOMEPAGE_EXCLUDED_CATEGORIES",
     "KeywordMatchResult",
     "SignificanceResult",
     "analyze_content_significance",

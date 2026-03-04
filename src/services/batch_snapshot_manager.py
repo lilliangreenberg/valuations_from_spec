@@ -30,7 +30,7 @@ class BatchSnapshotManager:
         self.firecrawl = firecrawl_client
         self.snapshot_repo = snapshot_repo
         self.company_repo = company_repo
-        self._baseline_analyzer = BaselineAnalyzer(snapshot_repo)
+        self._baseline_analyzer = BaselineAnalyzer(snapshot_repo, company_repo)
 
     def capture_batch_snapshots(
         self,

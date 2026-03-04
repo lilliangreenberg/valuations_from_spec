@@ -227,9 +227,11 @@ def backfill_significance(batch_size: int, dry_run: bool) -> None:
     )
     from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
     from src.domains.monitoring.services.significance_analyzer import SignificanceAnalyzer
+    from src.repositories.company_repository import CompanyRepository
 
     change_repo = ChangeRecordRepository(db)
     snapshot_repo = SnapshotRepository(db)
+    company_repo = CompanyRepository(db)
 
     llm_client = None
     if config.llm_validation_enabled and config.anthropic_api_key:
@@ -240,6 +242,7 @@ def backfill_significance(batch_size: int, dry_run: bool) -> None:
     analyzer = SignificanceAnalyzer(
         change_repo,
         snapshot_repo,
+        company_repo,
         llm_client=llm_client,
         llm_enabled=config.llm_validation_enabled,
     )
@@ -879,8 +882,10 @@ def analyze_baseline(limit: int | None, dry_run: bool) -> None:
 
     from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
     from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
+    from src.repositories.company_repository import CompanyRepository
 
     snapshot_repo = SnapshotRepository(db)
+    company_repo = CompanyRepository(db)
 
     llm_client = None
     if config.llm_validation_enabled and config.anthropic_api_key:
@@ -890,6 +895,7 @@ def analyze_baseline(limit: int | None, dry_run: bool) -> None:
 
     analyzer = BaselineAnalyzer(
         snapshot_repo,
+        company_repo,
         llm_client=llm_client,
         llm_enabled=bool(llm_client),
     )

@@ -12,6 +12,7 @@ from src.domains.monitoring.core.change_detection import (
     extract_content_diff,
 )
 from src.domains.monitoring.core.significance_analysis import (
+    HOMEPAGE_EXCLUDED_CATEGORIES,
     analyze_content_significance,
 )
 from src.utils.progress import ProgressTracker
@@ -61,6 +62,10 @@ class ChangeDetector:
 
         for company_id in company_ids:
             try:
+                company = self.company_repo.get_company_by_id(company_id)
+                company_name = company["name"] if company else f"Company {company_id}"
+                company_url = company.get("homepage_url", "") if company else ""
+
                 snapshots = self.snapshot_repo.get_latest_snapshots(company_id, limit=2)
                 if len(snapshots) < 2:
                     tracker.record_skip()
@@ -102,6 +107,7 @@ class ChangeDetector:
                         sig_result = analyze_content_significance(
                             diff_text,
                             magnitude=magnitude.value,
+                            exclude_categories=HOMEPAGE_EXCLUDED_CATEGORIES,
                         )
 
                         # LLM as primary classifier — keywords passed as hints
@@ -112,6 +118,8 @@ class ChangeDetector:
                                     keywords=sig_result.matched_keywords,
                                     categories=sig_result.matched_categories,
                                     magnitude=magnitude.value,
+                                    company_name=company_name,
+                                    homepage_url=company_url,
                                 )
                                 if not llm_result.get("error"):
                                     sig_result.classification = llm_result.get(

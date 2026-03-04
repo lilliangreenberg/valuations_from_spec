@@ -227,13 +227,54 @@ INSIGNIFICANT_PATTERNS: dict[str, list[str]] = {
 }
 
 # False positive phrases that look like keywords but are not
+# Categories excluded from homepage analysis because companies don't self-report
+# legal issues, layoffs, financial distress, or security breaches on their own
+# websites. These terms on homepages nearly always refer to the company's product
+# domain (e.g. "settlement" on a fintech site = payment settlement).
+# These categories remain active for news article analysis.
+HOMEPAGE_EXCLUDED_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "legal_issues",
+        "layoffs_downsizing",
+        "financial_distress",
+        "security_breach",
+        "product_failures",
+    }
+)
+
 FALSE_POSITIVE_PHRASES: list[str] = [
+    # "acquisition" keyword (acquisition category)
     "talent acquisition",
     "customer acquisition",
     "data acquisition",
+    "user acquisition",
+    # "funding" keyword (funding_investment category)
     "funding opportunities",
     "funding sources",
     "self-funded",
+    # "release" keyword (product_launch category)
+    "press release",
+    # "award" keyword (recognition category)
+    "award-winning",
+    # "doubled" keyword (growth_success category)
+    "doubled down",
+    # "partner" keyword (partnerships category)
+    "partner program",
+    "partner portal",
+    "become a partner",
+    "partner with us",
+    # "collaboration" keyword (partnerships category)
+    "collaboration tool",
+    "collaboration tools",
+    "collaboration platform",
+    "collaboration software",
+    # "best of" keyword (recognition category)
+    "best of breed",
+    # "abandoned" keyword (market_exit category)
+    "abandoned cart",
+    # "retreat" keyword (market_exit category)
+    "company retreat",
+    "team retreat",
 ]
 
 # Negation words that precede keywords
@@ -513,9 +554,18 @@ def classify_significance(
     )
 
 
+def _filter_keywords(
+    keywords: dict[str, list[str]],
+    exclude_categories: frozenset[str],
+) -> dict[str, list[str]]:
+    """Remove excluded categories from a keyword dictionary."""
+    return {cat: terms for cat, terms in keywords.items() if cat not in exclude_categories}
+
+
 def analyze_content_significance(
     content: str,
     magnitude: str = "minor",
+    exclude_categories: frozenset[str] | None = None,
 ) -> SignificanceResult:
     """Full significance analysis pipeline for content.
 
@@ -523,9 +573,21 @@ def analyze_content_significance(
     2. Detect negation
     3. Detect false positives
     4. Classify significance
+
+    Args:
+        content: Text content to analyze.
+        magnitude: Change magnitude ("minor", "moderate", "major").
+        exclude_categories: Optional set of negative keyword category names to
+            skip. Use HOMEPAGE_EXCLUDED_CATEGORIES for homepage analysis to
+            avoid false positives from terms like "settlement" or
+            "vulnerability" that refer to the company's product domain.
     """
+    negative_kw = NEGATIVE_KEYWORDS
+    if exclude_categories:
+        negative_kw = _filter_keywords(NEGATIVE_KEYWORDS, exclude_categories)
+
     positive_matches = find_keyword_matches(content, POSITIVE_KEYWORDS)
-    negative_matches = find_keyword_matches(content, NEGATIVE_KEYWORDS)
+    negative_matches = find_keyword_matches(content, negative_kw)
     insignificant_matches = find_keyword_matches(content, INSIGNIFICANT_PATTERNS)
 
     # Apply negation and false positive detection

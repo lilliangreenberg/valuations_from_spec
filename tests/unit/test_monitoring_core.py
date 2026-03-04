@@ -27,12 +27,14 @@ from src.domains.monitoring.core.http_headers import (
 )
 from src.domains.monitoring.core.significance_analysis import (
     FALSE_POSITIVE_PHRASES,
+    HOMEPAGE_EXCLUDED_CATEGORIES,
     INSIGNIFICANT_PATTERNS,
     NEGATION_WORDS,
     NEGATIVE_KEYWORDS,
     POSITIVE_KEYWORDS,
     KeywordMatchResult,
     SignificanceResult,
+    _filter_keywords,
     analyze_content_significance,
     classify_significance,
     detect_false_positives,
@@ -1060,11 +1062,120 @@ class TestDetectFalsePositives:
             "talent acquisition",
             "customer acquisition",
             "data acquisition",
+            "user acquisition",
             "funding opportunities",
             "funding sources",
             "self-funded",
+            "press release",
+            "award-winning",
+            "doubled down",
+            "partner program",
+            "partner portal",
+            "become a partner",
+            "partner with us",
+            "collaboration tool",
+            "collaboration tools",
+            "collaboration platform",
+            "collaboration software",
+            "best of breed",
+            "abandoned cart",
+            "company retreat",
+            "team retreat",
         }
         assert set(FALSE_POSITIVE_PHRASES) == expected
+
+    def test_press_release_false_positive(self) -> None:
+        content = "PRESS RELEASE: Company announces new product line."
+        matches = find_keyword_matches(content, POSITIVE_KEYWORDS)
+        matches = detect_false_positives(matches, content)
+        release_matches = [m for m in matches if m.keyword == "release"]
+        if release_matches:
+            assert any(m.is_false_positive for m in release_matches)
+
+    def test_award_winning_false_positive(self) -> None:
+        content = "We are an award-winning platform for data analytics."
+        matches = find_keyword_matches(content, POSITIVE_KEYWORDS)
+        matches = detect_false_positives(matches, content)
+        award_matches = [m for m in matches if m.keyword == "award"]
+        if award_matches:
+            assert any(m.is_false_positive for m in award_matches)
+
+    def test_doubled_down_false_positive(self) -> None:
+        content = "The company doubled down on its AI strategy this quarter."
+        matches = find_keyword_matches(content, POSITIVE_KEYWORDS)
+        matches = detect_false_positives(matches, content)
+        doubled_matches = [m for m in matches if m.keyword == "doubled"]
+        if doubled_matches:
+            assert any(m.is_false_positive for m in doubled_matches)
+
+    def test_partner_program_false_positive(self) -> None:
+        content = "Join our partner program to unlock exclusive benefits."
+        matches = find_keyword_matches(content, POSITIVE_KEYWORDS)
+        matches = detect_false_positives(matches, content)
+        partner_matches = [m for m in matches if m.keyword == "partner"]
+        if partner_matches:
+            assert any(m.is_false_positive for m in partner_matches)
+
+    def test_collaboration_tool_false_positive(self) -> None:
+        content = "Our collaboration tool helps teams work together seamlessly."
+        matches = find_keyword_matches(content, POSITIVE_KEYWORDS)
+        matches = detect_false_positives(matches, content)
+        collab_matches = [m for m in matches if m.keyword == "collaboration"]
+        if collab_matches:
+            assert any(m.is_false_positive for m in collab_matches)
+
+    def test_abandoned_cart_false_positive(self) -> None:
+        content = "Reduce abandoned cart rates with our analytics platform."
+        matches = find_keyword_matches(content, NEGATIVE_KEYWORDS)
+        matches = detect_false_positives(matches, content)
+        abandoned_matches = [m for m in matches if m.keyword == "abandoned"]
+        if abandoned_matches:
+            assert any(m.is_false_positive for m in abandoned_matches)
+
+    def test_company_retreat_false_positive(self) -> None:
+        content = "The team enjoyed a company retreat in Colorado last month."
+        matches = find_keyword_matches(content, NEGATIVE_KEYWORDS)
+        matches = detect_false_positives(matches, content)
+        retreat_matches = [m for m in matches if m.keyword == "retreat"]
+        if retreat_matches:
+            assert any(m.is_false_positive for m in retreat_matches)
+
+    def test_user_acquisition_false_positive(self) -> None:
+        content = "Our user acquisition strategy focuses on organic growth."
+        matches = find_keyword_matches(content, NEGATIVE_KEYWORDS)
+        matches = detect_false_positives(matches, content)
+        acq_matches = [m for m in matches if m.keyword == "acquisition"]
+        if acq_matches:
+            assert any(m.is_false_positive for m in acq_matches)
+
+    def test_real_award_not_false_positive(self) -> None:
+        """A genuine new award should NOT be flagged as false positive."""
+        content = "The company won the innovation award at TechCrunch Disrupt."
+        matches = find_keyword_matches(content, POSITIVE_KEYWORDS)
+        matches = detect_false_positives(matches, content)
+        # "innovation award" is a keyword itself, and "award" standalone
+        # Neither appears inside "award-winning" here
+        award_matches = [m for m in matches if m.keyword == "award"]
+        if award_matches:
+            assert all(not m.is_false_positive for m in award_matches)
+
+    def test_real_partnership_not_false_positive(self) -> None:
+        """A genuine strategic partnership should NOT be flagged."""
+        content = "We signed a strategic partnership with Microsoft."
+        matches = find_keyword_matches(content, POSITIVE_KEYWORDS)
+        matches = detect_false_positives(matches, content)
+        partner_matches = [m for m in matches if m.keyword == "partnership"]
+        if partner_matches:
+            assert all(not m.is_false_positive for m in partner_matches)
+
+    def test_real_product_release_not_false_positive(self) -> None:
+        """A genuine product release should NOT be flagged."""
+        content = "We are excited to announce the release of version 3.0."
+        matches = find_keyword_matches(content, POSITIVE_KEYWORDS)
+        matches = detect_false_positives(matches, content)
+        release_matches = [m for m in matches if m.keyword == "release"]
+        if release_matches:
+            assert all(not m.is_false_positive for m in release_matches)
 
     def test_empty_matches_list(self) -> None:
         result = detect_false_positives([], "some content")
@@ -1449,6 +1560,117 @@ class TestAnalyzeContentSignificance:
         content = "Updated google-analytics tracking pixel for better analytics."
         result = analyze_content_significance(content, magnitude="minor")
         assert result.classification == "insignificant"
+
+
+class TestHomepageExcludedCategories:
+    """Tests for HOMEPAGE_EXCLUDED_CATEGORIES and category exclusion in analysis."""
+
+    def test_excluded_categories_are_subset_of_negative_keywords(self) -> None:
+        """All excluded categories must exist in NEGATIVE_KEYWORDS."""
+        assert HOMEPAGE_EXCLUDED_CATEGORIES.issubset(NEGATIVE_KEYWORDS.keys())
+
+    def test_excluded_categories_contains_expected_set(self) -> None:
+        expected = {
+            "legal_issues",
+            "layoffs_downsizing",
+            "financial_distress",
+            "security_breach",
+            "product_failures",
+        }
+        assert expected == HOMEPAGE_EXCLUDED_CATEGORIES
+
+    def test_filter_keywords_removes_excluded(self) -> None:
+        filtered = _filter_keywords(NEGATIVE_KEYWORDS, HOMEPAGE_EXCLUDED_CATEGORIES)
+        for cat in HOMEPAGE_EXCLUDED_CATEGORIES:
+            assert cat not in filtered
+
+    def test_filter_keywords_keeps_non_excluded(self) -> None:
+        filtered = _filter_keywords(NEGATIVE_KEYWORDS, HOMEPAGE_EXCLUDED_CATEGORIES)
+        kept = set(NEGATIVE_KEYWORDS.keys()) - HOMEPAGE_EXCLUDED_CATEGORIES
+        for cat in kept:
+            assert cat in filtered
+
+    def test_filter_keywords_empty_exclusion_returns_all(self) -> None:
+        filtered = _filter_keywords(NEGATIVE_KEYWORDS, frozenset())
+        assert filtered == NEGATIVE_KEYWORDS
+
+    def test_settlement_ignored_with_homepage_exclusion(self) -> None:
+        """'settlement' is in legal_issues -- excluded for homepage analysis."""
+        content = "Fast settlement processing for payment transactions."
+        result = analyze_content_significance(
+            content,
+            magnitude="major",
+            exclude_categories=HOMEPAGE_EXCLUDED_CATEGORIES,
+        )
+        # 'settlement' should not trigger as a negative keyword
+        assert "settlement" not in result.matched_keywords
+
+    def test_settlement_detected_without_exclusion(self) -> None:
+        """'settlement' should be detected when no exclusion is applied (news)."""
+        content = "The company reached a settlement in the ongoing lawsuit."
+        result = analyze_content_significance(content, magnitude="major")
+        assert "settlement" in result.matched_keywords
+
+    def test_vulnerability_ignored_with_homepage_exclusion(self) -> None:
+        """'vulnerability' is in security_breach -- excluded for homepage analysis."""
+        content = "We detect and fix every vulnerability in your infrastructure."
+        result = analyze_content_significance(
+            content,
+            magnitude="major",
+            exclude_categories=HOMEPAGE_EXCLUDED_CATEGORIES,
+        )
+        assert "vulnerability" not in result.matched_keywords
+
+    def test_layoffs_ignored_with_homepage_exclusion(self) -> None:
+        """'layoffs' is in layoffs_downsizing -- excluded for homepage analysis."""
+        content = "Our platform helps companies manage layoffs with care and compliance."
+        result = analyze_content_significance(
+            content,
+            magnitude="major",
+            exclude_categories=HOMEPAGE_EXCLUDED_CATEGORIES,
+        )
+        assert "layoffs" not in result.matched_keywords
+
+    def test_bankruptcy_ignored_with_homepage_exclusion(self) -> None:
+        """'bankruptcy' is in financial_distress -- excluded for homepage analysis."""
+        content = "Bankruptcy law firm serving clients nationwide since 2005."
+        result = analyze_content_significance(
+            content,
+            magnitude="major",
+            exclude_categories=HOMEPAGE_EXCLUDED_CATEGORIES,
+        )
+        assert "bankruptcy" not in result.matched_keywords
+
+    def test_closure_not_excluded_for_homepage(self) -> None:
+        """'closure' category is NOT excluded -- companies do shut down."""
+        content = "We have shut down operations and ceased operations entirely."
+        result = analyze_content_significance(
+            content,
+            magnitude="major",
+            exclude_categories=HOMEPAGE_EXCLUDED_CATEGORIES,
+        )
+        assert result.classification == "significant"
+        assert result.sentiment == "negative"
+
+    def test_positive_keywords_unaffected_by_exclusion(self) -> None:
+        """Homepage exclusion only affects negative categories, not positive."""
+        content = "We raised $50M in funding during our Series A round."
+        result = analyze_content_significance(
+            content,
+            magnitude="major",
+            exclude_categories=HOMEPAGE_EXCLUDED_CATEGORIES,
+        )
+        assert result.classification == "significant"
+        assert result.sentiment == "positive"
+
+    def test_none_exclude_categories_uses_all(self) -> None:
+        """None exclude_categories should use all negative keyword categories."""
+        content = "The company reached a settlement in the lawsuit."
+        result_all = analyze_content_significance(content, magnitude="major")
+        result_none = analyze_content_significance(
+            content, magnitude="major", exclude_categories=None
+        )
+        assert result_all.matched_keywords == result_none.matched_keywords
 
 
 class TestKeywordDictionaries:

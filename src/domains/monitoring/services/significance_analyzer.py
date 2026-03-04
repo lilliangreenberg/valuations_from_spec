@@ -8,6 +8,7 @@ import structlog
 
 from src.domains.monitoring.core.change_detection import extract_content_diff
 from src.domains.monitoring.core.significance_analysis import (
+    HOMEPAGE_EXCLUDED_CATEGORIES,
     analyze_content_significance,
 )
 from src.utils.progress import ProgressTracker
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
         ChangeRecordRepository,
     )
     from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
+    from src.repositories.company_repository import CompanyRepository
 
 logger = structlog.get_logger(__name__)
 
@@ -28,11 +30,13 @@ class SignificanceAnalyzer:
         self,
         change_record_repo: ChangeRecordRepository,
         snapshot_repo: SnapshotRepository,
+        company_repo: CompanyRepository,
         llm_client: Any | None = None,
         llm_enabled: bool = False,
     ) -> None:
         self.change_record_repo = change_record_repo
         self.snapshot_repo = snapshot_repo
+        self.company_repo = company_repo
         self.llm_client = llm_client
         self.llm_enabled = llm_enabled
 
@@ -49,6 +53,11 @@ class SignificanceAnalyzer:
 
         for record in records:
             try:
+                company_id = record["company_id"]
+                company = self.company_repo.get_company_by_id(company_id)
+                company_name = company["name"] if company else f"Company {company_id}"
+                company_url = company.get("homepage_url", "") if company else ""
+
                 old_snapshot = self.snapshot_repo.get_snapshot_by_id(record["snapshot_id_old"])
                 new_snapshot = self.snapshot_repo.get_snapshot_by_id(record["snapshot_id_new"])
 
@@ -68,6 +77,7 @@ class SignificanceAnalyzer:
                 result = analyze_content_significance(
                     diff_text,
                     magnitude=record.get("change_magnitude", "minor"),
+                    exclude_categories=HOMEPAGE_EXCLUDED_CATEGORIES,
                 )
 
                 # LLM as primary classifier — keywords passed as hints
@@ -78,6 +88,8 @@ class SignificanceAnalyzer:
                             keywords=result.matched_keywords,
                             categories=result.matched_categories,
                             magnitude=record.get("change_magnitude", "minor"),
+                            company_name=company_name,
+                            homepage_url=company_url,
                         )
                         if not llm_result.get("error"):
                             result.classification = llm_result.get(
