@@ -93,7 +93,10 @@ def import_urls() -> None:
 @click.option("--use-batch-api", is_flag=True, help="Use Firecrawl batch API (8x faster)")
 @click.option("--batch-size", default=20, type=int, help="URLs per batch (max 1000)")
 @click.option("--timeout", default=300, type=int, help="Timeout per batch in seconds")
-def capture_snapshots(use_batch_api: bool, batch_size: int, timeout: int) -> None:
+@click.option("--company-id", default=None, type=int, help="Capture snapshot for a single company")
+def capture_snapshots(
+    use_batch_api: bool, batch_size: int, timeout: int, company_id: int | None
+) -> None:
     """Capture website snapshots for all companies."""
     config = _get_config()
     configure_logging(config.log_level)
@@ -113,7 +116,18 @@ def capture_snapshots(use_batch_api: bool, batch_size: int, timeout: int) -> Non
     logo_repo = SocialMediaLinkRepository(db)
     logo_processor = BrandingLogoProcessor(logo_repo)
 
-    if use_batch_api:
+    if company_id is not None:
+        from src.services.snapshot_manager import SnapshotManager
+
+        manager = SnapshotManager(firecrawl, snapshot_repo, company_repo)  # type: ignore[assignment]
+        click.echo(f"[INFO] Capturing snapshot for company {company_id}...")
+        try:
+            result = manager.capture_snapshot_for_company(company_id)
+        except ValueError as exc:
+            click.echo(f"[ERROR] {exc}")
+            db.close()
+            raise SystemExit(1) from exc
+    elif use_batch_api:
         from src.services.batch_snapshot_manager import BatchSnapshotManager
 
         manager = BatchSnapshotManager(

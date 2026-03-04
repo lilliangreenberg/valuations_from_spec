@@ -35,6 +35,56 @@ class SnapshotManager:
         self._baseline_analyzer = BaselineAnalyzer(snapshot_repo, company_repo)
         self._logo_processor = logo_processor
 
+    def capture_snapshot_for_company(self, company_id: int) -> dict[str, Any]:
+        """Capture a snapshot for a single company by ID.
+
+        Returns summary stats dict.
+
+        Raises:
+            ValueError: If company not found or has no homepage URL.
+        """
+        company = self.company_repo.get_company_by_id(company_id)
+        if not company:
+            raise ValueError(f"Company with id {company_id} not found")
+
+        url = company["homepage_url"]
+        if not url:
+            raise ValueError(f"Company {company_id} ({company['name']}) has no homepage URL")
+
+        tracker = ProgressTracker(total=1)
+
+        try:
+            result = self.firecrawl.capture_snapshot(url)
+            snapshot_data = prepare_snapshot_data(company_id, url, result)
+            snapshot_id = self.snapshot_repo.store_snapshot(snapshot_data)
+
+            if self.snapshot_repo.count_snapshots_for_company(company_id) == 1:
+                self._baseline_analyzer.analyze_baseline_for_snapshot(snapshot_id)
+
+            tracker.record_success()
+            logger.info(
+                "snapshot_captured",
+                company_id=company_id,
+                company_name=company["name"],
+                url=url,
+            )
+        except Exception as exc:
+            logger.error(
+                "snapshot_capture_failed",
+                company_id=company_id,
+                url=url,
+                error=str(exc),
+            )
+            tracker.record_failure(f"Company {company_id}: {exc}")
+            self.company_repo.store_processing_error(
+                entity_type="snapshot",
+                entity_id=company_id,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+            )
+
+        return tracker.summary()
+
     def capture_all_snapshots(self) -> dict[str, Any]:
         """Capture snapshots for all companies with homepage URLs.
 
