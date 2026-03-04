@@ -100,7 +100,7 @@ class ChangeRecordRepository:
         min_confidence: float = 0.5,
     ) -> list[dict[str, Any]]:
         """Get significant changes, optionally filtered."""
-        sql = """SELECT cr.*, c.name as company_name
+        sql = """SELECT cr.*, c.name as company_name, c.homepage_url as homepage_url
                  FROM change_records cr
                  JOIN companies c ON cr.company_id = c.id
                  WHERE cr.significance_classification = 'significant'
@@ -119,7 +119,7 @@ class ChangeRecordRepository:
     def get_uncertain_changes(self, limit: int = 50) -> list[dict[str, Any]]:
         """Get changes classified as UNCERTAIN."""
         rows = self.db.fetchall(
-            """SELECT cr.*, c.name as company_name
+            """SELECT cr.*, c.name as company_name, c.homepage_url as homepage_url
                FROM change_records cr
                JOIN companies c ON cr.company_id = c.id
                WHERE cr.significance_classification = 'uncertain'

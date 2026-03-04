@@ -301,6 +301,9 @@ def list_significant_changes(days: int, sentiment: str | None, min_confidence: f
                 f"confidence: {record.get('significance_confidence', 0):.2f} | "
                 f"{record.get('detected_at', '')[:10]}"
             )
+            homepage_url = record.get("homepage_url", "")
+            if homepage_url:
+                click.echo(f"    URL: {homepage_url}")
             keywords = record.get("matched_keywords", [])
             if keywords:
                 click.echo(f"    Keywords: {', '.join(keywords[:5])}")
@@ -332,6 +335,9 @@ def list_uncertain_changes(limit: int) -> None:
                 f"confidence: {record.get('significance_confidence', 0):.2f} | "
                 f"{record.get('detected_at', '')[:10]}"
             )
+            homepage_url = record.get("homepage_url", "")
+            if homepage_url:
+                click.echo(f"    URL: {homepage_url}")
             notes = record.get("significance_notes", "")
             if notes:
                 click.echo(f"    Notes: {notes}")
@@ -452,6 +458,7 @@ def list_active(days: int) -> None:
         click.echo(f"[INFO] Companies with changes in the last {days} days:\n")
         for row in rows:
             click.echo(f"  {row['name']} | last change: {row['detected_at'][:10]}")
+            click.echo(f"    URL: {row['homepage_url']}")
     db.close()
 
 
@@ -481,6 +488,7 @@ def list_inactive(days: int) -> None:
         click.echo(f"[INFO] Companies without changes in the last {days} days:\n")
         for row in rows:
             click.echo(f"  {row['name']}")
+            click.echo(f"    URL: {row['homepage_url']}")
     db.close()
 
 
