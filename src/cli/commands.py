@@ -496,6 +496,79 @@ def list_inactive(days: int) -> None:
 
 
 @click.command()
+@click.option("--company-id", default=None, type=int, help="Look up by company ID")
+@click.option("--company-name", default=None, type=str, help="Look up by company name")
+def show_social_links(company_id: int | None, company_name: str | None) -> None:
+    """Display discovered social media links and blogs for a company."""
+    if not company_id and not company_name:
+        click.echo("[ERROR] Provide --company-id or --company-name.")
+        return
+
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    from src.domains.discovery.repositories.social_media_link_repository import (
+        SocialMediaLinkRepository,
+    )
+    from src.repositories.company_repository import CompanyRepository
+
+    company_repo = CompanyRepository(db)
+
+    if company_name:
+        company = company_repo.get_company_by_name(company_name)
+        if not company:
+            click.echo(f"[ERROR] Company not found: {company_name}")
+            db.close()
+            return
+        company_id = company["id"]
+        resolved_name = company["name"]
+        homepage_url = company.get("homepage_url", "")
+    else:
+        company = company_repo.get_company_by_id(company_id)  # type: ignore[arg-type]
+        if not company:
+            click.echo(f"[ERROR] Company not found: ID {company_id}")
+            db.close()
+            return
+        resolved_name = company["name"]
+        homepage_url = company.get("homepage_url", "")
+
+    link_repo = SocialMediaLinkRepository(db)
+    links = link_repo.get_links_for_company(company_id)  # type: ignore[arg-type]
+    blogs = link_repo.get_blogs_for_company(company_id)  # type: ignore[arg-type]
+
+    click.echo(f"\n  {resolved_name}")
+    if homepage_url:
+        click.echo(f"  {homepage_url}\n")
+
+    if links:
+        click.echo(f"  Social media links ({len(links)}):")
+        for link in links:
+            platform = link.get("platform", "unknown")
+            url = link.get("profile_url", "")
+            acct_type = link.get("account_type") or ""
+            status = link.get("verification_status", "")
+            parts = [f"    [{platform:<10s}] {url}"]
+            if acct_type:
+                parts.append(f"type={acct_type}")
+            if status and status != "unverified":
+                parts.append(f"status={status}")
+            click.echo("  ".join(parts))
+    else:
+        click.echo("  Social media links: none found")
+
+    if blogs:
+        click.echo(f"\n  Blog links ({len(blogs)}):")
+        for blog in blogs:
+            blog_type = blog.get("blog_type", "unknown")
+            url = blog.get("blog_url", "")
+            click.echo(f"    [{blog_type:<10s}] {url}")
+
+    click.echo()
+    db.close()
+
+
+@click.command()
 @click.option("--batch-size", default=50, type=int, help="Homepages per batch")
 @click.option("--limit", default=None, type=int, help="Process first N companies")
 @click.option("--company-id", default=None, type=int, help="Single company ID")

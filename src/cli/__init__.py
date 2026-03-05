@@ -26,6 +26,7 @@ from src.cli.commands import (
     search_news,
     search_news_all,
     show_changes,
+    show_social_links,
     show_status,
 )
 
@@ -49,6 +50,7 @@ cli.add_command(list_uncertain_changes)
 cli.add_command(search_news)
 cli.add_command(search_news_all)
 cli.add_command(show_changes)
+cli.add_command(show_social_links)
 cli.add_command(show_status)
 cli.add_command(list_active)
 cli.add_command(list_inactive)
