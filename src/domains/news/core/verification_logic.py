@@ -7,10 +7,9 @@ from urllib.parse import urlparse
 
 # Default verification signal weights
 DEFAULT_VERIFICATION_WEIGHTS: dict[str, float] = {
-    "logo": 0.30,
-    "domain": 0.30,
-    "context": 0.15,
-    "llm": 0.25,
+    "domain": 0.35,
+    "context": 0.25,
+    "llm": 0.40,
 }
 
 # Minimum confidence threshold for verification
@@ -134,7 +133,6 @@ def extract_domain_from_url(url: str) -> str:
 
 
 def build_evidence_list(
-    logo_match: tuple[bool, float] | None,
     domain_match: bool,
     domain_name: str,
     context_match: bool,
@@ -146,9 +144,6 @@ def build_evidence_list(
     Each signal that matched adds an evidence string.
     """
     evidence: list[str] = []
-
-    if logo_match is not None and logo_match[0]:
-        evidence.append(f"Logo similarity: {logo_match[1]:.2f}")
 
     if domain_match:
         evidence.append(f"Domain match: {domain_name}")
@@ -167,3 +162,100 @@ def is_article_verified(confidence: float, threshold: float | None = None) -> bo
     if threshold is None:
         threshold = VERIFICATION_THRESHOLD
     return confidence >= threshold
+
+
+# Penalty applied to the domain signal when a competing domain is detected.
+COMPETING_DOMAIN_PENALTY: float = -0.20
+
+
+def extract_company_description(markdown: str | None, max_length: int = 500) -> str:
+    """Extract a meaningful company description from homepage markdown.
+
+    Strips boilerplate lines (short nav items, bare links, empty lines) and
+    returns the first ``max_length`` characters of substantive content.
+    """
+    if not markdown:
+        return ""
+
+    meaningful_lines: list[str] = []
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        # Skip empty lines
+        if not stripped:
+            continue
+        # Skip lines that are just markdown links or images
+        if re.fullmatch(r"!?\[.*?\]\(.*?\)", stripped):
+            continue
+        # Skip very short lines (likely nav items, menu labels)
+        if len(stripped) < 20:
+            continue
+        # Skip lines that are just URLs
+        if re.fullmatch(r"https?://\S+", stripped):
+            continue
+        # Skip markdown heading markers with very short text (nav headings)
+        heading_match = re.match(r"^#{1,6}\s+(.*)", stripped)
+        if heading_match and len(heading_match.group(1).strip()) < 20:
+            continue
+        meaningful_lines.append(stripped)
+
+    result = " ".join(meaningful_lines)
+    return result[:max_length].strip()
+
+
+def _extract_domain_name_part(domain: str) -> str:
+    """Extract the name part of a domain (leftmost label without TLD).
+
+    Examples:
+        wand.app -> wand
+        wand.ai -> wand
+        arch0.com -> arch0
+        www.techcrunch.com -> techcrunch  (www already stripped by callers)
+        blog.acme.io -> blog.acme  (preserves subdomains)
+    """
+    if not domain:
+        return ""
+    # Remove port if present
+    domain = domain.split(":")[0]
+    parts = domain.split(".")
+    if len(parts) <= 1:
+        return domain
+    # Drop the TLD (last part)
+    return ".".join(parts[:-1])
+
+
+def detect_competing_domain(article_url: str, company_domain: str) -> bool:
+    """Detect if the article URL belongs to a competing company with a similar name.
+
+    Returns True when the article's domain shares a similar name part with the
+    company domain but is a different domain entirely. This indicates the article
+    is likely about a different company.
+
+    Examples:
+        wand.ai vs wand.app -> True (same name, different domain)
+        techcrunch.com vs wand.app -> False (unrelated, not competing)
+        wand.app vs wand.app -> False (same domain, not competing)
+    """
+    if not article_url or not company_domain:
+        return False
+
+    article_domain = extract_domain_from_url(article_url)
+    if not article_domain:
+        return False
+
+    # Same domain is not competing
+    if article_domain == company_domain:
+        return False
+
+    article_name = _extract_domain_name_part(article_domain)
+    company_name = _extract_domain_name_part(company_domain)
+
+    if not article_name or not company_name:
+        return False
+
+    # Exact name match with different TLD (wand.ai vs wand.app)
+    if article_name == company_name:
+        return True
+
+    # One name starts with the other (e.g., "wand" vs "wandtech")
+    shorter, longer = sorted([article_name, company_name], key=len)
+    return longer.startswith(shorter) and len(shorter) >= 3

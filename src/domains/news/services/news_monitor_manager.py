@@ -12,21 +12,20 @@ from src.domains.monitoring.core.significance_analysis import (
     analyze_content_significance,
 )
 from src.domains.news.core.verification_logic import (
+    COMPETING_DOMAIN_PENALTY,
     build_evidence_list,
     calculate_weighted_confidence,
     check_domain_in_content,
     check_domain_match,
     check_name_in_context,
+    detect_competing_domain,
+    extract_company_description,
     extract_domain_from_url,
     is_article_verified,
 )
 from src.utils.progress import ProgressTracker
 
 if TYPE_CHECKING:
-    from src.domains.discovery.repositories.social_media_link_repository import (
-        SocialMediaLinkRepository,
-    )
-    from src.domains.discovery.services.logo_service import LogoService
     from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
     from src.domains.news.repositories.news_article_repository import (
         NewsArticleRepository,
@@ -47,16 +46,12 @@ class NewsMonitorManager:
         company_repo: CompanyRepository,
         snapshot_repo: SnapshotRepository,
         llm_client: Any | None = None,
-        logo_service: LogoService | None = None,
-        logo_repo: SocialMediaLinkRepository | None = None,
     ) -> None:
         self.kagi = kagi_client
         self.news_repo = news_repo
         self.company_repo = company_repo
         self.snapshot_repo = snapshot_repo
         self.llm_client = llm_client
-        self.logo_service = logo_service
-        self.logo_repo = logo_repo
 
     def search_company_news(
         self,
@@ -228,25 +223,28 @@ class NewsMonitorManager:
         company_domain = extract_domain_from_url(homepage_url) if homepage_url else ""
         now = datetime.now(UTC).isoformat()
 
+        # Fetch company description from latest snapshot for LLM context
+        company_description = ""
+        snapshots = self.snapshot_repo.get_latest_snapshots(company_id, limit=1)
+        if snapshots:
+            company_description = extract_company_description(snapshots[0].get("content_markdown"))
+
         for article in articles:
             if self.news_repo.check_duplicate_news_url(article["url"]):
                 continue
 
             signals: dict[str, float] = {}
 
-            logo_match: tuple[bool, float] | None = None
-            logo_similarity_score: float | None = None
-            logo_match = self._check_logo_match(
-                company_id, article.get("snippet", ""), homepage_url
-            )
-            if logo_match is not None:
-                signals["logo"] = 1.0 if logo_match[0] else 0.0
-                logo_similarity_score = logo_match[1]
-
             domain_matched = check_domain_match(article["url"], company_domain)
             if not domain_matched:
                 domain_matched = check_domain_in_content(article.get("snippet", ""), company_domain)
-            signals["domain"] = 1.0 if domain_matched else 0.0
+
+            if domain_matched:
+                signals["domain"] = 1.0
+            elif detect_competing_domain(article["url"], company_domain):
+                signals["domain"] = COMPETING_DOMAIN_PENALTY
+            else:
+                signals["domain"] = 0.0
 
             context_matched = check_name_in_context(article.get("snippet", ""), company_name)
             signals["context"] = 1.0 if context_matched else 0.0
@@ -260,6 +258,7 @@ class NewsMonitorManager:
                         article_title=article.get("title", ""),
                         article_source=article.get("source", ""),
                         article_snippet=article.get("snippet", ""),
+                        company_description=company_description,
                     )
                     signals["llm"] = 1.0 if is_match else 0.0
                     llm_match = (is_match, reasoning)
@@ -269,12 +268,17 @@ class NewsMonitorManager:
             confidence = calculate_weighted_confidence(signals)
 
             if not is_article_verified(confidence):
+                logger.debug(
+                    "article_rejected",
+                    title=article.get("title", "")[:80],
+                    signals=signals,
+                    confidence=confidence,
+                )
                 continue
 
             verified += 1
 
             evidence = build_evidence_list(
-                logo_match=logo_match,
                 domain_match=domain_matched,
                 domain_name=company_domain,
                 context_match=context_matched,
@@ -320,7 +324,7 @@ class NewsMonitorManager:
                     "discovered_at": now,
                     "match_confidence": confidence,
                     "match_evidence": evidence,
-                    "logo_similarity": logo_similarity_score,
+                    "logo_similarity": None,
                     "company_match_snippet": article.get("snippet", "")[:500],
                     "keyword_match_snippet": None,
                     "significance_classification": sig_result.classification,
@@ -338,50 +342,6 @@ class NewsMonitorManager:
             "articles_verified": verified,
             "articles_stored": stored,
         }
-
-    def _check_logo_match(
-        self,
-        company_id: int,
-        article_html_or_snippet: str,
-        company_url: str,
-    ) -> tuple[bool, float] | None:
-        """Compare stored company logo with article image via perceptual hash.
-
-        Returns (is_similar, similarity_score) or None if comparison not possible.
-        """
-        if not self.logo_service or not self.logo_repo:
-            return None
-
-        # Get stored company logo
-        stored_logo = self.logo_repo.get_company_logo(company_id)
-        if not stored_logo or not stored_logo.get("perceptual_hash"):
-            return None
-
-        # Try to extract logo from article content
-        article_logo = self.logo_service.extract_logo_from_html(
-            article_html_or_snippet, company_url
-        )
-        if not article_logo or not article_logo.get("source_url"):
-            return None
-
-        # If we can only extract the URL but not compute the hash at this
-        # stage (no image download in pure verification), we report the
-        # extraction succeeded but similarity is 0.0. A full implementation
-        # would download the image, compute its perceptual hash, then compare.
-        # For now, we use the logo_comparison pure function if both hashes are
-        # available.
-        from src.domains.discovery.core.logo_comparison import compute_hash_similarity
-
-        article_hash = article_logo.get("perceptual_hash")
-        if not article_hash:
-            # Cannot compare without a hash -- signal that logo extraction
-            # was attempted but inconclusive.
-            return None
-
-        stored_hash = stored_logo["perceptual_hash"]
-        similarity = float(compute_hash_similarity(stored_hash, article_hash))
-        is_similar = similarity >= 0.85
-        return (is_similar, similarity)
 
     def _calculate_date_range(self, company_id: int) -> tuple[str, str]:
         """Calculate search date range based on snapshot history.

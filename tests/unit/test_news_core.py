@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from src.domains.news.core.verification_logic import (
+    COMPETING_DOMAIN_PENALTY,
     DEFAULT_VERIFICATION_WEIGHTS,
     VERIFICATION_THRESHOLD,
     build_evidence_list,
@@ -15,6 +16,8 @@ from src.domains.news.core.verification_logic import (
     check_domain_in_content,
     check_domain_match,
     check_name_in_context,
+    detect_competing_domain,
+    extract_company_description,
     extract_domain_from_url,
     is_article_verified,
 )
@@ -28,7 +31,7 @@ class TestCalculateWeightedConfidence:
     """Tests for calculate_weighted_confidence."""
 
     def test_all_signals_at_one_gives_one(self) -> None:
-        signals = {"logo": 1.0, "domain": 1.0, "context": 1.0, "llm": 1.0}
+        signals = {"domain": 1.0, "context": 1.0, "llm": 1.0}
         result = calculate_weighted_confidence(signals)
         assert result == pytest.approx(1.0)
 
@@ -37,43 +40,38 @@ class TestCalculateWeightedConfidence:
         assert result == pytest.approx(0.0)
 
     def test_all_signals_at_zero(self) -> None:
-        signals = {"logo": 0.0, "domain": 0.0, "context": 0.0, "llm": 0.0}
+        signals = {"domain": 0.0, "context": 0.0, "llm": 0.0}
         result = calculate_weighted_confidence(signals)
         assert result == pytest.approx(0.0)
-
-    def test_only_logo_signal(self) -> None:
-        signals = {"logo": 1.0}
-        result = calculate_weighted_confidence(signals)
-        assert result == pytest.approx(0.30)
 
     def test_only_domain_signal(self) -> None:
         signals = {"domain": 1.0}
         result = calculate_weighted_confidence(signals)
-        assert result == pytest.approx(0.30)
+        assert result == pytest.approx(0.35)
 
     def test_only_context_signal(self) -> None:
         signals = {"context": 1.0}
         result = calculate_weighted_confidence(signals)
-        assert result == pytest.approx(0.15)
+        assert result == pytest.approx(0.25)
 
     def test_only_llm_signal(self) -> None:
         signals = {"llm": 1.0}
         result = calculate_weighted_confidence(signals)
-        assert result == pytest.approx(0.25)
+        assert result == pytest.approx(0.40)
 
-    def test_logo_and_domain(self) -> None:
-        signals = {"logo": 1.0, "domain": 1.0}
+    def test_context_and_llm(self) -> None:
+        signals = {"context": 1.0, "llm": 1.0}
         result = calculate_weighted_confidence(signals)
-        assert result == pytest.approx(0.60)
+        assert result == pytest.approx(0.65)
 
     def test_partial_signal_value(self) -> None:
-        signals = {"logo": 0.5, "domain": 0.5}
+        signals = {"domain": 0.5, "llm": 0.5}
         result = calculate_weighted_confidence(signals)
-        assert result == pytest.approx(0.30)
+        assert result == pytest.approx(0.375)
 
     def test_custom_weights(self) -> None:
-        signals = {"logo": 1.0, "domain": 1.0}
-        custom_weights = {"logo": 0.5, "domain": 0.5}
+        signals = {"domain": 1.0, "llm": 1.0}
+        custom_weights = {"domain": 0.5, "llm": 0.5}
         result = calculate_weighted_confidence(signals, weights=custom_weights)
         assert result == pytest.approx(1.0)
 
@@ -92,7 +90,7 @@ class TestCalculateWeightedConfidence:
 
     def test_clamped_to_min_zero(self) -> None:
         # Negative signal values
-        signals = {"logo": -5.0}
+        signals = {"domain": -5.0}
         result = calculate_weighted_confidence(signals)
         assert result == pytest.approx(0.0)
 
@@ -312,7 +310,6 @@ class TestBuildEvidenceList:
 
     def test_no_matches_empty_list(self) -> None:
         evidence = build_evidence_list(
-            logo_match=None,
             domain_match=False,
             domain_name="example.com",
             context_match=False,
@@ -321,21 +318,8 @@ class TestBuildEvidenceList:
         )
         assert evidence == []
 
-    def test_logo_match_only(self) -> None:
-        evidence = build_evidence_list(
-            logo_match=(True, 0.95),
-            domain_match=False,
-            domain_name="example.com",
-            context_match=False,
-            company_name="Acme",
-            llm_match=None,
-        )
-        assert len(evidence) == 1
-        assert "Logo similarity: 0.95" in evidence[0]
-
     def test_domain_match_only(self) -> None:
         evidence = build_evidence_list(
-            logo_match=None,
             domain_match=True,
             domain_name="acme.com",
             context_match=False,
@@ -347,7 +331,6 @@ class TestBuildEvidenceList:
 
     def test_context_match_only(self) -> None:
         evidence = build_evidence_list(
-            logo_match=None,
             domain_match=False,
             domain_name="",
             context_match=True,
@@ -359,7 +342,6 @@ class TestBuildEvidenceList:
 
     def test_llm_match_only(self) -> None:
         evidence = build_evidence_list(
-            logo_match=None,
             domain_match=False,
             domain_name="",
             context_match=False,
@@ -372,29 +354,16 @@ class TestBuildEvidenceList:
 
     def test_all_matches(self) -> None:
         evidence = build_evidence_list(
-            logo_match=(True, 0.88),
             domain_match=True,
             domain_name="acme.com",
             context_match=True,
             company_name="Acme Corp",
             llm_match=(True, "Match confirmed"),
         )
-        assert len(evidence) == 4
-
-    def test_logo_false_not_included(self) -> None:
-        evidence = build_evidence_list(
-            logo_match=(False, 0.10),
-            domain_match=False,
-            domain_name="",
-            context_match=False,
-            company_name="Acme",
-            llm_match=None,
-        )
-        assert evidence == []
+        assert len(evidence) == 3
 
     def test_llm_false_not_included(self) -> None:
         evidence = build_evidence_list(
-            logo_match=None,
             domain_match=False,
             domain_name="",
             context_match=False,
@@ -402,17 +371,6 @@ class TestBuildEvidenceList:
             llm_match=(False, "Not a match"),
         )
         assert evidence == []
-
-    def test_logo_formatting(self) -> None:
-        evidence = build_evidence_list(
-            logo_match=(True, 0.12345),
-            domain_match=False,
-            domain_name="",
-            context_match=False,
-            company_name="",
-            llm_match=None,
-        )
-        assert "0.12" in evidence[0]
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -448,3 +406,127 @@ class TestIsArticleVerified:
 
     def test_default_threshold_is_0_40(self) -> None:
         assert pytest.approx(0.40) == VERIFICATION_THRESHOLD
+
+
+# ──────────────────────────────────────────────────────────────────────
+# extract_company_description
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestExtractCompanyDescription:
+    """Tests for extract_company_description."""
+
+    def test_none_input(self) -> None:
+        assert extract_company_description(None) == ""
+
+    def test_empty_string(self) -> None:
+        assert extract_company_description("") == ""
+
+    def test_meaningful_content_extracted(self) -> None:
+        markdown = (
+            "Wand Technologies builds the next generation of creative tools "
+            "for designers and artists worldwide."
+        )
+        result = extract_company_description(markdown)
+        assert "creative tools" in result
+
+    def test_short_nav_lines_stripped(self) -> None:
+        markdown = (
+            "Home\nAbout\nProducts\nContact\nWand Technologies builds creative tools for designers."
+        )
+        result = extract_company_description(markdown)
+        assert "Home" not in result
+        assert "creative tools" in result
+
+    def test_bare_links_stripped(self) -> None:
+        markdown = "[Logo](https://wand.app/logo.png)\nWand builds design tools for the modern era."
+        result = extract_company_description(markdown)
+        assert "Logo" not in result
+        assert "design tools" in result
+
+    def test_bare_urls_stripped(self) -> None:
+        markdown = "https://wand.app\nWand is a design platform for creative professionals."
+        result = extract_company_description(markdown)
+        assert "https://wand.app" not in result
+        assert "design platform" in result
+
+    def test_truncated_to_max_length(self) -> None:
+        markdown = "A" * 100 + " meaningful content. " + "B" * 600
+        result = extract_company_description(markdown, max_length=50)
+        assert len(result) <= 50
+
+    def test_short_headings_stripped(self) -> None:
+        markdown = "# Nav\n## Menu\nWand Technologies is a design platform for teams."
+        result = extract_company_description(markdown)
+        assert "Nav" not in result
+        assert "design platform" in result
+
+    def test_long_headings_preserved(self) -> None:
+        markdown = "# Wand Technologies - Creative Design Platform\nBuilding tools for teams."
+        result = extract_company_description(markdown)
+        assert "Creative Design Platform" in result
+
+    def test_image_links_stripped(self) -> None:
+        markdown = "![Company Logo](https://wand.app/logo.png)\nWand is a creative design company."
+        result = extract_company_description(markdown)
+        assert "Company Logo" not in result
+        assert "creative design" in result
+
+    def test_default_max_length_is_500(self) -> None:
+        markdown = "X" * 30 + " " + "Y" * 600
+        result = extract_company_description(markdown)
+        assert len(result) <= 500
+
+
+# ──────────────────────────────────────────────────────────────────────
+# detect_competing_domain
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestDetectCompetingDomain:
+    """Tests for detect_competing_domain."""
+
+    def test_same_name_different_tld(self) -> None:
+        assert detect_competing_domain("https://wand.ai/blog/post", "wand.app") is True
+
+    def test_same_name_different_tld_reversed(self) -> None:
+        assert detect_competing_domain("https://wand.app/page", "wand.ai") is True
+
+    def test_same_domain_not_competing(self) -> None:
+        assert detect_competing_domain("https://wand.app/blog", "wand.app") is False
+
+    def test_unrelated_domains_not_competing(self) -> None:
+        assert detect_competing_domain("https://techcrunch.com/article", "wand.app") is False
+
+    def test_empty_article_url(self) -> None:
+        assert detect_competing_domain("", "wand.app") is False
+
+    def test_empty_company_domain(self) -> None:
+        assert detect_competing_domain("https://wand.ai/blog", "") is False
+
+    def test_prefix_match_competing(self) -> None:
+        # "wand" starts with "wand" from "wandtech.com"
+        assert detect_competing_domain("https://wand.ai/page", "wandtech.com") is True
+
+    def test_prefix_match_other_direction(self) -> None:
+        assert detect_competing_domain("https://wandtech.com/page", "wand.app") is True
+
+    def test_short_prefix_not_competing(self) -> None:
+        # "ab" is too short (< 3 chars) to be a meaningful prefix match
+        assert detect_competing_domain("https://ab.com/page", "abc.io") is False
+
+    def test_no_overlap_not_competing(self) -> None:
+        assert detect_competing_domain("https://google.com/article", "acme.io") is False
+
+    def test_www_stripped(self) -> None:
+        assert detect_competing_domain("https://www.wand.ai/blog", "wand.app") is True
+
+    def test_competing_domain_penalty_is_negative(self) -> None:
+        assert COMPETING_DOMAIN_PENALTY < 0
+
+    def test_subdomain_handling(self) -> None:
+        # blog.wand.ai -> name part is "blog.wand", company is "wand.app" -> name part is "wand"
+        # "blog.wand" starts with "wand"? No, "wand" starts with "wand" from "blog.wand"? No.
+        # Actually shorter="wand", longer="blog.wand", longer.startswith("wand")? No.
+        # So this should NOT be competing -- the subdomain changes the name part.
+        assert detect_competing_domain("https://blog.wand.ai/post", "wand.app") is False

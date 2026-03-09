@@ -7,10 +7,12 @@ from typing import Any
 import structlog
 
 from src.domains.news.core.verification_logic import (
+    COMPETING_DOMAIN_PENALTY,
     calculate_weighted_confidence,
     check_domain_in_content,
     check_domain_match,
     check_name_in_context,
+    detect_competing_domain,
     extract_domain_from_url,
 )
 
@@ -28,6 +30,7 @@ class CompanyVerifier:
         article: dict[str, Any],
         company_name: str,
         company_url: str,
+        company_description: str = "",
     ) -> tuple[float, list[str]]:
         """Verify article matches company.
 
@@ -40,7 +43,13 @@ class CompanyVerifier:
         domain_matched = check_domain_match(article.get("url", ""), company_domain)
         if not domain_matched:
             domain_matched = check_domain_in_content(article.get("snippet", ""), company_domain)
-        signals["domain"] = 1.0 if domain_matched else 0.0
+
+        if domain_matched:
+            signals["domain"] = 1.0
+        elif detect_competing_domain(article.get("url", ""), company_domain):
+            signals["domain"] = COMPETING_DOMAIN_PENALTY
+        else:
+            signals["domain"] = 0.0
 
         # Name context match
         context_matched = check_name_in_context(article.get("snippet", ""), company_name)
@@ -55,6 +64,7 @@ class CompanyVerifier:
                     article_title=article.get("title", ""),
                     article_source=article.get("source", ""),
                     article_snippet=article.get("snippet", ""),
+                    company_description=company_description,
                 )
                 signals["llm"] = 1.0 if is_match else 0.0
             except Exception:

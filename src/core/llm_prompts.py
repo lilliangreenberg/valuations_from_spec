@@ -211,6 +211,14 @@ def build_news_classification_prompt(
 COMPANY_VERIFICATION_SYSTEM_PROMPT = (
     "You are verifying whether a news article is about a specific company.\n"
     "The company may have a common name, so careful verification is needed.\n\n"
+    "You will receive a description of what the company does, extracted from their\n"
+    "homepage. Use this to determine if the article is about THIS specific company\n"
+    "or a DIFFERENT entity with a similar name.\n\n"
+    "Pay close attention to:\n"
+    "- Does the article describe the same product/service as the company description?\n"
+    "- Does the article reference a different domain or website than the company's?\n"
+    "- Are there any indicators this is a different company (different industry,\n"
+    "  different location, different product)?\n\n"
     "Respond with a JSON object containing:\n"
     "- is_match: boolean - whether the article is about this specific company\n"
     "- confidence: float between 0.0 and 1.0\n"
@@ -220,11 +228,12 @@ COMPANY_VERIFICATION_SYSTEM_PROMPT = (
 COMPANY_VERIFICATION_USER_TEMPLATE = (
     'Is this article about the company "{company_name}"?\n\n'
     "Company homepage: {company_url}\n"
+    "Company description: {company_description}\n\n"
     "Article title: {article_title}\n"
     "Article source: {article_source}\n"
     "Article snippet: {article_snippet}\n\n"
     "Consider: Could this article be about a different entity with a similar"
-    " name?\n"
+    " name? Compare the article content against the company description above.\n"
     "Respond with JSON only."
 )
 
@@ -235,11 +244,18 @@ def build_company_verification_prompt(
     article_title: str,
     article_source: str,
     article_snippet: str,
+    company_description: str = "",
 ) -> tuple[str, str]:
-    """Build prompts for company identity verification."""
+    """Build prompts for company identity verification.
+
+    The company_description provides context about what the company does,
+    extracted from their homepage snapshot, to help the LLM disambiguate
+    companies with similar names.
+    """
     user_prompt = COMPANY_VERIFICATION_USER_TEMPLATE.format(
         company_name=company_name,
         company_url=company_url,
+        company_description=company_description or "No description available.",
         article_title=article_title,
         article_source=article_source,
         article_snippet=article_snippet[:1000],
