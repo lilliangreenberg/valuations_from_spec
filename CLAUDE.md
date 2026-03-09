@@ -52,7 +52,7 @@ This is hardcoded in `src/services/firecrawl_client.py:51` and must NEVER be cha
 **Critical Findings**: All libraries updated to latest versions. Fixed Pydantic v2 deprecation warnings by migrating from json_encoders to field_serializer.
 
 **Last Test Cleanup**: 2026-02-13
-**Test Status**: 1277 passing, 0 failing, 0 errors (100% pass rate)
+**Test Status**: 1578 passing, 0 failing, 0 errors (100% pass rate)
 **Tests Removed**: 370 deprecated/broken tests (MCP full-site discovery + outdated API contracts)
 
 ## Active Technologies
@@ -142,6 +142,8 @@ See TECHNICAL_SPEC.md Section 2 for complete architecture details.
 - `company_logos` - Extracted logos with perceptual hashes
 - `news_articles` - News mentions with verification and significance
 - `company_leadership` - Leadership profiles (CEO, CTO, founders) from LinkedIn
+- `social_media_snapshots` - Social media content snapshots (Medium + blog pages)
+- `social_media_change_records` - Detected changes in social media content
 - `processing_errors` - Failed operations for debugging
 
 **Key Constraints:**
@@ -336,9 +338,34 @@ uv run airtable-extractor check-leadership-changes --limit 10
 - Integrated into existing significance analysis system
 - Changes logged at WARNING level with structured context
 
+### Feature 006: Social Media Content Monitoring
+```bash
+# Capture social media snapshots (Medium + blog pages)
+uv run airtable-extractor capture-social-snapshots
+uv run airtable-extractor capture-social-snapshots --batch-size 100
+uv run airtable-extractor capture-social-snapshots --company-id 42
+uv run airtable-extractor capture-social-snapshots --limit 10
+
+# Detect changes between social media snapshots
+uv run airtable-extractor detect-social-changes
+uv run airtable-extractor detect-social-changes --limit 10
+
+# Enrich homepage change detection with social signals
+uv run airtable-extractor detect-changes --include-social
+
+# Enrich status analysis with social signals
+uv run airtable-extractor analyze-status --include-social
+```
+
+**Social Signal Integration:**
+- Social media posting inactivity (>365 days) used as negative health signal
+- Social content changes run through same significance analysis pipeline
+- `--include-social` flag enriches LLM prompts with social media context
+- Enriched prompts improve classification accuracy for company health signals
+
 ### Testing & Quality
 ```bash
-uv run pytest                                      # Run all tests (1277 tests)
+uv run pytest                                      # Run all tests (1578 tests)
 uv run pytest --cov=src --cov-report=term-missing # With coverage
 uv run ruff check .                                # Run linting
 uv run ruff format .                               # Format code
@@ -416,6 +443,20 @@ Python 3.12: Follow standard conventions
 See TECHNICAL_SPEC.md Section 16 for complete constraints and invariants.
 
 ## Recent Changes
+- Social Media Content Monitoring (2026-03-09): COMPLETED - Monitor Medium + blog content for portfolio companies
+  - Full TDD implementation with 69 new tests (38 unit, 24 contract, 8 integration)
+  - New tables: social_media_snapshots, social_media_change_records
+  - Pure functions: extract_latest_post_date (multi-format), check_posting_inactivity (365-day threshold), prepare_social_context
+  - SocialSnapshotRepository and SocialChangeRecordRepository for data access
+  - SocialSnapshotManager: batch-captures Medium + blog URLs via FirecrawlClient
+  - SocialChangeDetector: change detection + significance analysis for social content
+  - Enriched LLM prompts with social media signals for improved classification
+  - Extended ChangeDetector and StatusAnalyzer with optional social_snapshot_repo
+  - --include-social flag on detect-changes and analyze-status commands
+  - CLI commands: capture-social-snapshots, detect-social-changes
+  - show-changes command displays social media change records
+  - SOCIAL_MEDIA_EXCLUDED_CATEGORIES aliases HOMEPAGE_EXCLUDED_CATEGORIES
+  - Feature Status: PRODUCTION READY
 - LinkedIn Leadership Extraction (2026-02-18): COMPLETED - Extract CEO/founder profiles from LinkedIn
   - Full TDD implementation with 101 new tests (76 unit, 16 contract, 9 integration)
   - Headed Playwright browser with persistent session for LinkedIn scraping

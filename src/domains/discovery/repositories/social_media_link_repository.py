@@ -137,6 +137,13 @@ class SocialMediaLinkRepository:
         )
         return [dict(row) for row in rows]
 
+    def get_all_blog_links(self) -> list[dict[str, Any]]:
+        """Get all blog links across all companies."""
+        rows = self.db.fetchall(
+            "SELECT * FROM blog_links WHERE is_active = 1 ORDER BY company_id, blog_type"
+        )
+        return [dict(row) for row in rows]
+
     def get_company_logo(self, company_id: int) -> dict[str, Any] | None:
         """Get the latest logo for a company."""
         row = self.db.fetchone(

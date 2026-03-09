@@ -9,8 +9,10 @@ from src.cli.commands import (
     analyze_status,
     backfill_significance,
     capture_snapshots,
+    capture_social_snapshots,
     check_leadership_changes,
     detect_changes,
+    detect_social_changes,
     discover_social_batch,
     discover_social_full_site,
     discover_social_media,
@@ -59,3 +61,5 @@ cli.add_command(extract_leadership_all)
 cli.add_command(check_leadership_changes)
 cli.add_command(analyze_baseline)
 cli.add_command(refresh_logos)
+cli.add_command(capture_social_snapshots)
+cli.add_command(detect_social_changes)

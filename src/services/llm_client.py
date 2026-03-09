@@ -17,6 +17,7 @@ import structlog
 from src.core.llm_prompts import (
     build_baseline_classification_prompt,
     build_company_verification_prompt,
+    build_enriched_significance_prompt,
     build_news_classification_prompt,
     build_significance_classification_prompt,
 )
@@ -65,6 +66,7 @@ class LLMClient:
         magnitude: str,
         company_name: str,
         homepage_url: str,
+        social_context: str = "",
     ) -> dict[str, Any]:
         """Classify significance of a content change using LLM as primary classifier.
 
@@ -73,17 +75,31 @@ class LLMClient:
         Company name and URL are provided so the LLM can identify false positives
         where keyword matches are just the company's own name.
 
+        When social_context is non-empty, uses the enriched prompt template that
+        includes social media activity data. Otherwise uses the standard template.
+
         Returns dict with: classification, sentiment, confidence, reasoning,
         validated_keywords, false_positives, error.
         """
-        system_prompt, user_prompt = build_significance_classification_prompt(
-            content_excerpt,
-            keywords,
-            categories,
-            magnitude,
-            company_name,
-            homepage_url,
-        )
+        if social_context:
+            system_prompt, user_prompt = build_enriched_significance_prompt(
+                content_excerpt,
+                keywords,
+                categories,
+                magnitude,
+                company_name,
+                homepage_url,
+                social_context,
+            )
+        else:
+            system_prompt, user_prompt = build_significance_classification_prompt(
+                content_excerpt,
+                keywords,
+                categories,
+                magnitude,
+                company_name,
+                homepage_url,
+            )
         return self._call_llm(system_prompt, user_prompt, "classify_significance")
 
     @retry_with_logging(max_attempts=4, max_wait=60)

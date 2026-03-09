@@ -330,6 +330,67 @@ class Database:
                 " ON company_leadership(title)"
             )
 
+            # social_media_snapshots table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS social_media_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    company_id INTEGER NOT NULL,
+                    source_url TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    content_markdown TEXT,
+                    content_html TEXT,
+                    status_code INTEGER,
+                    captured_at TEXT NOT NULL,
+                    error_message TEXT,
+                    content_checksum TEXT,
+                    latest_post_date TEXT,
+                    FOREIGN KEY (company_id)
+                        REFERENCES companies(id) ON DELETE CASCADE
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_social_snapshots_company_id"
+                " ON social_media_snapshots(company_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_social_snapshots_source_type"
+                " ON social_media_snapshots(source_type)"
+            )
+
+            # social_media_change_records table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS social_media_change_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    company_id INTEGER NOT NULL,
+                    source_url TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    snapshot_id_old INTEGER NOT NULL,
+                    snapshot_id_new INTEGER NOT NULL,
+                    checksum_old TEXT NOT NULL,
+                    checksum_new TEXT NOT NULL,
+                    has_changed INTEGER NOT NULL,
+                    change_magnitude TEXT NOT NULL,
+                    detected_at TEXT NOT NULL,
+                    significance_classification TEXT,
+                    significance_sentiment TEXT,
+                    significance_confidence REAL,
+                    matched_keywords TEXT,
+                    matched_categories TEXT,
+                    significance_notes TEXT,
+                    evidence_snippets TEXT,
+                    FOREIGN KEY (company_id)
+                        REFERENCES companies(id) ON DELETE CASCADE,
+                    FOREIGN KEY (snapshot_id_old)
+                        REFERENCES social_media_snapshots(id) ON DELETE CASCADE,
+                    FOREIGN KEY (snapshot_id_new)
+                        REFERENCES social_media_snapshots(id) ON DELETE CASCADE
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sm_change_records_company_id"
+                " ON social_media_change_records(company_id)"
+            )
+
         # Migrations: add baseline columns to snapshots table
         baseline_columns = [
             ("baseline_classification", "TEXT"),

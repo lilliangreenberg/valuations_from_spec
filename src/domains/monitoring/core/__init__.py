@@ -17,6 +17,7 @@ from src.domains.monitoring.core.http_headers import (
 )
 from src.domains.monitoring.core.significance_analysis import (
     HOMEPAGE_EXCLUDED_CATEGORIES,
+    SOCIAL_MEDIA_EXCLUDED_CATEGORIES,
     KeywordMatchResult,
     SignificanceResult,
     analyze_content_significance,
@@ -24,6 +25,11 @@ from src.domains.monitoring.core.significance_analysis import (
     detect_false_positives,
     detect_negation,
     find_keyword_matches,
+)
+from src.domains.monitoring.core.social_content_analysis import (
+    check_posting_inactivity,
+    extract_latest_post_date,
+    prepare_social_context,
 )
 from src.domains.monitoring.core.status_rules import (
     CompanyStatusType,
@@ -50,6 +56,7 @@ __all__ = [
     "parse_last_modified",
     # significance_analysis
     "HOMEPAGE_EXCLUDED_CATEGORIES",
+    "SOCIAL_MEDIA_EXCLUDED_CATEGORIES",
     "KeywordMatchResult",
     "SignificanceResult",
     "analyze_content_significance",
@@ -57,6 +64,10 @@ __all__ = [
     "detect_false_positives",
     "detect_negation",
     "find_keyword_matches",
+    # social_content_analysis
+    "check_posting_inactivity",
+    "extract_latest_post_date",
+    "prepare_social_context",
     # status_rules
     "CompanyStatusType",
     "SignalType",
