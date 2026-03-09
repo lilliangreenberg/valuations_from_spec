@@ -228,7 +228,7 @@ Loaded from `.env` file via `pydantic-settings`:
 | `MAX_RETRY_ATTEMPTS` | No | `2` | Max retry attempts (0-5) |
 | `ANTHROPIC_API_KEY` | No | None | Anthropic API key for LLM features |
 | `LLM_MODEL` | No | `claude-haiku-4-5-20251001` | Model ID for LLM calls |
-| `LLM_VALIDATION_ENABLED` | No | `false` | Enable LLM significance validation |
+| `LLM_VALIDATION_ENABLED` | No | `true` | Enable LLM significance validation |
 | `KAGI_API_KEY` | No | None | Kagi API key for news search |
 
 ### 3.2 Config Model

@@ -1280,6 +1280,38 @@ class TestBuildCompanyVerificationPrompt:
         )
         assert "verif" in system.lower()
 
+    def test_company_description_in_user_prompt(self) -> None:
+        _, user = build_company_verification_prompt(
+            company_name="Wand",
+            company_url="https://wand.app",
+            article_title="Wand raises funding",
+            article_source="techcrunch.com",
+            article_snippet="Wand announced...",
+            company_description="Wand builds creative design tools for teams.",
+        )
+        assert "creative design tools" in user
+
+    def test_empty_description_shows_fallback(self) -> None:
+        _, user = build_company_verification_prompt(
+            company_name="Wand",
+            company_url="https://wand.app",
+            article_title="Title",
+            article_source="source",
+            article_snippet="snippet",
+            company_description="",
+        )
+        assert "No description available" in user
+
+    def test_system_prompt_mentions_description(self) -> None:
+        system, _ = build_company_verification_prompt(
+            company_name="X",
+            company_url="https://x.com",
+            article_title="T",
+            article_source="S",
+            article_snippet="snip",
+        )
+        assert "description" in system.lower()
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Module 10: advanced_extraction

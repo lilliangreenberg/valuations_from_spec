@@ -141,13 +141,19 @@ class LLMClient:
         article_title: str,
         article_source: str,
         article_snippet: str,
+        company_description: str = "",
     ) -> tuple[bool, str]:
         """Verify if a news article is about the specified company.
 
         Returns (is_match, reasoning).
         """
         system_prompt, user_prompt = build_company_verification_prompt(
-            company_name, company_url, article_title, article_source, article_snippet
+            company_name,
+            company_url,
+            article_title,
+            article_source,
+            article_snippet,
+            company_description=company_description,
         )
 
         try:
