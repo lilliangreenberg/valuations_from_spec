@@ -242,6 +242,10 @@ HOMEPAGE_EXCLUDED_CATEGORIES: frozenset[str] = frozenset(
     }
 )
 
+# Social media self-reports are treated the same as homepage self-reports.
+# Explicit alias so if homepage exclusions change, social media follows.
+SOCIAL_MEDIA_EXCLUDED_CATEGORIES: frozenset[str] = HOMEPAGE_EXCLUDED_CATEGORIES
+
 FALSE_POSITIVE_PHRASES: list[str] = [
     # "acquisition" keyword (acquisition category)
     "talent acquisition",

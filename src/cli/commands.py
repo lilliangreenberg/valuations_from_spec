@@ -166,7 +166,10 @@ def capture_snapshots(
     type=click.Choice(["summary", "detailed", "json"]),
     help="Output format",
 )
-def detect_changes(batch_size: int, limit: int | None, output_format: str) -> None:
+@click.option("--include-social", is_flag=True, help="Enrich LLM with social media context")
+def detect_changes(
+    batch_size: int, limit: int | None, output_format: str, include_social: bool
+) -> None:
     """Detect content changes between snapshots with significance analysis."""
     config = _get_config()
     configure_logging(config.log_level)
@@ -189,12 +192,21 @@ def detect_changes(batch_size: int, limit: int | None, output_format: str) -> No
 
         llm_client = LLMClient(config.anthropic_api_key, config.llm_model)
 
+    social_snapshot_repo = None
+    if include_social:
+        from src.domains.monitoring.repositories.social_snapshot_repository import (
+            SocialSnapshotRepository,
+        )
+
+        social_snapshot_repo = SocialSnapshotRepository(db)
+
     detector = ChangeDetector(
         snapshot_repo,
         change_repo,
         company_repo,
         llm_client=llm_client,
         llm_enabled=bool(llm_client),
+        social_snapshot_repo=social_snapshot_repo,
     )
 
     click.echo("[INFO] Detecting changes...")
@@ -216,7 +228,10 @@ def detect_changes(batch_size: int, limit: int | None, output_format: str) -> No
     type=click.Choice(["summary", "detailed", "json"]),
     help="Output format",
 )
-def analyze_status(batch_size: int, confidence_threshold: float, output_format: str) -> None:
+@click.option("--include-social", is_flag=True, help="Include social media signals in analysis")
+def analyze_status(
+    batch_size: int, confidence_threshold: float, output_format: str, include_social: bool
+) -> None:
     """Analyze company operational status from snapshots."""
     config = _get_config()
     configure_logging(config.log_level)
@@ -232,7 +247,19 @@ def analyze_status(batch_size: int, confidence_threshold: float, output_format: 
     snapshot_repo = SnapshotRepository(db)
     status_repo = CompanyStatusRepository(db)
     company_repo = CompanyRepository(db)
-    analyzer = StatusAnalyzer(snapshot_repo, status_repo, company_repo)
+
+    social_snapshot_repo = None
+    if include_social:
+        from src.domains.monitoring.repositories.social_snapshot_repository import (
+            SocialSnapshotRepository,
+        )
+
+        social_snapshot_repo = SocialSnapshotRepository(db)
+        click.echo("[INFO] Including social media signals in status analysis...")
+
+    analyzer = StatusAnalyzer(
+        snapshot_repo, status_repo, company_repo, social_snapshot_repo=social_snapshot_repo
+    )
 
     click.echo("[INFO] Analyzing company statuses...")
     result = analyzer.analyze_all_statuses()
@@ -385,19 +412,49 @@ def show_changes(company_name: str) -> None:
     click.echo(f"\n[INFO] Change history for: {company['name']}")
     click.echo(f"  Homepage: {company.get('homepage_url', 'N/A')}\n")
 
+    from src.domains.monitoring.repositories.social_change_record_repository import (
+        SocialChangeRecordRepository,
+    )
+
     records = change_repo.get_changes_for_company(company["id"])
-    if not records:
+    social_change_repo = SocialChangeRecordRepository(db)
+    social_changes = social_change_repo.get_changes_for_company(company["id"])
+
+    # Build unified list of (detected_at, display_line) for chronological display
+    unified: list[tuple[str, str]] = []
+
+    for record in records:
+        changed = "CHANGED" if record["has_changed"] else "no change"
+        sig = record.get("significance_classification", "N/A")
+        sentiment = record.get("significance_sentiment", "N/A")
+        detected_at = record.get("detected_at", "")
+        line = (
+            f"  [HOMEPAGE] {detected_at[:10]} | {changed} | "
+            f"{record['change_magnitude']} | "
+            f"significance: {sig} ({sentiment})"
+        )
+        unified.append((detected_at, line))
+
+    for sc in social_changes:
+        changed = "CHANGED" if sc["has_changed"] else "no change"
+        sig = sc.get("significance_classification", "N/A")
+        sentiment = sc.get("significance_sentiment", "N/A")
+        source_type = sc.get("source_type", "unknown").upper()
+        detected_at = sc.get("detected_at", "")
+        line = (
+            f"  [{source_type}] {detected_at[:10]} | {changed} | "
+            f"{sc['change_magnitude']} | "
+            f"significance: {sig} ({sentiment})"
+        )
+        unified.append((detected_at, line))
+
+    if not unified:
         click.echo("  No changes recorded.")
     else:
-        for record in records:
-            changed = "CHANGED" if record["has_changed"] else "no change"
-            sig = record.get("significance_classification", "N/A")
-            sentiment = record.get("significance_sentiment", "N/A")
-            click.echo(
-                f"  {record['detected_at'][:10]} | {changed} | "
-                f"{record['change_magnitude']} | "
-                f"significance: {sig} ({sentiment})"
-            )
+        # Sort by detected_at descending (most recent first)
+        unified.sort(key=lambda x: x[0], reverse=True)
+        for _ts, line in unified:
+            click.echo(line)
 
     # Show related news
     articles = news_repo.get_news_articles(company["id"], limit=10)
@@ -1156,6 +1213,89 @@ def analyze_baseline(limit: int | None, dry_run: bool) -> None:
     click.echo(f"[INFO] {mode} baseline signals...")
     result = analyzer.backfill_baselines(limit=limit, dry_run=dry_run)
     _print_summary("Baseline analysis complete", result)
+    db.close()
+
+
+# --- Feature 006: Social Media Content Monitoring ---
+
+
+@click.command()
+@click.option("--batch-size", default=50, type=int, help="URLs per Firecrawl batch")
+@click.option("--limit", default=None, type=int, help="Max URLs to capture")
+@click.option("--company-id", default=None, type=int, help="Single company ID")
+def capture_social_snapshots(batch_size: int, limit: int | None, company_id: int | None) -> None:
+    """Capture snapshots of Medium and blog pages for social media monitoring."""
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    from src.domains.discovery.repositories.social_media_link_repository import (
+        SocialMediaLinkRepository,
+    )
+    from src.domains.monitoring.repositories.social_snapshot_repository import (
+        SocialSnapshotRepository,
+    )
+    from src.domains.monitoring.services.social_snapshot_manager import (
+        SocialSnapshotManager,
+    )
+    from src.repositories.company_repository import CompanyRepository
+    from src.services.firecrawl_client import FirecrawlClient
+
+    social_snapshot_repo = SocialSnapshotRepository(db)
+    social_link_repo = SocialMediaLinkRepository(db)
+    company_repo = CompanyRepository(db)
+    firecrawl = FirecrawlClient(config.firecrawl_api_key)
+
+    manager = SocialSnapshotManager(social_snapshot_repo, social_link_repo, company_repo, firecrawl)
+
+    click.echo("[INFO] Capturing social media snapshots...")
+    result = manager.capture_social_snapshots(
+        batch_size=batch_size, limit=limit, company_id=company_id
+    )
+    _print_summary("Social snapshot capture complete", result)
+    db.close()
+
+
+@click.command()
+@click.option("--limit", default=None, type=int, help="Max source pairs to process")
+def detect_social_changes(limit: int | None) -> None:
+    """Detect content changes in social media snapshots."""
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    from src.domains.monitoring.repositories.social_change_record_repository import (
+        SocialChangeRecordRepository,
+    )
+    from src.domains.monitoring.repositories.social_snapshot_repository import (
+        SocialSnapshotRepository,
+    )
+    from src.domains.monitoring.services.social_change_detector import (
+        SocialChangeDetector,
+    )
+    from src.repositories.company_repository import CompanyRepository
+
+    social_snapshot_repo = SocialSnapshotRepository(db)
+    social_change_repo = SocialChangeRecordRepository(db)
+    company_repo = CompanyRepository(db)
+
+    llm_client = None
+    if config.llm_validation_enabled and config.anthropic_api_key:
+        from src.services.llm_client import LLMClient
+
+        llm_client = LLMClient(config.anthropic_api_key, config.llm_model)
+
+    detector = SocialChangeDetector(
+        social_snapshot_repo,
+        social_change_repo,
+        company_repo,
+        llm_client=llm_client,
+        llm_enabled=bool(llm_client),
+    )
+
+    click.echo("[INFO] Detecting social media changes...")
+    result = detector.detect_all_changes(limit=limit)
+    _print_summary("Social change detection complete", result)
     db.close()
 
 

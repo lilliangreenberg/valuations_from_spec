@@ -1,8 +1,11 @@
-"""Change detection service."""
+"""Social media change detection service.
+
+Detects content changes between social media snapshots (Medium/blog) and
+runs significance analysis on the diffs.
+"""
 
 from __future__ import annotations
 
-import contextlib
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -13,20 +16,15 @@ from src.domains.monitoring.core.change_detection import (
     extract_content_diff,
 )
 from src.domains.monitoring.core.significance_analysis import (
-    HOMEPAGE_EXCLUDED_CATEGORIES,
+    SOCIAL_MEDIA_EXCLUDED_CATEGORIES,
     analyze_content_significance,
-)
-from src.domains.monitoring.core.social_content_analysis import (
-    check_posting_inactivity,
-    prepare_social_context,
 )
 from src.utils.progress import ProgressTracker
 
 if TYPE_CHECKING:
-    from src.domains.monitoring.repositories.change_record_repository import (
-        ChangeRecordRepository,
+    from src.domains.monitoring.repositories.social_change_record_repository import (
+        SocialChangeRecordRepository,
     )
-    from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
     from src.domains.monitoring.repositories.social_snapshot_repository import (
         SocialSnapshotRepository,
     )
@@ -37,74 +35,52 @@ logger = structlog.get_logger(__name__)
 _LLM_CONTENT_LIMIT = 2000
 
 
-class ChangeDetector:
-    """Orchestrates change detection between snapshots."""
+class SocialChangeDetector:
+    """Orchestrates change detection between social media snapshots.
+
+    Mirrors the ChangeDetector pattern exactly, but operates on
+    social_media_snapshots and social_media_change_records tables.
+    """
 
     def __init__(
         self,
-        snapshot_repo: SnapshotRepository,
-        change_record_repo: ChangeRecordRepository,
+        social_snapshot_repo: SocialSnapshotRepository,
+        social_change_record_repo: SocialChangeRecordRepository,
         company_repo: CompanyRepository,
         llm_client: Any | None = None,
         llm_enabled: bool = False,
-        social_snapshot_repo: SocialSnapshotRepository | None = None,
     ) -> None:
-        self.snapshot_repo = snapshot_repo
-        self.change_record_repo = change_record_repo
+        self.social_snapshot_repo = social_snapshot_repo
+        self.social_change_record_repo = social_change_record_repo
         self.company_repo = company_repo
         self.llm_client = llm_client
         self.llm_enabled = llm_enabled
-        self.social_snapshot_repo = social_snapshot_repo
-
-    def _build_social_context(self, company_id: int) -> str:
-        """Build social media context string for a company.
-
-        Fetches latest social snapshots, checks posting inactivity,
-        and formats for LLM consumption.
-        """
-        if self.social_snapshot_repo is None:
-            return ""
-
-        snapshots = self.social_snapshot_repo.get_all_sources_for_company(company_id)
-        if not snapshots:
-            return ""
-
-        now = datetime.now(UTC)
-        inactivity_results: list[tuple[str, bool, int | None]] = []
-
-        for snap in snapshots:
-            post_date_str = snap.get("latest_post_date")
-            post_date = None
-            if post_date_str:
-                with contextlib.suppress(ValueError, TypeError):
-                    post_date = datetime.fromisoformat(post_date_str)
-
-            is_inactive, days = check_posting_inactivity(post_date, reference_date=now)
-            inactivity_results.append((snap.get("source_url", ""), is_inactive, days))
-
-        return prepare_social_context(snapshots, inactivity_results)
 
     def detect_all_changes(self, limit: int | None = None) -> dict[str, Any]:
-        """Detect changes for companies with 2+ snapshots.
+        """Detect changes across all social media sources.
+
+        Pattern mirrors ChangeDetector.detect_all_changes() exactly.
 
         Args:
-            limit: Maximum number of companies to process. None for all.
+            limit: Maximum number of (company_id, source_url) pairs to process.
 
         Returns summary stats.
         """
-        company_ids = self.snapshot_repo.get_companies_with_multiple_snapshots()
+        pairs = self.social_snapshot_repo.get_companies_with_multiple_snapshots()
         if limit is not None:
-            company_ids = company_ids[:limit]
-        tracker = ProgressTracker(total=len(company_ids))
+            pairs = pairs[:limit]
+        tracker = ProgressTracker(total=len(pairs))
         changes_found = 0
 
-        for company_id in company_ids:
+        for company_id, source_url in pairs:
             try:
                 company = self.company_repo.get_company_by_id(company_id)
                 company_name = company["name"] if company else f"Company {company_id}"
                 company_url = company.get("homepage_url", "") if company else ""
 
-                snapshots = self.snapshot_repo.get_latest_snapshots(company_id, limit=2)
+                snapshots = self.social_snapshot_repo.get_latest_snapshots(
+                    company_id, source_url, limit=2
+                )
                 if len(snapshots) < 2:
                     tracker.record_skip()
                     continue
@@ -115,7 +91,7 @@ class ChangeDetector:
                 old_checksum = old_snap.get("content_checksum", "") or ""
                 new_checksum = new_snap.get("content_checksum", "") or ""
 
-                has_changed, magnitude, similarity = detect_content_change(
+                has_changed, magnitude, _similarity = detect_content_change(
                     old_checksum,
                     new_checksum,
                     old_snap.get("content_markdown"),
@@ -126,6 +102,8 @@ class ChangeDetector:
 
                 record_data: dict[str, Any] = {
                     "company_id": company_id,
+                    "source_url": source_url,
+                    "source_type": new_snap.get("source_type", "unknown"),
                     "snapshot_id_old": old_snap["id"],
                     "snapshot_id_new": new_snap["id"],
                     "checksum_old": old_checksum,
@@ -145,15 +123,10 @@ class ChangeDetector:
                         sig_result = analyze_content_significance(
                             diff_text,
                             magnitude=magnitude.value,
-                            exclude_categories=HOMEPAGE_EXCLUDED_CATEGORIES,
+                            exclude_categories=SOCIAL_MEDIA_EXCLUDED_CATEGORIES,
                         )
 
-                        # Build social context if available
-                        social_context = ""
-                        if self.social_snapshot_repo is not None:
-                            social_context = self._build_social_context(company_id)
-
-                        # LLM as primary classifier — keywords passed as hints
+                        # LLM as primary classifier
                         if self.llm_enabled and self.llm_client:
                             try:
                                 llm_result = self.llm_client.classify_significance(
@@ -163,7 +136,6 @@ class ChangeDetector:
                                     magnitude=magnitude.value,
                                     company_name=company_name,
                                     homepage_url=company_url,
-                                    social_context=social_context,
                                 )
                                 if not llm_result.get("error"):
                                     sig_result.classification = llm_result.get(
@@ -179,8 +151,9 @@ class ChangeDetector:
                                         sig_result.notes = llm_result["reasoning"]
                             except Exception as exc:
                                 logger.warning(
-                                    "llm_classification_failed",
+                                    "llm_social_classification_failed",
                                     company_id=company_id,
+                                    source_url=source_url,
                                     error=str(exc),
                                 )
 
@@ -196,7 +169,7 @@ class ChangeDetector:
                             }
                         )
 
-                self.change_record_repo.store_change_record(record_data)
+                self.social_change_record_repo.store_change_record(record_data)
 
                 if has_changed:
                     changes_found += 1
@@ -204,11 +177,12 @@ class ChangeDetector:
                 tracker.record_success()
             except Exception as exc:
                 logger.error(
-                    "change_detection_failed",
+                    "social_change_detection_failed",
                     company_id=company_id,
+                    source_url=source_url,
                     error=str(exc),
                 )
-                tracker.record_failure(f"Company {company_id}: {exc}")
+                tracker.record_failure(f"Company {company_id} ({source_url}): {exc}")
 
             tracker.log_progress(every_n=10)
 
