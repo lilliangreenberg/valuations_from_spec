@@ -13,6 +13,7 @@ from src.cli.commands import (
     check_leadership_changes,
     detect_changes,
     detect_social_changes,
+    discover_ceo_linkedin,
     discover_social_batch,
     discover_social_full_site,
     discover_social_media,
@@ -59,6 +60,7 @@ cli.add_command(list_inactive)
 cli.add_command(extract_leadership)
 cli.add_command(extract_leadership_all)
 cli.add_command(check_leadership_changes)
+cli.add_command(discover_ceo_linkedin)
 cli.add_command(analyze_baseline)
 cli.add_command(refresh_logos)
 cli.add_command(capture_social_snapshots)

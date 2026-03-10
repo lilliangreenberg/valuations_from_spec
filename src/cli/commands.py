@@ -643,7 +643,18 @@ def show_social_links(company_id: int | None, company_name: str | None) -> None:
 @click.option("--batch-size", default=50, type=int, help="Homepages per batch")
 @click.option("--limit", default=None, type=int, help="Process first N companies")
 @click.option("--company-id", default=None, type=int, help="Single company ID")
-def discover_social_media(batch_size: int, limit: int | None, company_id: int | None) -> None:
+@click.option(
+    "--skip-ceo-search",
+    is_flag=True,
+    default=False,
+    help="Skip CEO LinkedIn discovery after social media discovery",
+)
+def discover_social_media(
+    batch_size: int,
+    limit: int | None,
+    company_id: int | None,
+    skip_ceo_search: bool,
+) -> None:
     """Discover social media links from company homepages."""
     config = _get_config()
     configure_logging(config.log_level)
@@ -664,6 +675,14 @@ def discover_social_media(batch_size: int, limit: int | None, company_id: int | 
     click.echo("[INFO] Discovering social media links...")
     result = discovery.discover_all(batch_size=batch_size, limit=limit, company_id=company_id)
     _print_summary("Social media discovery complete", result)
+
+    # Chain CEO LinkedIn discovery (opt-out via --skip-ceo-search)
+    if not skip_ceo_search and config.kagi_api_key:
+        click.echo("\n[INFO] Running CEO LinkedIn discovery...")
+        ceo_discovery = _build_ceo_linkedin_discovery(db, config, social_repo, company_repo)
+        ceo_result = ceo_discovery.discover_all(limit=limit)
+        _print_summary("CEO LinkedIn discovery complete", ceo_result)
+
     db.close()
 
 
@@ -1314,6 +1333,11 @@ def _build_leadership_search(config: Config) -> Any:
         def search_leadership(self, company_name: str) -> list[dict[str, str]]:
             return []
 
+        def search_ceo_linkedin(
+            self, company_name: str, person_name: str | None = None
+        ) -> list[dict[str, str]]:
+            return []
+
     return _StubSearch()
 
 
@@ -1330,3 +1354,90 @@ def _print_leadership_changes(changes: list[dict[str, Any]]) -> None:
             f"    {prefix} {change.get('change_type', '')} | "
             f"{change.get('person_name', '')} ({change.get('title', '')})"
         )
+
+
+def _build_ceo_linkedin_discovery(
+    db: Database,
+    config: Config,
+    social_repo: Any = None,
+    company_repo: Any = None,
+) -> Any:
+    """Build the CeoLinkedinDiscovery service with all dependencies."""
+    from src.domains.discovery.repositories.social_media_link_repository import (
+        SocialMediaLinkRepository,
+    )
+    from src.domains.leadership.repositories.leadership_mention_repository import (
+        LeadershipMentionRepository,
+    )
+    from src.domains.leadership.repositories.leadership_repository import (
+        LeadershipRepository,
+    )
+    from src.domains.leadership.services.ceo_linkedin_discovery import (
+        CeoLinkedinDiscovery,
+    )
+    from src.domains.monitoring.repositories.snapshot_repository import (
+        SnapshotRepository,
+    )
+    from src.repositories.company_repository import CompanyRepository
+
+    search_service = _build_leadership_search(config)
+    leadership_repo = LeadershipRepository(db)
+    mention_repo = LeadershipMentionRepository(db)
+    snapshot_repo = SnapshotRepository(db)
+    if social_repo is None:
+        social_repo = SocialMediaLinkRepository(db)
+    if company_repo is None:
+        company_repo = CompanyRepository(db)
+
+    return CeoLinkedinDiscovery(
+        leadership_search=search_service,
+        leadership_repo=leadership_repo,
+        leadership_mention_repo=mention_repo,
+        snapshot_repo=snapshot_repo,
+        social_link_repo=social_repo,
+        company_repo=company_repo,
+    )
+
+
+@click.command()
+@click.option("--company-id", default=None, type=int, help="Single company ID")
+@click.option("--limit", default=None, type=int, help="Process first N companies")
+@click.option("--max-workers", default=5, type=int, help="Parallel Kagi workers")
+@click.option("--ceo-name", default=None, type=str, help="Known CEO name for targeted search")
+@click.option("--dry-run", is_flag=True, help="Show what would be done without writing to DB")
+def discover_ceo_linkedin(
+    company_id: int | None,
+    limit: int | None,
+    max_workers: int,
+    ceo_name: str | None,
+    dry_run: bool,
+) -> None:
+    """Discover CEO/founder LinkedIn profiles via Kagi search.
+
+    Extracts CEO/founder names from website snapshots, then searches Kagi
+    for their LinkedIn profiles. Results are stored in company_leadership
+    and social_media_links tables.
+
+    Can be run standalone or is automatically chained after discover-social-media
+    (opt-out via --skip-ceo-search on that command).
+    """
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    ceo_discovery = _build_ceo_linkedin_discovery(db, config)
+
+    mode = "[DRY RUN] " if dry_run else ""
+    if company_id is not None:
+        click.echo(f"{mode}[INFO] Discovering CEO LinkedIn for company {company_id}...")
+        result = ceo_discovery.discover_for_company(company_id, ceo_name=ceo_name, dry_run=dry_run)
+        if result.get("error"):
+            click.echo(f"[ERROR] {result['error']}")
+        else:
+            _print_summary("CEO LinkedIn discovery complete", result)
+    else:
+        click.echo(f"{mode}[INFO] Discovering CEO LinkedIn for all companies...")
+        result = ceo_discovery.discover_all(limit=limit, max_workers=max_workers, dry_run=dry_run)
+        _print_summary("CEO LinkedIn discovery complete", result)
+
+    db.close()

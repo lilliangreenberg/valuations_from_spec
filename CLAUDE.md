@@ -52,7 +52,7 @@ This is hardcoded in `src/services/firecrawl_client.py:51` and must NEVER be cha
 **Critical Findings**: All libraries updated to latest versions. Fixed Pydantic v2 deprecation warnings by migrating from json_encoders to field_serializer.
 
 **Last Test Cleanup**: 2026-02-13
-**Test Status**: 1578 passing, 0 failing, 0 errors (100% pass rate)
+**Test Status**: 1659 passing, 0 failing, 0 errors (100% pass rate)
 **Tests Removed**: 370 deprecated/broken tests (MCP full-site discovery + outdated API contracts)
 
 ## Active Technologies
@@ -142,6 +142,7 @@ See TECHNICAL_SPEC.md Section 2 for complete architecture details.
 - `company_logos` - Extracted logos with perceptual hashes
 - `news_articles` - News mentions with verification and significance
 - `company_leadership` - Leadership profiles (CEO, CTO, founders) from LinkedIn
+- `leadership_mentions` - CEO/founder name mentions extracted from website content
 - `social_media_snapshots` - Social media content snapshots (Medium + blog pages)
 - `social_media_change_records` - Detected changes in social media content
 - `processing_errors` - Failed operations for debugging
@@ -151,6 +152,7 @@ See TECHNICAL_SPEC.md Section 2 for complete architecture details.
 - UNIQUE(company_id, profile_url) on social_media_links
 - UNIQUE(content_url) on news_articles (globally unique)
 - UNIQUE(company_id, linkedin_profile_url) on company_leadership
+- UNIQUE(company_id, person_name, title_context) on leadership_mentions
 - Foreign keys with ON DELETE CASCADE for referential integrity
 
 See TECHNICAL_SPEC.md Section 5 for complete schema details.
@@ -172,7 +174,7 @@ See TECHNICAL_SPEC.md Section 5 for complete schema details.
 - `SignificanceSentiment`: POSITIVE, NEGATIVE, NEUTRAL, MIXED
 - `Platform`: LINKEDIN, TWITTER, YOUTUBE, GITHUB, BLUESKY, etc. (12 platforms + BLOG)
 - `VerificationStatus`: LOGO_MATCHED, UNVERIFIED, MANUALLY_REVIEWED, FLAGGED
-- `LeadershipDiscoveryMethod`: PLAYWRIGHT_SCRAPE, KAGI_SEARCH
+- `LeadershipDiscoveryMethod`: PLAYWRIGHT_SCRAPE, KAGI_SEARCH, KAGI_CEO_SEARCH
 - `LeadershipChangeType`: CEO_DEPARTURE, FOUNDER_DEPARTURE, CTO_DEPARTURE, etc.
 
 See TECHNICAL_SPEC.md Section 4 for complete model specifications.
@@ -338,6 +340,27 @@ uv run airtable-extractor check-leadership-changes --limit 10
 - Integrated into existing significance analysis system
 - Changes logged at WARNING level with structured context
 
+### Feature 005b: Kagi-First CEO/Founder LinkedIn Discovery
+```bash
+# Standalone CEO LinkedIn discovery
+uv run airtable-extractor discover-ceo-linkedin                           # Process all companies
+uv run airtable-extractor discover-ceo-linkedin --company-id 42           # Single company
+uv run airtable-extractor discover-ceo-linkedin --ceo-name "John Smith"   # Targeted search
+uv run airtable-extractor discover-ceo-linkedin --dry-run                 # Preview without writing
+uv run airtable-extractor discover-ceo-linkedin --limit 10 --max-workers 5
+
+# Chained with social media discovery (CEO search runs automatically)
+uv run airtable-extractor discover-social-media                           # Includes CEO search
+uv run airtable-extractor discover-social-media --skip-ceo-search         # Opt out of CEO search
+```
+
+**How It Works:**
+1. Extracts CEO/founder names from the latest website snapshot (regex-based, stored in `leadership_mentions`)
+2. Uses extracted name (or CLI `--ceo-name`) for targeted Kagi queries with `site:linkedin.com/in`
+3. Stores results in both `company_leadership` and `social_media_links` tables
+4. Explicit deduplication: checks `leadership_exists()` and `link_exists()` before writes
+5. Re-running updates `last_verified_at` for existing records (reverification)
+
 ### Feature 006: Social Media Content Monitoring
 ```bash
 # Capture social media snapshots (Medium + blog pages)
@@ -443,6 +466,20 @@ Python 3.12: Follow standard conventions
 See TECHNICAL_SPEC.md Section 16 for complete constraints and invariants.
 
 ## Recent Changes
+- Kagi-First CEO/Founder LinkedIn Discovery (2026-03-10): COMPLETED - Discover CEO/founder LinkedIn profiles via Kagi search
+  - Full TDD implementation with 81 new tests (54 unit, 12 contract, 11 integration, 4 schema)
+  - New table: leadership_mentions (stores CEO/founder name mentions extracted from website content)
+  - Pure functions: name_extraction.py with MentionPriority IntEnum, 5 regex extraction patterns
+  - LeadershipMentionRepository for mention CRUD with explicit dedup checks
+  - Extended LeadershipSearch with search_ceo_linkedin() using site:linkedin.com/in operator
+  - CeoLinkedinDiscovery orchestrator: snapshot -> extract mentions -> Kagi search -> store
+  - Explicit dedup: leadership_exists() and link_exists() checks before writes (no error-driven flow)
+  - Reverification: re-running updates last_verified_at on existing records
+  - --dry-run flag for preview without writes
+  - CLI command: discover-ceo-linkedin (standalone) with --company-id, --ceo-name, --dry-run
+  - Chained with discover-social-media (CEO search ON by default, opt-out via --skip-ceo-search)
+  - Snapshot managers untouched (reads latest snapshot on-demand via SnapshotRepository)
+  - Feature Status: PRODUCTION READY (requires KAGI_API_KEY in .env)
 - Social Media Content Monitoring (2026-03-09): COMPLETED - Monitor Medium + blog content for portfolio companies
   - Full TDD implementation with 69 new tests (38 unit, 24 contract, 8 integration)
   - New tables: social_media_snapshots, social_media_change_records

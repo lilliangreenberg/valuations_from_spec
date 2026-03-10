@@ -102,6 +102,7 @@ class TestDatabaseInitialization:
         "processing_errors",
         "company_logos",
         "company_leadership",
+        "leadership_mentions",
         "social_media_snapshots",
         "social_media_change_records",
     ]
@@ -120,6 +121,7 @@ class TestDatabaseInitialization:
         "idx_company_logos_perceptual_hash",
         "idx_company_leadership_company_id",
         "idx_company_leadership_title",
+        "idx_leadership_mentions_company_id",
         "idx_social_snapshots_company_id",
         "idx_social_snapshots_source_type",
         "idx_sm_change_records_company_id",
@@ -137,7 +139,7 @@ class TestDatabaseInitialization:
         rows = db.fetchall(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
-        assert len(rows) == 12
+        assert len(rows) == 13
 
     def test_all_indexes_created(self, db: Database) -> None:
         rows = db.fetchall(
@@ -169,7 +171,7 @@ class TestDatabaseInitialization:
         rows = database.fetchall(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
-        assert len(rows) == 12
+        assert len(rows) == 13
 
 
 class TestDatabaseTransaction:
