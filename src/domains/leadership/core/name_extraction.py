@@ -56,7 +56,8 @@ _COMPOUND_TITLE_CI = (
 
 # Name pattern: 2-4 capitalized words. Case-SENSITIVE -- requires uppercase start.
 # Handles middle names, hyphenated surnames, apostrophes (O'Brien).
-_NAME_PATTERN = r"[A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+){1,3}"
+# Uses [ \t]+ (not \s+) to prevent matching across newlines.
+_NAME_PATTERN = r"[A-Z][a-zA-Z'-]+(?:[ \t]+[A-Z][a-zA-Z'-]+){1,3}"
 
 # Words that should not be treated as person names
 _NON_NAME_WORDS: set[str] = {
@@ -310,6 +311,10 @@ def _is_valid_person_name(
         return False
 
     name = name.strip()
+
+    # Reject names containing newlines (corrupted extraction)
+    if "\n" in name or "\r" in name:
+        return False
 
     # Length check
     if len(name) < 3 or len(name) > 60:

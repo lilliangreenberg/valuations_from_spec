@@ -190,14 +190,16 @@ class CeoLinkedinDiscovery:
     def discover_all(
         self,
         limit: int | None = None,
-        max_workers: int = 5,
+        max_workers: int = 1,
         dry_run: bool = False,
     ) -> dict[str, Any]:
         """Discover CEO/founder LinkedIn for all companies in batch.
 
         Args:
             limit: Process first N companies.
-            max_workers: Parallel Kagi search workers.
+            max_workers: Parallel workers. Default 1 because SQLite connections
+                are thread-bound. Kagi queries already parallelize internally
+                per company via LeadershipSearch.
             dry_run: If True, show what would be done without writing to DB.
 
         Returns aggregate summary.

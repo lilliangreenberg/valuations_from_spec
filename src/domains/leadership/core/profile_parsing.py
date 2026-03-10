@@ -14,15 +14,17 @@ from src.domains.leadership.core.title_detection import (
 )
 
 # Regex to match LinkedIn personal profile URLs (/in/slug)
+# Accepts any subdomain: www.linkedin.com, ca.linkedin.com, uk.linkedin.com, etc.
 _LINKEDIN_PROFILE_PATTERN = re.compile(
-    r"https?://(?:www\.)?linkedin\.com/in/([a-zA-Z0-9_-]+)",
+    r"https?://(?:[\w-]+\.)*linkedin\.com/in/([a-zA-Z0-9_-]+)",
     re.IGNORECASE,
 )
 
 # Pattern to extract name and title from LinkedIn title strings
 # e.g., "John Smith - CEO - Acme Corp | LinkedIn"
+# Uses " - " (space-dash-space) as separator to avoid splitting "Co-Founder"
 _TITLE_NAME_PATTERN = re.compile(
-    r"^([^-|]+?)\s*[-|]\s*(.+?)(?:\s*[-|]\s*.+)?(?:\s*\|\s*LinkedIn)?$",
+    r"^(.+?)\s+-\s+(.+?)(?:\s+-\s+.+?)?(?:\s+\|\s+LinkedIn)?$",
     re.IGNORECASE,
 )
 

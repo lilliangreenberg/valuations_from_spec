@@ -1402,7 +1402,7 @@ def _build_ceo_linkedin_discovery(
 @click.command()
 @click.option("--company-id", default=None, type=int, help="Single company ID")
 @click.option("--limit", default=None, type=int, help="Process first N companies")
-@click.option("--max-workers", default=5, type=int, help="Parallel Kagi workers")
+@click.option("--max-workers", default=1, type=int, help="Parallel workers (default 1, SQLite is thread-bound)")
 @click.option("--ceo-name", default=None, type=str, help="Known CEO name for targeted search")
 @click.option("--dry-run", is_flag=True, help="Show what would be done without writing to DB")
 def discover_ceo_linkedin(

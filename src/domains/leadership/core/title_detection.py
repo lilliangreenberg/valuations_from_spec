@@ -158,11 +158,24 @@ def normalize_title(title: str) -> str:
 def rank_title(title: str) -> int:
     """Return seniority ranking for a title (lower number = more senior).
 
+    Supports both exact matches ("CEO") and word-boundary matches within
+    longer strings ("CEO at Acme Corp", "Co-Founder & CEO").
+    For compound titles, returns the best (lowest) rank found.
     Unknown titles receive the lowest rank (99).
     """
     lower = title.strip().lower()
     if lower in LEADERSHIP_TITLES:
         return LEADERSHIP_TITLES[lower]
+
+    # Word-boundary match: find best (lowest) rank among all matching titles
+    best_rank = _DEFAULT_RANK
+    for known_title, rank in LEADERSHIP_TITLES.items():
+        pattern = re.compile(r"\b" + re.escape(known_title) + r"\b", re.IGNORECASE)
+        if pattern.search(lower) and rank < best_rank:
+            best_rank = rank
+
+    if best_rank < _DEFAULT_RANK:
+        return best_rank
 
     # Check if it matches a Chief X Officer pattern
     if _CHIEF_X_OFFICER_PATTERN.search(lower):
