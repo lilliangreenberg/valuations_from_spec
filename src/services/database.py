@@ -391,6 +391,31 @@ class Database:
                 " ON social_media_change_records(company_id)"
             )
 
+            # leadership_mentions table (CEO/founder names from website content)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS leadership_mentions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    company_id INTEGER NOT NULL,
+                    person_name TEXT NOT NULL,
+                    title_context TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    source_url TEXT,
+                    confidence REAL NOT NULL DEFAULT 0.5,
+                    priority INTEGER NOT NULL DEFAULT 4,
+                    extracted_at TEXT NOT NULL,
+                    snapshot_id INTEGER,
+                    FOREIGN KEY (company_id)
+                        REFERENCES companies(id) ON DELETE CASCADE,
+                    FOREIGN KEY (snapshot_id)
+                        REFERENCES snapshots(id) ON DELETE CASCADE,
+                    UNIQUE(company_id, person_name, title_context)
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_leadership_mentions_company_id"
+                " ON leadership_mentions(company_id)"
+            )
+
         # Migrations: add baseline columns to snapshots table
         baseline_columns = [
             ("baseline_classification", "TEXT"),

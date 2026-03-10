@@ -19,37 +19,41 @@ class LeadershipRepository:
         self.db = db
 
     def store_leadership(self, data: dict[str, Any]) -> int:
-        """Store a leadership record. Handles UNIQUE constraint via skip-on-duplicate."""
-        try:
-            cursor = self.db.execute(
-                """INSERT INTO company_leadership
-                   (company_id, person_name, title, linkedin_profile_url,
-                    discovery_method, confidence, is_current, discovered_at,
-                    last_verified_at, source_company_linkedin_url)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    data["company_id"],
-                    data["person_name"],
-                    data["title"],
-                    data["linkedin_profile_url"],
-                    data["discovery_method"],
-                    data.get("confidence", 0.0),
-                    1 if data.get("is_current", True) else 0,
-                    data["discovered_at"],
-                    data.get("last_verified_at"),
-                    data.get("source_company_linkedin_url"),
-                ),
+        """Store a leadership record. Uses explicit check to skip duplicates.
+
+        Returns row ID if stored, 0 if duplicate skipped.
+        """
+        company_id = data["company_id"]
+        profile_url = data["linkedin_profile_url"]
+
+        if self.leadership_exists(company_id, profile_url):
+            logger.debug(
+                "duplicate_leadership_skipped",
+                url=profile_url,
             )
-            self.db.connection.commit()
-            return cursor.lastrowid or 0
-        except Exception as exc:
-            if "UNIQUE constraint" in str(exc):
-                logger.debug(
-                    "duplicate_leadership_skipped",
-                    url=data.get("linkedin_profile_url"),
-                )
-                return 0
-            raise
+            return 0
+
+        cursor = self.db.execute(
+            """INSERT INTO company_leadership
+               (company_id, person_name, title, linkedin_profile_url,
+                discovery_method, confidence, is_current, discovered_at,
+                last_verified_at, source_company_linkedin_url)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                company_id,
+                data["person_name"],
+                data["title"],
+                profile_url,
+                data["discovery_method"],
+                data.get("confidence", 0.0),
+                1 if data.get("is_current", True) else 0,
+                data["discovered_at"],
+                data.get("last_verified_at"),
+                data.get("source_company_linkedin_url"),
+            ),
+        )
+        self.db.connection.commit()
+        return cursor.lastrowid or 0
 
     def get_leadership_for_company(self, company_id: int) -> list[dict[str, Any]]:
         """Get all leadership records for a company (current and past)."""
@@ -89,6 +93,22 @@ class LeadershipRepository:
         self.db.connection.commit()
         logger.info(
             "leadership_marked_not_current",
+            company_id=company_id,
+            url=linkedin_profile_url,
+        )
+
+    def update_verification_date(
+        self, company_id: int, linkedin_profile_url: str, last_verified_at: str
+    ) -> None:
+        """Update last_verified_at for an existing leadership record."""
+        self.db.execute(
+            "UPDATE company_leadership SET last_verified_at = ? "
+            "WHERE company_id = ? AND linkedin_profile_url = ?",
+            (last_verified_at, company_id, linkedin_profile_url),
+        )
+        self.db.connection.commit()
+        logger.info(
+            "leadership_verification_updated",
             company_id=company_id,
             url=linkedin_profile_url,
         )

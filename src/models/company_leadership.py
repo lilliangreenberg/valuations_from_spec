@@ -16,6 +16,7 @@ class LeadershipDiscoveryMethod(StrEnum):
 
     PLAYWRIGHT_SCRAPE = "playwright_scrape"
     KAGI_SEARCH = "kagi_search"
+    KAGI_CEO_SEARCH = "kagi_ceo_search"
 
 
 class CompanyLeadership(BaseModel):

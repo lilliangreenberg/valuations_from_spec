@@ -12,6 +12,7 @@ from src.domains.leadership.core.profile_parsing import (
     filter_leadership_results,
     parse_kagi_leadership_result,
 )
+from src.domains.leadership.core.title_detection import rank_title
 
 if TYPE_CHECKING:
     from src.domains.news.services.kagi_client import KagiClient
@@ -73,6 +74,64 @@ class LeadershipSearch:
         )
 
         return filtered
+
+    def search_ceo_linkedin(
+        self,
+        company_name: str,
+        person_name: str | None = None,
+    ) -> list[dict[str, str]]:
+        """Search for CEO/founder LinkedIn profiles via Kagi.
+
+        More targeted than search_leadership() -- focuses on CEO/founder only.
+        If person_name is provided, uses it for more precise queries.
+        Uses site:linkedin.com/in operator for precision.
+
+        Returns list of dicts with keys: name, title, profile_url.
+        Only returns results with rank 1-2 titles (CEO, Founder, President).
+        """
+        if person_name:
+            queries = [
+                f'"{person_name}" "{company_name}" CEO site:linkedin.com/in',
+                f'"{person_name}" "{company_name}" founder site:linkedin.com/in',
+            ]
+        else:
+            queries = [
+                f'"{company_name}" CEO site:linkedin.com/in',
+                f'"{company_name}" founder site:linkedin.com/in',
+            ]
+
+        all_results: list[dict[str, str]] = []
+
+        with ThreadPoolExecutor(max_workers=len(queries)) as executor:
+            futures = {executor.submit(self.kagi.search, query=q, limit=10): q for q in queries}
+
+            for future in as_completed(futures):
+                query = futures[future]
+                try:
+                    results = future.result()
+                    parsed = self._parse_results(results)
+                    all_results.extend(parsed)
+                except Exception as exc:
+                    logger.warning(
+                        "kagi_ceo_search_failed",
+                        query=query,
+                        error=str(exc),
+                    )
+
+        # Filter to leadership results, then restrict to rank 1-2 only
+        filtered = filter_leadership_results(all_results)
+        ceo_only = [p for p in filtered if rank_title(p.get("title", "")) <= 2]
+
+        logger.info(
+            "ceo_linkedin_search_complete",
+            company=company_name,
+            person_name=person_name,
+            raw_results=len(all_results),
+            ceo_results=len(ceo_only),
+            queries_sent=queries,
+        )
+
+        return ceo_only
 
     def _parse_results(
         self,
