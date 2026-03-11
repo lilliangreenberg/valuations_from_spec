@@ -1,0 +1,81 @@
+{
+  "command": "detect-social-changes",
+  "timestamp": "2026-03-10T16:22:15Z",
+  "config": {
+    "limit": null
+  },
+  "summary": {
+    "total_sources": 134,
+    "processed": 134,
+    "successful": 130,
+    "failed": 1,
+    "skipped": 3,
+    "changes_found": 22,
+    "no_change": 108,
+    "duration_seconds": 18.42
+  },
+  "significance_breakdown": {
+    "significant": 6,
+    "insignificant": 12,
+    "uncertain": 4
+  },
+  "sentiment_breakdown": {
+    "positive": 4,
+    "negative": 1,
+    "mixed": 1,
+    "neutral": 0
+  },
+  "magnitude_breakdown": {
+    "major": 2,
+    "moderate": 8,
+    "minor": 12
+  },
+  "source_type_breakdown": {
+    "medium": 8,
+    "blog": 14
+  },
+  "companies": {
+    "changed": [
+      {
+        "company_id": 1,
+        "name": "Modal Labs",
+        "source_url": "https://modal.com/blog",
+        "source_type": "blog",
+        "change_magnitude": "moderate",
+        "significance": "significant",
+        "sentiment": "positive",
+        "confidence": 0.82,
+        "matched_keywords": ["new product", "launch"],
+        "matched_categories": ["product_launch"]
+      },
+      {
+        "company_id": 2,
+        "name": "Replit",
+        "source_url": "https://medium.com/@replit",
+        "source_type": "medium",
+        "change_magnitude": "minor",
+        "significance": "insignificant",
+        "sentiment": "neutral",
+        "confidence": 0.75,
+        "matched_keywords": [],
+        "matched_categories": []
+      }
+    ],
+    "failed": [
+      {
+        "company_id": 99,
+        "name": "FailedCo",
+        "source_url": "https://medium.com/@failedco",
+        "error": "Database read error"
+      }
+    ],
+    "skipped": [
+      {
+        "company_id": 150,
+        "name": "NewBlog",
+        "source_url": "https://newblog.com/updates",
+        "reason": "fewer_than_2_snapshots"
+      }
+    ]
+  }
+}

@@ -88,10 +88,13 @@ class SnapshotManager:
     def capture_all_snapshots(self) -> dict[str, Any]:
         """Capture snapshots for all companies with homepage URLs.
 
-        Returns summary stats dict.
+        Returns summary stats dict with report_details for report generation.
         """
         companies = self.company_repo.get_companies_with_homepage()
         tracker = ProgressTracker(total=len(companies))
+
+        failed_details: list[dict[str, Any]] = []
+        skipped_details: list[dict[str, Any]] = []
 
         for company in companies:
             company_id = company["id"]
@@ -99,6 +102,11 @@ class SnapshotManager:
 
             if not url:
                 tracker.record_skip()
+                skipped_details.append({
+                    "company_id": company_id,
+                    "name": company.get("name", ""),
+                    "reason": "no_homepage_url",
+                })
                 continue
 
             try:
@@ -128,6 +136,12 @@ class SnapshotManager:
                     error=str(exc),
                 )
                 tracker.record_failure(f"Company {company_id}: {exc}")
+                failed_details.append({
+                    "company_id": company_id,
+                    "name": company.get("name", ""),
+                    "homepage_url": url,
+                    "error": str(exc),
+                })
                 self.company_repo.store_processing_error(
                     entity_type="snapshot",
                     entity_id=company_id,
@@ -137,4 +151,9 @@ class SnapshotManager:
 
             tracker.log_progress(every_n=10)
 
-        return tracker.summary()
+        summary = tracker.summary()
+        summary["report_details"] = {
+            "failed": failed_details,
+            "skipped": skipped_details,
+        }
+        return summary

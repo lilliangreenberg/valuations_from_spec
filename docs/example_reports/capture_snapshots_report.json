@@ -1,0 +1,40 @@
+{
+  "command": "capture-snapshots",
+  "timestamp": "2026-03-10T14:32:18Z",
+  "config": {
+    "mode": "batch",
+    "batch_size": 50,
+    "limit": null
+  },
+  "summary": {
+    "total_companies": 761,
+    "processed": 761,
+    "successful": 748,
+    "failed": 5,
+    "skipped": 8,
+    "duration_seconds": 962.47
+  },
+  "companies": {
+    "failed": [
+      {
+        "company_id": 15,
+        "name": "DeepSeek",
+        "homepage_url": "https://deepseek.com",
+        "error": "ConnectionError: Connection timed out after 30s"
+      },
+      {
+        "company_id": 88,
+        "name": "Acme Analytics",
+        "homepage_url": "https://acmeanalytics.io",
+        "error": "HTTP 503: Service Unavailable"
+      }
+    ],
+    "skipped": [
+      {
+        "company_id": 42,
+        "name": "Stealth Startup",
+        "reason": "no_homepage_url"
+      }
+    ]
+  }
+}

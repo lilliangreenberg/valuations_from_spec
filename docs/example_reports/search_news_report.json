@@ -1,0 +1,103 @@
+{
+  "command": "search-news-all",
+  "timestamp": "2026-03-10T17:01:44Z",
+  "config": {
+    "limit": null,
+    "max_workers": 5
+  },
+  "summary": {
+    "total_companies": 761,
+    "processed": 761,
+    "successful": 742,
+    "failed": 12,
+    "skipped": 7,
+    "total_articles_found": 2841,
+    "total_articles_verified": 1956,
+    "total_articles_stored": 1487,
+    "total_duplicates_skipped": 469,
+    "duration_seconds": 1842.00
+  },
+  "significance_breakdown": {
+    "significant": 312,
+    "insignificant": 948,
+    "uncertain": 227
+  },
+  "sentiment_breakdown": {
+    "positive": 189,
+    "negative": 87,
+    "mixed": 36,
+    "neutral": 0
+  },
+  "companies": {
+    "with_news": [
+      {
+        "company_id": 1,
+        "name": "Modal Labs",
+        "homepage_url": "https://modal.com",
+        "articles_found": 8,
+        "articles_verified": 6,
+        "articles_stored": 5,
+        "articles": [
+          {
+            "title": "Modal Labs Raises $75M Series B to Scale Serverless GPU Infrastructure",
+            "content_url": "https://techcrunch.com/2026/03/05/modal-labs-series-b",
+            "source": "TechCrunch",
+            "published_at": "2026-03-05",
+            "match_confidence": 0.94,
+            "significance": "significant",
+            "sentiment": "positive",
+            "matched_keywords": ["Series B", "funding", "raises"],
+            "matched_categories": ["funding"]
+          },
+          {
+            "title": "Best Serverless Platforms in 2026",
+            "content_url": "https://devblog.example.com/serverless-2026",
+            "source": "DevBlog",
+            "published_at": "2026-02-28",
+            "match_confidence": 0.72,
+            "significance": "insignificant",
+            "sentiment": "neutral",
+            "matched_keywords": [],
+            "matched_categories": []
+          }
+        ]
+      },
+      {
+        "company_id": 23,
+        "name": "DataStack",
+        "homepage_url": "https://datastack.io",
+        "articles_found": 3,
+        "articles_verified": 2,
+        "articles_stored": 2,
+        "articles": [
+          {
+            "title": "DataStack Announces Workforce Reduction Amid Market Downturn",
+            "content_url": "https://bloomberg.com/news/2026-03-01/datastack-layoffs",
+            "source": "Bloomberg",
+            "published_at": "2026-03-01",
+            "match_confidence": 0.97,
+            "significance": "significant",
+            "sentiment": "negative",
+            "matched_keywords": ["layoffs", "workforce reduction"],
+            "matched_categories": ["layoffs"]
+          }
+        ]
+      }
+    ],
+  
+    "failed": [
+      {
+        "company_id": 45,
+        "name": "BrokenSite",
+        "error": "KagiClient: HTTP 429 Rate Limited"
+      }
+    ],
+    "skipped": [
+      {
+        "company_id": 42,
+        "name": "Stealth Startup",
+        "reason": "no_company_name"
+      }
+    ]
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "command": "capture-social-snapshots",
+  "timestamp": "2026-03-10T15:45:08Z",
+  "config": {
+    "batch_size": 100,
+    "limit": null,
+    "company_id": null
+  },
+  "summary": {
+    "total_urls": 134,
+    "captured": 121,
+    "failed": 8,
+    "skipped": 5,
+    "duration_seconds": 187.63
+  },
+  "source_type_breakdown": {
+    "medium": 48,
+    "blog": 73
+  },
+  "companies": {
+    "failed": [
+      {
+        "company_id": 45,
+        "name": "BrokenSite",
+        "source_url": "https://medium.com/@brokensite",
+        "error": "HTTP 404: Not Found"
+      }
+    ],
+    "skipped": [
+      {
+        "company_id": 300,
+        "name": "StealthMode Inc",
+        "reason": "no_social_media_sources"
+      }
+    ]
+  }
+}

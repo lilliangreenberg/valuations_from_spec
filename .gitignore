@@ -32,6 +32,9 @@ data/linkedin_profile/
 .DS_Store
 Thumbs.db
 
+# Reports (generated at runtime)
+docs/reports/
+
 # Testing
 .coverage
 htmlcov/

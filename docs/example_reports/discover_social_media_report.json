@@ -1,0 +1,121 @@
+{
+  "command": "discover-social-media",
+  "timestamp": "2026-03-10T15:12:41Z",
+  "config": {
+    "batch_size": 50,
+    "limit": null,
+    "company_id": null
+  },
+  "summary": {
+    "total_companies": 761,
+    "processed": 761,
+    "successful": 712,
+    "failed": 14,
+    "skipped": 35,
+    "total_links_found": 1842,
+    "total_blogs_found": 89,
+    "duration_seconds": 2745.30
+  },
+  "platform_breakdown": {
+    "linkedin": 523,
+    "twitter": 412,
+    "github": 298,
+    "youtube": 187,
+    "bluesky": 94,
+    "facebook": 78,
+    "instagram": 65,
+    "tiktok": 42,
+    "discord": 38,
+    "reddit": 35,
+    "mastodon": 22,
+    "medium": 48
+  },
+  "blog_type_breakdown": {
+    "company_blog": 52,
+    "medium": 24,
+    "substack": 13
+  },
+  "companies": {
+    "no_links_found": [
+      {
+        "company_id": 300,
+        "name": "StealthMode Inc",
+        "homepage_url": "https://stealthmode.co"
+      }
+    ],
+    "failed": [
+      {
+        "company_id": 45,
+        "name": "BrokenSite",
+        "homepage_url": "https://brokensite.xyz",
+        "error": "HTTP 404: Not Found"
+      }
+    ],
+    "skipped": [
+      {
+        "company_id": 42,
+        "name": "Stealth Startup",
+        "reason": "no_homepage_url"
+      }
+    ],
+    "discovered": [
+      {
+        "company_id": 1,
+        "name": "Modal Labs",
+        "homepage_url": "https://modal.com",
+        "social_links": [
+          {
+            "platform": "linkedin",
+            "profile_url": "https://linkedin.com/company/modal-labs",
+            "account_type": "company"
+          },
+          {
+            "platform": "twitter",
+            "profile_url": "https://twitter.com/modal_labs",
+            "account_type": "company"
+          },
+          {
+            "platform": "github",
+            "profile_url": "https://github.com/modal-labs",
+            "account_type": "organization"
+          }
+        ],
+        "blogs": [
+          {
+            "blog_type": "company_blog",
+            "blog_url": "https://modal.com/blog"
+          }
+        ]
+      },
+      {
+        "company_id": 2,
+        "name": "Replit",
+        "homepage_url": "https://replit.com",
+        "social_links": [
+          {
+            "platform": "linkedin",
+            "profile_url": "https://linkedin.com/company/replit",
+            "account_type": "company"
+          },
+          {
+            "platform": "twitter",
+            "profile_url": "https://twitter.com/reaborncodes",
+            "account_type": "company"
+          },
+          {
+            "platform": "youtube",
+            "profile_url": "https://youtube.com/@replit",
+            "account_type": "company"
+          },
+          {
+            "platform": "discord",
+            "profile_url": "https://discord.gg/replit",
+            "account_type": "community"
+          }
+        ],
+        "blogs": []
+      }
+    ],
+
+  }
+}

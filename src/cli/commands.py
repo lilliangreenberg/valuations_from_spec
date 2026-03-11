@@ -8,9 +8,19 @@ from typing import Any
 
 import click
 
+from src.core.report_builder import (
+    build_capture_snapshots_report,
+    build_capture_social_snapshots_report,
+    build_detect_changes_report,
+    build_detect_social_changes_report,
+    build_discover_social_media_report,
+    build_extract_leadership_report,
+    build_search_news_report,
+)
 from src.models.config import Config
 from src.services.database import Database
 from src.utils.logger import configure_logging
+from src.utils.report_writer import write_report
 
 
 def _get_config() -> Config:
@@ -151,6 +161,16 @@ def capture_snapshots(
         result = manager.capture_all_snapshots()
 
     _print_summary("Snapshot capture complete", result)
+
+    report_config: dict[str, Any] = {
+        "mode": "batch" if use_batch_api else "sequential",
+        "batch_size": batch_size if use_batch_api else None,
+        "limit": company_id,
+    }
+    report = build_capture_snapshots_report(result, report_config)
+    report_path = write_report(report)
+    click.echo(f"  Report written to: {report_path}")
+
     db.close()
 
 
@@ -216,6 +236,17 @@ def detect_changes(
         click.echo(json.dumps(result, indent=2))
     else:
         _print_summary("Change detection complete", result)
+
+    report_config: dict[str, Any] = {
+        "include_social": include_social,
+        "llm_enabled": bool(llm_client),
+        "llm_model": config.llm_model if llm_client else None,
+        "limit": limit,
+    }
+    report = build_detect_changes_report(result, report_config)
+    report_path = write_report(report)
+    click.echo(f"  Report written to: {report_path}")
+
     db.close()
 
 
@@ -683,6 +714,15 @@ def discover_social_media(
         ceo_result = ceo_discovery.discover_all(limit=limit)
         _print_summary("CEO LinkedIn discovery complete", ceo_result)
 
+    report_config: dict[str, Any] = {
+        "batch_size": batch_size,
+        "limit": limit,
+        "company_id": company_id,
+    }
+    report = build_discover_social_media_report(result, report_config)
+    report_path = write_report(report)
+    click.echo(f"  Report written to: {report_path}")
+
     db.close()
 
 
@@ -998,6 +1038,15 @@ def search_news_all(limit: int | None, max_workers: int) -> None:
     click.echo(f"[INFO] Searching news for all companies ({max_workers} workers)...")
     result = manager.search_all_companies(limit=limit, max_workers=max_workers)
     _print_summary("News search complete", result)
+
+    report_config: dict[str, Any] = {
+        "limit": limit,
+        "max_workers": max_workers,
+    }
+    report = build_search_news_report(result, report_config)
+    report_path = write_report(report)
+    click.echo(f"  Report written to: {report_path}")
+
     db.close()
 
 
@@ -1126,6 +1175,16 @@ def extract_leadership_all(
                 f"{change.get('change_type', '')} | "
                 f"{change.get('person_name', '')} ({change.get('title', '')})"
             )
+
+    report_config: dict[str, Any] = {
+        "limit": limit,
+        "max_workers": max_workers,
+        "headless": headless,
+    }
+    report = build_extract_leadership_report(result, report_config)
+    report_path = write_report(report)
+    click.echo(f"  Report written to: {report_path}")
+
     db.close()
 
 
@@ -1272,6 +1331,16 @@ def capture_social_snapshots(batch_size: int, limit: int | None, company_id: int
         batch_size=batch_size, limit=limit, company_id=company_id
     )
     _print_summary("Social snapshot capture complete", result)
+
+    report_config: dict[str, Any] = {
+        "batch_size": batch_size,
+        "limit": limit,
+        "company_id": company_id,
+    }
+    report = build_capture_social_snapshots_report(result, report_config)
+    report_path = write_report(report)
+    click.echo(f"  Report written to: {report_path}")
+
     db.close()
 
 
@@ -1315,6 +1384,14 @@ def detect_social_changes(limit: int | None) -> None:
     click.echo("[INFO] Detecting social media changes...")
     result = detector.detect_all_changes(limit=limit)
     _print_summary("Social change detection complete", result)
+
+    report_config: dict[str, Any] = {
+        "limit": limit,
+    }
+    report = build_detect_social_changes_report(result, report_config)
+    report_path = write_report(report)
+    click.echo(f"  Report written to: {report_path}")
+
     db.close()
 
 

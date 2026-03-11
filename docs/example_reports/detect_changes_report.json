@@ -1,0 +1,90 @@
+{
+  "command": "detect-changes",
+  "timestamp": "2026-03-10T14:45:03Z",
+  "config": {
+    "include_social": true,
+    "llm_enabled": true,
+    "llm_model": "claude-haiku-4-5-20251001",
+    "limit": null
+  },
+  "summary": {
+    "total_companies": 200,
+    "processed": 200,
+    "successful": 195,
+    "failed": 2,
+    "skipped": 3,
+    "changes_found": 47,
+    "no_change": 148,
+    "duration_seconds": 312.50
+  },
+  "significance_breakdown": {
+    "significant": 12,
+    "insignificant": 28,
+    "uncertain": 7
+  },
+  "sentiment_breakdown": {
+    "positive": 5,
+    "negative": 4,
+    "mixed": 2,
+    "neutral": 1
+  },
+  "magnitude_breakdown": {
+    "major": 3,
+    "moderate": 18,
+    "minor": 26
+  },
+  "companies": {
+    "changed": [
+      {
+        "company_id": 1,
+        "name": "Modal Labs",
+        "homepage_url": "https://modal.com",
+        "change_magnitude": "moderate",
+        "significance": "significant",
+        "sentiment": "positive",
+        "confidence": 0.85,
+        "matched_keywords": ["Series B", "funding"],
+        "matched_categories": ["funding"],
+        "significance_notes": "Company announced Series B funding round"
+      },
+      {
+        "company_id": 23,
+        "name": "DataStack",
+        "homepage_url": "https://datastack.io",
+        "change_magnitude": "major",
+        "significance": "significant",
+        "sentiment": "negative",
+        "confidence": 0.92,
+        "matched_keywords": ["laying off", "restructuring"],
+        "matched_categories": ["layoffs"],
+        "significance_notes": "Website indicates workforce reduction"
+      },
+      {
+        "company_id": 57,
+        "name": "CloudBuild",
+        "homepage_url": "https://cloudbuild.dev",
+        "change_magnitude": "minor",
+        "significance": "insignificant",
+        "sentiment": "neutral",
+        "confidence": 0.88,
+        "matched_keywords": [],
+        "matched_categories": ["css_styling"],
+        "significance_notes": "Minor CSS and copyright year changes"
+      }
+    ],
+    "failed": [
+      {
+        "company_id": 99,
+        "name": "FailedCo",
+        "error": "Company 99: Database read error"
+      }
+    ],
+    "skipped": [
+      {
+        "company_id": 150,
+        "name": "NewStartup",
+        "reason": "fewer_than_2_snapshots"
+      }
+    ]
+  }
+}

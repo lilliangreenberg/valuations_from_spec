@@ -108,7 +108,7 @@ class NewsMonitorManager:
             limit: Process only the first N companies.
             max_workers: Number of parallel workers for Kagi API calls.
 
-        Returns aggregate summary.
+        Returns aggregate summary with report_details for report generation.
         """
         companies = self.company_repo.get_all_companies()
         if limit is not None:
@@ -118,6 +118,10 @@ class NewsMonitorManager:
         total_found = 0
         total_verified = 0
         total_stored = 0
+
+        with_news_details: list[dict[str, Any]] = []
+        failed_details: list[dict[str, Any]] = []
+        skipped_details: list[dict[str, Any]] = []
 
         # Phase 1: Parallel Kagi search
         search_results: dict[int, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
@@ -141,6 +145,11 @@ class NewsMonitorManager:
                         error=str(exc),
                     )
                     tracker.record_failure(f"{company['name']}: {exc}")
+                    failed_details.append({
+                        "company_id": company["id"],
+                        "name": company.get("name", ""),
+                        "error": f"{company['name']}: {exc}",
+                    })
 
         # Phase 2: Sequential verification + DB writes
         for company_id, (company, articles) in search_results.items():
@@ -155,6 +164,18 @@ class NewsMonitorManager:
                 total_verified += store_result["articles_verified"]
                 total_stored += store_result["articles_stored"]
                 tracker.record_success()
+
+                # Collect stored article detail for report
+                if store_result["articles_stored"] > 0:
+                    with_news_details.append({
+                        "company_id": company_id,
+                        "name": company["name"],
+                        "homepage_url": company.get("homepage_url", ""),
+                        "articles_found": store_result["articles_found"],
+                        "articles_verified": store_result["articles_verified"],
+                        "articles_stored": store_result["articles_stored"],
+                        "articles": store_result.get("article_details", []),
+                    })
             except Exception as exc:
                 logger.error(
                     "news_processing_failed",
@@ -162,6 +183,11 @@ class NewsMonitorManager:
                     error=str(exc),
                 )
                 tracker.record_failure(f"{company['name']}: {exc}")
+                failed_details.append({
+                    "company_id": company["id"],
+                    "name": company.get("name", ""),
+                    "error": f"{company['name']}: {exc}",
+                })
 
             tracker.log_progress(every_n=10)
 
@@ -177,6 +203,11 @@ class NewsMonitorManager:
         summary["total_found"] = total_found
         summary["total_verified"] = total_verified
         summary["total_stored"] = total_stored
+        summary["report_details"] = {
+            "with_news": with_news_details,
+            "failed": failed_details,
+            "skipped": skipped_details,
+        }
         return summary
 
     def _fetch_news_for_company(
@@ -211,14 +242,16 @@ class NewsMonitorManager:
         company_name: str,
         homepage_url: str,
         articles: list[dict[str, Any]],
-    ) -> dict[str, int]:
+    ) -> dict[str, Any]:
         """Verify and store articles for a company (must run on main thread for SQLite).
 
-        Returns dict with articles_found, articles_verified, articles_stored.
+        Returns dict with articles_found, articles_verified, articles_stored,
+        and article_details for report generation.
         """
         found = len(articles)
         verified = 0
         stored = 0
+        article_details: list[dict[str, Any]] = []
 
         company_domain = extract_domain_from_url(homepage_url) if homepage_url else ""
         now = datetime.now(UTC).isoformat()
@@ -336,11 +369,23 @@ class NewsMonitorManager:
                 }
             )
             stored += 1
+            article_details.append({
+                "title": article.get("title", ""),
+                "content_url": article["url"],
+                "source": article.get("source", ""),
+                "published_at": article.get("published", now),
+                "match_confidence": confidence,
+                "significance": sig_result.classification,
+                "sentiment": sig_result.sentiment,
+                "matched_keywords": sig_result.matched_keywords,
+                "matched_categories": sig_result.matched_categories,
+            })
 
         return {
             "articles_found": found,
             "articles_verified": verified,
             "articles_stored": stored,
+            "article_details": article_details,
         }
 
     def _calculate_date_range(self, company_id: int) -> tuple[str, str]:

@@ -42,21 +42,31 @@ class BatchSnapshotManager:
     ) -> dict[str, Any]:
         """Capture snapshots for all companies using batch API.
 
-        Returns summary stats dict.
+        Returns summary stats dict with report_details for report generation.
         """
         companies = self.company_repo.get_companies_with_homepage()
         tracker = ProgressTracker(total=len(companies))
 
-        # Build URL -> company_id mapping
+        failed_details: list[dict[str, Any]] = []
+        skipped_details: list[dict[str, Any]] = []
+
+        # Build URL -> company mapping (full company dict for report details)
         url_to_company: dict[str, int] = {}
+        url_to_company_info: dict[str, dict[str, Any]] = {}
         urls: list[str] = []
         for company in companies:
             url = company.get("homepage_url")
             if url:
                 url_to_company[url] = company["id"]
+                url_to_company_info[url] = company
                 urls.append(url)
             else:
                 tracker.record_skip()
+                skipped_details.append({
+                    "company_id": company["id"],
+                    "name": company.get("name", ""),
+                    "reason": "no_homepage_url",
+                })
 
         # Process in batches
         for i in range(0, len(urls), batch_size):
@@ -105,15 +115,42 @@ class BatchSnapshotManager:
 
                             tracker.record_success()
                         else:
-                            tracker.record_failure(f"No company match for URL: {doc_url}")
+                            error_msg = f"No company match for URL: {doc_url}"
+                            tracker.record_failure(error_msg)
+                            failed_details.append({
+                                "company_id": None,
+                                "name": "",
+                                "homepage_url": doc_url,
+                                "error": error_msg,
+                            })
                 else:
-                    for _url in batch_urls:
-                        tracker.record_failure(f"Batch failed: {result.get('errors', [])}")
+                    batch_error = f"Batch failed: {result.get('errors', [])}"
+                    for url in batch_urls:
+                        tracker.record_failure(batch_error)
+                        company_info = url_to_company_info.get(url, {})
+                        failed_details.append({
+                            "company_id": company_info.get("id"),
+                            "name": company_info.get("name", ""),
+                            "homepage_url": url,
+                            "error": batch_error,
+                        })
             except Exception as exc:
                 logger.error("batch_processing_failed", error=str(exc))
-                for _url in batch_urls:
+                for url in batch_urls:
                     tracker.record_failure(str(exc))
+                    company_info = url_to_company_info.get(url, {})
+                    failed_details.append({
+                        "company_id": company_info.get("id"),
+                        "name": company_info.get("name", ""),
+                        "homepage_url": url,
+                        "error": str(exc),
+                    })
 
             tracker.log_progress(every_n=1)
 
-        return tracker.summary()
+        summary = tracker.summary()
+        summary["report_details"] = {
+            "failed": failed_details,
+            "skipped": skipped_details,
+        }
+        return summary

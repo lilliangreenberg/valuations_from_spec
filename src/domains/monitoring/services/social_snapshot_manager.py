@@ -102,7 +102,7 @@ class SocialSnapshotManager:
         Uses FirecrawlClient.batch_capture_snapshots() for cost efficiency.
         Inherits the critical only_main_content=False invariant automatically.
 
-        Returns summary dict with totals and errors.
+        Returns summary dict with report_details for report generation.
         """
         social_urls = self.collect_social_urls(company_id=company_id)
         if limit is not None:
@@ -116,10 +116,17 @@ class SocialSnapshotManager:
                 "failed": 0,
                 "skipped": 0,
                 "errors": [],
+                "duration_seconds": 0.0,
+                "report_details": {"captured": [], "failed": [], "skipped": []},
             }
 
         tracker = ProgressTracker(total=len(social_urls))
         now = datetime.now(UTC)
+
+        # Report detail accumulators -- keyed by company_id
+        captured_by_company: dict[int, dict[str, Any]] = {}
+        failed_details: list[dict[str, Any]] = []
+        skipped_details: list[dict[str, Any]] = []
 
         # Build URL-to-metadata mapping
         url_to_meta: dict[str, dict[str, Any]] = {}
@@ -143,6 +150,14 @@ class SocialSnapshotManager:
             except Exception as exc:
                 for url in batch_urls:
                     tracker.record_failure(f"Batch failed for {url}: {exc}")
+                    meta = url_to_meta.get(url, {})
+                    company_name = self._resolve_company_name(meta.get("company_id"))
+                    failed_details.append({
+                        "company_id": meta.get("company_id"),
+                        "name": company_name,
+                        "source_url": url,
+                        "error": str(exc),
+                    })
                 continue
 
             documents = result.get("documents", [])
@@ -182,10 +197,30 @@ class SocialSnapshotManager:
                         }
                     )
                     tracker.record_success()
+
+                    # Track captured source for source_type_breakdown
+                    cid = meta["company_id"]
+                    if cid not in captured_by_company:
+                        captured_by_company[cid] = {
+                            "company_id": cid,
+                            "name": self._resolve_company_name(cid),
+                            "sources": [],
+                        }
+                    captured_by_company[cid]["sources"].append({
+                        "source_url": meta["source_url"],
+                        "source_type": meta["source_type"],
+                    })
                 except Exception as exc:
                     tracker.record_failure(
                         f"Failed to store snapshot for {meta['source_url']}: {exc}"
                     )
+                    company_name = self._resolve_company_name(meta.get("company_id"))
+                    failed_details.append({
+                        "company_id": meta.get("company_id"),
+                        "name": company_name,
+                        "source_url": meta["source_url"],
+                        "error": str(exc),
+                    })
 
             # Track URLs that had no corresponding document
             captured_urls = {doc.get("source_url") or doc.get("url", "") for doc in documents}
@@ -194,13 +229,40 @@ class SocialSnapshotManager:
                     url in cu or cu in url for cu in captured_urls
                 ):
                     tracker.record_failure(f"No document returned for {url}")
+                    meta = url_to_meta.get(url, {})
+                    company_name = self._resolve_company_name(meta.get("company_id"))
+                    failed_details.append({
+                        "company_id": meta.get("company_id"),
+                        "name": company_name,
+                        "source_url": url,
+                        "error": f"No document returned for {url}",
+                    })
 
-        summary = {
+        summary: dict[str, Any] = {
             "total": tracker.total,
             "captured": tracker.successful,
             "failed": tracker.failed,
             "skipped": tracker.skipped,
             "errors": tracker.errors,
+            "duration_seconds": round(tracker.elapsed_seconds, 2),
+            "report_details": {
+                "captured": list(captured_by_company.values()),
+                "failed": failed_details,
+                "skipped": skipped_details,
+            },
         }
-        logger.info("social_snapshot_capture_complete", **summary)
+        logger.info(
+            "social_snapshot_capture_complete",
+            total=summary["total"],
+            captured=summary["captured"],
+            failed=summary["failed"],
+            skipped=summary["skipped"],
+        )
         return summary
+
+    def _resolve_company_name(self, company_id: int | None) -> str:
+        """Look up company name by ID. Returns empty string if not found."""
+        if company_id is None:
+            return ""
+        company = self.company_repo.get_company_by_id(company_id)
+        return company.get("name", "") if company else ""

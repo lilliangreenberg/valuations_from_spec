@@ -90,13 +90,17 @@ class ChangeDetector:
         Args:
             limit: Maximum number of companies to process. None for all.
 
-        Returns summary stats.
+        Returns summary stats with report_details for report generation.
         """
         company_ids = self.snapshot_repo.get_companies_with_multiple_snapshots()
         if limit is not None:
             company_ids = company_ids[:limit]
         tracker = ProgressTracker(total=len(company_ids))
         changes_found = 0
+
+        changed_details: list[dict[str, Any]] = []
+        failed_details: list[dict[str, Any]] = []
+        skipped_details: list[dict[str, Any]] = []
 
         for company_id in company_ids:
             try:
@@ -107,6 +111,11 @@ class ChangeDetector:
                 snapshots = self.snapshot_repo.get_latest_snapshots(company_id, limit=2)
                 if len(snapshots) < 2:
                     tracker.record_skip()
+                    skipped_details.append({
+                        "company_id": company_id,
+                        "name": company_name,
+                        "reason": "fewer_than_2_snapshots",
+                    })
                     continue
 
                 new_snap = snapshots[0]  # Most recent
@@ -135,6 +144,14 @@ class ChangeDetector:
                     "detected_at": now,
                 }
 
+                # Significance fields for report detail
+                sig_classification = ""
+                sig_sentiment = ""
+                sig_confidence = 0.0
+                sig_keywords: list[str] = []
+                sig_categories: list[str] = []
+                sig_notes = ""
+
                 # Run significance analysis on diff content only
                 if has_changed:
                     diff_text = extract_content_diff(
@@ -153,7 +170,7 @@ class ChangeDetector:
                         if self.social_snapshot_repo is not None:
                             social_context = self._build_social_context(company_id)
 
-                        # LLM as primary classifier — keywords passed as hints
+                        # LLM as primary classifier -- keywords passed as hints
                         if self.llm_enabled and self.llm_client:
                             try:
                                 llm_result = self.llm_client.classify_significance(
@@ -196,10 +213,29 @@ class ChangeDetector:
                             }
                         )
 
+                        sig_classification = sig_result.classification
+                        sig_sentiment = sig_result.sentiment
+                        sig_confidence = sig_result.confidence
+                        sig_keywords = sig_result.matched_keywords
+                        sig_categories = sig_result.matched_categories
+                        sig_notes = sig_result.notes
+
                 self.change_record_repo.store_change_record(record_data)
 
                 if has_changed:
                     changes_found += 1
+                    changed_details.append({
+                        "company_id": company_id,
+                        "name": company_name,
+                        "homepage_url": company_url,
+                        "change_magnitude": magnitude.value,
+                        "significance": sig_classification,
+                        "sentiment": sig_sentiment,
+                        "confidence": sig_confidence,
+                        "matched_keywords": sig_keywords,
+                        "matched_categories": sig_categories,
+                        "significance_notes": sig_notes,
+                    })
 
                 tracker.record_success()
             except Exception as exc:
@@ -209,9 +245,21 @@ class ChangeDetector:
                     error=str(exc),
                 )
                 tracker.record_failure(f"Company {company_id}: {exc}")
+                failed_details.append({
+                    "company_id": company_id,
+                    "name": (
+                        self.company_repo.get_company_by_id(company_id) or {}
+                    ).get("name", f"Company {company_id}"),
+                    "error": f"Company {company_id}: {exc}",
+                })
 
             tracker.log_progress(every_n=10)
 
         summary = tracker.summary()
         summary["changes_found"] = changes_found
+        summary["report_details"] = {
+            "changed": changed_details,
+            "failed": failed_details,
+            "skipped": skipped_details,
+        }
         return summary

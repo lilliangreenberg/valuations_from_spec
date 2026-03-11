@@ -47,7 +47,7 @@ class SocialMediaDiscovery:
     ) -> dict[str, Any]:
         """Discover social media for all companies.
 
-        Returns summary stats.
+        Returns summary stats with report_details for report generation.
         """
         if company_id is not None:
             company = self.company_repo.get_company_by_id(company_id)
@@ -64,6 +64,11 @@ class SocialMediaDiscovery:
         total_links = 0
         total_blogs = 0
 
+        discovered_details: list[dict[str, Any]] = []
+        no_links_found_details: list[dict[str, Any]] = []
+        failed_details: list[dict[str, Any]] = []
+        skipped_details: list[dict[str, Any]] = []
+
         # Build URL -> company mapping
         url_to_company: dict[str, dict[str, Any]] = {}
         urls: list[str] = []
@@ -74,6 +79,11 @@ class SocialMediaDiscovery:
                 urls.append(url)
             else:
                 tracker.record_skip()
+                skipped_details.append({
+                    "company_id": company["id"],
+                    "name": company.get("name", ""),
+                    "reason": "no_homepage_url",
+                })
 
         # Process in batches
         for i in range(0, len(urls), batch_size):
@@ -111,32 +121,68 @@ class SocialMediaDiscovery:
 
                     if not matched_company:
                         tracker.record_failure(f"No company match for {doc_url}")
+                        failed_details.append({
+                            "company_id": None,
+                            "name": "",
+                            "homepage_url": doc_url,
+                            "error": f"No company match for {doc_url}",
+                        })
                         continue
 
-                    links_count, blogs_count = self._process_company_page(matched_company, doc)
+                    links_count, blogs_count, link_details, blog_details = (
+                        self._process_company_page(matched_company, doc)
+                    )
                     total_links += links_count
                     total_blogs += blogs_count
                     tracker.record_success()
+
+                    if links_count > 0 or blogs_count > 0:
+                        discovered_details.append({
+                            "company_id": matched_company["id"],
+                            "name": matched_company.get("name", ""),
+                            "homepage_url": matched_company.get("homepage_url", ""),
+                            "social_links": link_details,
+                            "blogs": blog_details,
+                        })
+                    else:
+                        no_links_found_details.append({
+                            "company_id": matched_company["id"],
+                            "name": matched_company.get("name", ""),
+                            "homepage_url": matched_company.get("homepage_url", ""),
+                        })
             except Exception as exc:
                 logger.error("batch_discovery_failed", error=str(exc))
-                for _url in batch_urls:
+                for url in batch_urls:
                     tracker.record_failure(str(exc))
+                    company_info = url_to_company.get(url, {})
+                    failed_details.append({
+                        "company_id": company_info.get("id"),
+                        "name": company_info.get("name", ""),
+                        "homepage_url": url,
+                        "error": str(exc),
+                    })
 
             tracker.log_progress(every_n=1)
 
         summary = tracker.summary()
         summary["total_links_found"] = total_links
         summary["total_blogs_found"] = total_blogs
+        summary["report_details"] = {
+            "discovered": discovered_details,
+            "no_links_found": no_links_found_details,
+            "failed": failed_details,
+            "skipped": skipped_details,
+        }
         return summary
 
     def _process_company_page(
         self,
         company: dict[str, Any],
         doc: dict[str, Any],
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, list[dict[str, str]], list[dict[str, str]]]:
         """Process a scraped page to extract social links and blogs.
 
-        Returns (links_count, blogs_count).
+        Returns (links_count, blogs_count, link_details, blog_details).
         """
         company_id = company["id"]
         now = datetime.now(UTC).isoformat()
@@ -150,6 +196,8 @@ class SocialMediaDiscovery:
 
         links_stored = 0
         blogs_stored = 0
+        link_details: list[dict[str, str]] = []
+        blog_details: list[dict[str, str]] = []
 
         for url in all_urls:
             # Check if it's a blog
@@ -167,6 +215,10 @@ class SocialMediaDiscovery:
                     }
                 )
                 blogs_stored += 1
+                blog_details.append({
+                    "blog_type": blog_type.value,
+                    "blog_url": normalized_blog,
+                })
                 continue
 
             # Check if it's a social media URL
@@ -187,5 +239,9 @@ class SocialMediaDiscovery:
                 }
             )
             links_stored += 1
+            link_details.append({
+                "platform": platform.value,
+                "profile_url": normalized_url,
+            })
 
-        return links_stored, blogs_stored
+        return links_stored, blogs_stored, link_details, blog_details

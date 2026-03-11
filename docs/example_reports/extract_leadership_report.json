@@ -1,0 +1,113 @@
+{
+  "command": "extract-leadership-all",
+  "timestamp": "2026-03-10T16:05:22Z",
+  "config": {
+    "limit": null,
+    "max_workers": 1,
+    "headless": false
+  },
+  "summary": {
+    "total_companies": 761,
+    "processed": 761,
+    "successful": 698,
+    "failed": 28,
+    "skipped": 35,
+    "total_leaders_found": 1842,
+    "duration_seconds": 5421.88
+  },
+  "method_breakdown": {
+    "playwright_scrape": 523,
+    "kagi_search": 175
+  },
+  "critical_changes": [
+    {
+      "company_id": 23,
+      "company_name": "DataStack",
+      "change_type": "ceo_departure",
+      "person_name": "Jane Smith",
+      "title": "CEO",
+      "severity": "critical"
+    },
+    {
+      "company_id": 88,
+      "company_name": "CloudVault",
+      "change_type": "founder_departure",
+      "person_name": "Alex Chen",
+      "title": "Co-Founder & CTO",
+      "severity": "critical"
+    }
+  ],
+  "change_summary": {
+    "total_changes_detected": 14,
+    "critical": 2,
+    "notable": 5,
+    "minor": 7
+  },
+  "companies": {
+    "extracted": [
+      {
+        "company_id": 1,
+        "name": "Modal Labs",
+        "method_used": "playwright_scrape",
+        "leaders_found": 4,
+        "leaders": [
+          {
+            "person_name": "Erik Bernhardsson",
+            "title": "CEO & Co-Founder",
+            "linkedin_profile_url": "https://linkedin.com/in/erikbern",
+            "confidence": 0.8
+          },
+          {
+            "person_name": "Akshat Bubna",
+            "title": "Co-Founder",
+            "linkedin_profile_url": "https://linkedin.com/in/akshatbubna",
+            "confidence": 0.8
+          }
+        ],
+        "leadership_changes": []
+      },
+      {
+        "company_id": 23,
+        "name": "DataStack",
+        "method_used": "kagi_search",
+        "leaders_found": 2,
+        "leaders": [
+          {
+            "person_name": "Robert Kim",
+            "title": "Interim CEO",
+            "linkedin_profile_url": "https://linkedin.com/in/robertkim",
+            "confidence": 0.6
+          }
+        ],
+        "leadership_changes": [
+          {
+            "change_type": "ceo_departure",
+            "person_name": "Jane Smith",
+            "title": "CEO",
+            "severity": "critical"
+          },
+          {
+            "change_type": "new_ceo",
+            "person_name": "Robert Kim",
+            "title": "Interim CEO",
+            "severity": "notable"
+          }
+        ]
+      }
+    ],
+    "failed": [
+      {
+        "company_id": 45,
+        "name": "BrokenSite",
+        "error": "Playwright blocked: LinkedIn auth wall detected"
+      }
+    ],
+    "skipped": [
+      {
+        "company_id": 42,
+        "name": "Stealth Startup",
+        "reason": "no_linkedin_company_url"
+      }
+    ]
+  }
+}

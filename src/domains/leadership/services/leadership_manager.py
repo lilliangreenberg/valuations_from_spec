@@ -179,11 +179,24 @@ class LeadershipManager:
                     title=str(change.get("title", "")),
                 )
 
+        # Build leader detail list for report
+        leader_details: list[dict[str, Any]] = []
+        for person in people:
+            profile_url = normalize_social_url(person.get("profile_url", ""))
+            if profile_url:
+                leader_details.append({
+                    "person_name": person.get("name", "Unknown"),
+                    "title": person.get("title", ""),
+                    "linkedin_profile_url": profile_url,
+                    "confidence": confidence,
+                })
+
         return {
             "company_id": company_id,
             "company_name": company_name,
             "leaders_found": stored_count,
             "method_used": method_used,
+            "leaders": leader_details,
             "leadership_changes": [
                 {
                     "change_type": str(c.get("change_type", "")),
@@ -210,7 +223,7 @@ class LeadershipManager:
                 Playwright browser is single-threaded. Use higher values
                 only when using Kagi-only mode (no browser).
 
-        Returns aggregate summary.
+        Returns aggregate summary with report_details for report generation.
         """
         companies = self.company_repo.get_all_companies()
         if limit is not None:
@@ -220,6 +233,10 @@ class LeadershipManager:
         total_leaders = 0
         all_critical_changes: list[dict[str, Any]] = []
 
+        extracted_details: list[dict[str, Any]] = []
+        failed_details: list[dict[str, Any]] = []
+        skipped_details: list[dict[str, Any]] = []
+
         if max_workers <= 1:
             # Sequential mode (default, safe for Playwright)
             for company in companies:
@@ -227,6 +244,9 @@ class LeadershipManager:
                     company,
                     tracker,
                     all_critical_changes,
+                    extracted_details,
+                    failed_details,
+                    skipped_details,
                 )
                 total_leaders += leaders_found
                 tracker.log_progress(every_n=1)
@@ -244,6 +264,11 @@ class LeadershipManager:
                         result = future.result()
                         if result.get("error"):
                             tracker.record_failure(result["error"])
+                            failed_details.append({
+                                "company_id": company["id"],
+                                "name": company.get("name", ""),
+                                "error": result["error"],
+                            })
                         else:
                             total_leaders += result.get("leaders_found", 0)
                             for change in result.get("leadership_changes", []):
@@ -252,6 +277,14 @@ class LeadershipManager:
                                         {**change, "company_name": company["name"]}
                                     )
                             tracker.record_success()
+                            extracted_details.append({
+                                "company_id": result["company_id"],
+                                "name": result["company_name"],
+                                "method_used": result["method_used"],
+                                "leaders_found": result["leaders_found"],
+                                "leaders": result.get("leaders", []),
+                                "leadership_changes": result.get("leadership_changes", []),
+                            })
                     except Exception as exc:
                         logger.error(
                             "leadership_extraction_failed",
@@ -259,6 +292,11 @@ class LeadershipManager:
                             error=str(exc),
                         )
                         tracker.record_failure(str(exc))
+                        failed_details.append({
+                            "company_id": company["id"],
+                            "name": company.get("name", ""),
+                            "error": str(exc),
+                        })
 
                     tracker.log_progress(every_n=1)
 
@@ -266,6 +304,11 @@ class LeadershipManager:
         aggregate: dict[str, Any] = {**raw_summary}
         aggregate["total_leaders_found"] = total_leaders
         aggregate["critical_changes"] = all_critical_changes
+        aggregate["report_details"] = {
+            "extracted": extracted_details,
+            "failed": failed_details,
+            "skipped": skipped_details,
+        }
         return aggregate
 
     def _process_company_leadership(
@@ -273,6 +316,9 @@ class LeadershipManager:
         company: dict[str, Any],
         tracker: ProgressTracker,
         all_critical_changes: list[dict[str, Any]],
+        extracted_details: list[dict[str, Any]],
+        failed_details: list[dict[str, Any]],
+        skipped_details: list[dict[str, Any]],
     ) -> int:
         """Process a single company's leadership extraction (sequential mode helper).
 
@@ -282,11 +328,24 @@ class LeadershipManager:
             result = self.extract_company_leadership(company["id"])
             if result.get("error"):
                 tracker.record_failure(result["error"])
+                failed_details.append({
+                    "company_id": company["id"],
+                    "name": company.get("name", ""),
+                    "error": result["error"],
+                })
                 return 0
             for change in result.get("leadership_changes", []):
                 if change.get("severity") == "critical":
                     all_critical_changes.append({**change, "company_name": company["name"]})
             tracker.record_success()
+            extracted_details.append({
+                "company_id": result["company_id"],
+                "name": result["company_name"],
+                "method_used": result["method_used"],
+                "leaders_found": result["leaders_found"],
+                "leaders": result.get("leaders", []),
+                "leadership_changes": result.get("leadership_changes", []),
+            })
             return int(result.get("leaders_found", 0))
         except Exception as exc:
             logger.error(
@@ -295,6 +354,11 @@ class LeadershipManager:
                 error=str(exc),
             )
             tracker.record_failure(str(exc))
+            failed_details.append({
+                "company_id": company["id"],
+                "name": company.get("name", ""),
+                "error": str(exc),
+            })
             return 0
 
     def _find_linkedin_company_url(self, company_id: int) -> str | None:

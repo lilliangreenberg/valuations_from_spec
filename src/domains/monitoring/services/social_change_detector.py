@@ -64,13 +64,17 @@ class SocialChangeDetector:
         Args:
             limit: Maximum number of (company_id, source_url) pairs to process.
 
-        Returns summary stats.
+        Returns summary stats with report_details for report generation.
         """
         pairs = self.social_snapshot_repo.get_companies_with_multiple_snapshots()
         if limit is not None:
             pairs = pairs[:limit]
         tracker = ProgressTracker(total=len(pairs))
         changes_found = 0
+
+        changed_details: list[dict[str, Any]] = []
+        failed_details: list[dict[str, Any]] = []
+        skipped_details: list[dict[str, Any]] = []
 
         for company_id, source_url in pairs:
             try:
@@ -83,6 +87,12 @@ class SocialChangeDetector:
                 )
                 if len(snapshots) < 2:
                     tracker.record_skip()
+                    skipped_details.append({
+                        "company_id": company_id,
+                        "name": company_name,
+                        "source_url": source_url,
+                        "reason": "fewer_than_2_snapshots",
+                    })
                     continue
 
                 new_snap = snapshots[0]  # Most recent
@@ -99,11 +109,12 @@ class SocialChangeDetector:
                 )
 
                 now = datetime.now(UTC).isoformat()
+                source_type = new_snap.get("source_type", "unknown")
 
                 record_data: dict[str, Any] = {
                     "company_id": company_id,
                     "source_url": source_url,
-                    "source_type": new_snap.get("source_type", "unknown"),
+                    "source_type": source_type,
                     "snapshot_id_old": old_snap["id"],
                     "snapshot_id_new": new_snap["id"],
                     "checksum_old": old_checksum,
@@ -112,6 +123,13 @@ class SocialChangeDetector:
                     "change_magnitude": magnitude.value,
                     "detected_at": now,
                 }
+
+                # Significance fields for report detail
+                sig_classification = ""
+                sig_sentiment = ""
+                sig_confidence = 0.0
+                sig_keywords: list[str] = []
+                sig_categories: list[str] = []
 
                 # Run significance analysis on diff content only
                 if has_changed:
@@ -169,10 +187,28 @@ class SocialChangeDetector:
                             }
                         )
 
+                        sig_classification = sig_result.classification
+                        sig_sentiment = sig_result.sentiment
+                        sig_confidence = sig_result.confidence
+                        sig_keywords = sig_result.matched_keywords
+                        sig_categories = sig_result.matched_categories
+
                 self.social_change_record_repo.store_change_record(record_data)
 
                 if has_changed:
                     changes_found += 1
+                    changed_details.append({
+                        "company_id": company_id,
+                        "name": company_name,
+                        "source_url": source_url,
+                        "source_type": source_type,
+                        "change_magnitude": magnitude.value,
+                        "significance": sig_classification,
+                        "sentiment": sig_sentiment,
+                        "confidence": sig_confidence,
+                        "matched_keywords": sig_keywords,
+                        "matched_categories": sig_categories,
+                    })
 
                 tracker.record_success()
             except Exception as exc:
@@ -183,9 +219,22 @@ class SocialChangeDetector:
                     error=str(exc),
                 )
                 tracker.record_failure(f"Company {company_id} ({source_url}): {exc}")
+                failed_details.append({
+                    "company_id": company_id,
+                    "name": (
+                        self.company_repo.get_company_by_id(company_id) or {}
+                    ).get("name", f"Company {company_id}"),
+                    "source_url": source_url,
+                    "error": str(exc),
+                })
 
             tracker.log_progress(every_n=10)
 
         summary = tracker.summary()
         summary["changes_found"] = changes_found
+        summary["report_details"] = {
+            "changed": changed_details,
+            "failed": failed_details,
+            "skipped": skipped_details,
+        }
         return summary
