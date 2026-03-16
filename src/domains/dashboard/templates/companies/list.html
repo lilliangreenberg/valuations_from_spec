@@ -87,8 +87,8 @@
               hx-target="#company-table"
               hx-include="{{ hx_includes }}">
         <option value="">All</option>
-        <option value="yes">Flagged Only</option>
-        <option value="no">Not Flagged</option>
+        <option value="yes" {% if flagged_filter == 'yes' %}selected{% endif %}>Flagged Only</option>
+        <option value="no" {% if flagged_filter == 'no' %}selected{% endif %}>Not Flagged</option>
       </select>
     </div>
   </div>
@@ -102,4 +102,20 @@
 <div id="company-table">
   {% include "partials/company_table.html" %}
 </div>
+
+<script>
+// Sync filter state to URL so browser back button preserves filters
+document.body.addEventListener('htmx:afterSwap', function(evt) {
+  if (evt.detail.target.id !== 'company-table') return;
+  var params = new URLSearchParams();
+  var fields = ['search', 'status', 'source_sheet', 'flagged', 'freshness'];
+  fields.forEach(function(name) {
+    var el = document.querySelector('[name="' + name + '"]');
+    if (el && el.value) params.set(name, el.value);
+  });
+  var qs = params.toString();
+  var url = '/companies' + (qs ? '?' + qs : '');
+  history.replaceState(null, '', url);
+});
+</script>
 {% endblock %}
