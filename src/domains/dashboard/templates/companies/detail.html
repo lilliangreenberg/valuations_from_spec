@@ -5,8 +5,17 @@
 {% block content %}
 <!-- Back link -->
 <div class="mb-4">
-  <a href="/companies" onclick="if(history.length>1){history.back();return false;}"
+  <a id="back-link" href="/companies"
      class="text-sm hover:underline" style="color: var(--accent-blue)">&larr; Back to Companies</a>
+  <script>
+    (function() {
+      var params = new URLSearchParams(window.location.search);
+      var back = params.get('back');
+      if (back && back.startsWith('/companies')) {
+        document.getElementById('back-link').href = back;
+      }
+    })();
+  </script>
 </div>
 
 <!-- Company Header -->
