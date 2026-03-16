@@ -143,7 +143,7 @@ class QueryService:
         status_row = self.db.fetchone(
             """SELECT * FROM company_statuses
                WHERE company_id = ?
-               ORDER BY last_checked DESC LIMIT 1""",
+               ORDER BY id DESC LIMIT 1""",
             (company_id,),
         )
         company["status"] = dict(status_row) if status_row else None
@@ -212,6 +212,7 @@ class QueryService:
         source_sheet_filter: str | None = None,
         has_changes: bool | None = None,
         flagged: bool | None = None,
+        freshness: str | None = None,
         sort_by: str = "name",
         sort_order: str = "asc",
         page: int = 1,
@@ -254,6 +255,22 @@ class QueryService:
         elif has_changes is False:
             conditions.append("last_change_date IS NULL")
 
+        freshness_thresholds = {
+            "fresh": "ls.last_snapshot >= datetime('now', '-7 days')",
+            "recent": (
+                "ls.last_snapshot >= datetime('now', '-30 days') "
+                "AND ls.last_snapshot < datetime('now', '-7 days')"
+            ),
+            "stale": (
+                "ls.last_snapshot >= datetime('now', '-90 days') "
+                "AND ls.last_snapshot < datetime('now', '-30 days')"
+            ),
+            "very_stale": ("ls.last_snapshot < datetime('now', '-90 days')"),
+            "never": "ls.last_snapshot IS NULL",
+        }
+        if freshness and freshness in freshness_thresholds:
+            conditions.append(freshness_thresholds[freshness])
+
         where_clause = " AND ".join(conditions) if conditions else "1=1"
 
         # Count total
@@ -273,6 +290,11 @@ class QueryService:
                     FROM change_records WHERE has_changed = 1
                     GROUP BY company_id
                 ) lc ON c.id = lc.company_id
+                LEFT JOIN (
+                    SELECT company_id, MAX(captured_at) as last_snapshot
+                    FROM snapshots
+                    GROUP BY company_id
+                ) ls ON c.id = ls.company_id
                 WHERE {where_clause}
             )
         """
@@ -287,12 +309,14 @@ class QueryService:
                 c.id, c.name, c.homepage_url, c.source_sheet,
                 c.flagged_for_review, c.flag_reason,
                 COALESCE(cs.status, 'unknown') as status,
+                COALESCE(cs.is_manual_override, 0) as is_manual_override,
                 lc.last_change_date,
+                ls.last_snapshot,
                 COALESCE(sc.social_count, 0) as social_count,
                 COALESCE(nc.news_count, 0) as news_count
             FROM companies c
             LEFT JOIN (
-                SELECT company_id, status
+                SELECT company_id, status, is_manual_override
                 FROM company_statuses
                 WHERE id IN (
                     SELECT MAX(id) FROM company_statuses GROUP BY company_id
@@ -303,6 +327,11 @@ class QueryService:
                 FROM change_records WHERE has_changed = 1
                 GROUP BY company_id
             ) lc ON c.id = lc.company_id
+            LEFT JOIN (
+                SELECT company_id, MAX(captured_at) as last_snapshot
+                FROM snapshots
+                GROUP BY company_id
+            ) ls ON c.id = ls.company_id
             LEFT JOIN (
                 SELECT company_id, COUNT(*) as social_count
                 FROM social_media_links

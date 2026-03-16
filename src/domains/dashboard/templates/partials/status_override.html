@@ -1,0 +1,33 @@
+{% if status_data %}
+  {% set status_str = status_data.status if status_data is mapping else status_data %}
+  <span class="badge {{ status_str | status_badge }}">{{ status_str }}</span>
+  {% if status_data.is_manual_override %}
+  <span class="text-xs font-medium px-1.5 py-0.5 rounded"
+        style="background: var(--accent-blue); color: white; opacity: 0.85;">MANUAL</span>
+  <button hx-post="/companies/{{ company_id }}/status-override/clear"
+          hx-target="#status-override-area"
+          hx-swap="innerHTML"
+          class="text-xs underline cursor-pointer ml-1"
+          style="color: var(--accent-blue); background: none; border: none; padding: 0;">
+    Clear Override
+  </button>
+  {% endif %}
+{% endif %}
+
+<form hx-post="/companies/{{ company_id }}/status-override"
+      hx-target="#status-override-area"
+      hx-swap="innerHTML"
+      class="inline-flex items-center gap-2 ml-3">
+  <select name="status"
+          class="rounded border px-2 py-1 text-xs"
+          style="background: var(--bg-card); border-color: var(--border-color); color: var(--text-primary)">
+    <option value="operational" {% if status_data and status_data.status == 'operational' %}selected{% endif %}>Operational</option>
+    <option value="likely_closed" {% if status_data and status_data.status == 'likely_closed' %}selected{% endif %}>Likely Closed</option>
+    <option value="uncertain" {% if status_data and status_data.status == 'uncertain' %}selected{% endif %}>Uncertain</option>
+  </select>
+  <button type="submit"
+          class="text-xs font-medium px-2 py-1 rounded cursor-pointer"
+          style="background: var(--accent); color: white; border: none;">
+    Set Status
+  </button>
+</form>

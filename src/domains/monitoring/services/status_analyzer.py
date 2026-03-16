@@ -95,6 +95,15 @@ class StatusAnalyzer:
         for company in companies:
             company_id = company["id"]
             try:
+                if self.status_repo.has_manual_override(company_id):
+                    logger.info(
+                        "status_analysis_skipped_manual_override",
+                        company_id=company_id,
+                        company_name=company.get("name", ""),
+                    )
+                    tracker.record_skip()
+                    continue
+
                 snapshots = self.snapshot_repo.get_latest_snapshots(company_id, limit=1)
                 if not snapshots:
                     tracker.record_skip()

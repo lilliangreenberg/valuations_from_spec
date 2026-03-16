@@ -19,8 +19,13 @@ logger = structlog.get_logger(__name__)
 class Database:
     """SQLite database service with schema management."""
 
-    def __init__(self, db_path: str = "data/companies.db") -> None:
+    def __init__(
+        self,
+        db_path: str = "data/companies.db",
+        check_same_thread: bool = True,
+    ) -> None:
         self.db_path = db_path
+        self._check_same_thread = check_same_thread
         self._ensure_directory()
         self._connection: sqlite3.Connection | None = None
 
@@ -32,7 +37,9 @@ class Database:
     def connection(self) -> sqlite3.Connection:
         """Get or create database connection."""
         if self._connection is None:
-            self._connection = sqlite3.connect(self.db_path)
+            self._connection = sqlite3.connect(
+                self.db_path, check_same_thread=self._check_same_thread
+            )
             self._connection.row_factory = sqlite3.Row
             self._connection.execute("PRAGMA journal_mode=WAL")
             self._connection.execute("PRAGMA foreign_keys=ON")
@@ -414,6 +421,13 @@ class Database:
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_leadership_mentions_company_id"
                 " ON leadership_mentions(company_id)"
+            )
+
+        # Migration: add is_manual_override to company_statuses
+        with contextlib.suppress(sqlite3.OperationalError):
+            self.execute(
+                "ALTER TABLE company_statuses"
+                " ADD COLUMN is_manual_override INTEGER NOT NULL DEFAULT 0"
             )
 
         # Migrations: add baseline columns to snapshots table
