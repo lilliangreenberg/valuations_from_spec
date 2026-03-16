@@ -197,8 +197,10 @@ def freshness_tier_label(tier: str) -> str:
     return labels.get(tier, tier)
 
 
-def health_grid_color(status: str | None) -> str:
+def health_grid_color(status: str | None, is_manual_override: bool = False) -> str:
     """Return CSS color class for a company health grid cell."""
+    if status == "likely_closed" and is_manual_override:
+        return "health-manual-closed"
     mapping: dict[str, str] = {
         "operational": "health-green",
         "likely_closed": "health-red",

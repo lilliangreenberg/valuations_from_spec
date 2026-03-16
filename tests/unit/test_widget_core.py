@@ -357,3 +357,12 @@ class TestHealthGridColor:
 
     def test_empty_string(self) -> None:
         assert health_grid_color("") == "health-gray"
+
+    def test_likely_closed_manual_override(self) -> None:
+        assert health_grid_color("likely_closed", is_manual_override=True) == "health-manual-closed"
+
+    def test_likely_closed_not_manual(self) -> None:
+        assert health_grid_color("likely_closed", is_manual_override=False) == "health-red"
+
+    def test_operational_manual_override_ignored(self) -> None:
+        assert health_grid_color("operational", is_manual_override=True) == "health-green"

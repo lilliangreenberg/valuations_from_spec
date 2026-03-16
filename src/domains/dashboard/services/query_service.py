@@ -728,10 +728,11 @@ class QueryService:
         rows = self.db.fetchall("""
             SELECT
                 c.id, c.name,
-                COALESCE(cs.status, 'unknown') as status
+                COALESCE(cs.status, 'unknown') as status,
+                COALESCE(cs.is_manual_override, 0) as is_manual_override
             FROM companies c
             LEFT JOIN (
-                SELECT company_id, status
+                SELECT company_id, status, is_manual_override
                 FROM company_statuses
                 WHERE id IN (
                     SELECT MAX(id) FROM company_statuses GROUP BY company_id
