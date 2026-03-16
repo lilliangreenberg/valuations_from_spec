@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Companies - Portfolio Monitor{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold" style="color: var(--text-primary)">
+    Companies
+    <span class="ml-2 text-base font-normal" style="color: var(--text-secondary)">({{ total }} total)</span>
+  </h1>
+</div>
+
+<!-- Search and Filters -->
+<div class="card p-4 mb-4">
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+    <div>
+      <label for="search" class="block text-sm font-medium mb-1" style="color: var(--text-secondary)">Search</label>
+      <input type="text" id="search" name="search"
+             placeholder="Search companies..."
+             value="{{ search or '' }}"
+             class="w-full rounded border px-3 py-2 text-sm"
+             style="background: var(--bg-card); border-color: var(--border-color); color: var(--text-primary)"
+             hx-get="/companies/partials/table"
+             hx-trigger="keyup changed delay:300ms"
+             hx-target="#company-table"
+             hx-include="[name='search'],[name='status'],[name='source_sheet'],[name='sort_by'],[name='sort_order']">
+    </div>
+
+    <div>
+      <label for="status" class="block text-sm font-medium mb-1" style="color: var(--text-secondary)">Status</label>
+      <select id="status" name="status"
+              class="w-full rounded border px-3 py-2 text-sm"
+              style="background: var(--bg-card); border-color: var(--border-color); color: var(--text-primary)"
+              hx-get="/companies/partials/table"
+              hx-trigger="change"
+              hx-target="#company-table"
+              hx-include="[name='search'],[name='status'],[name='source_sheet'],[name='sort_by'],[name='sort_order']">
+        <option value="">All Statuses</option>
+        <option value="operational" {% if status_filter == 'operational' %}selected{% endif %}>Operational</option>
+        <option value="likely_closed" {% if status_filter == 'likely_closed' %}selected{% endif %}>Likely Closed</option>
+        <option value="uncertain" {% if status_filter == 'uncertain' %}selected{% endif %}>Uncertain</option>
+      </select>
+    </div>
+
+    <div>
+      <label for="source_sheet" class="block text-sm font-medium mb-1" style="color: var(--text-secondary)">Source Sheet</label>
+      <select id="source_sheet" name="source_sheet"
+              class="w-full rounded border px-3 py-2 text-sm"
+              style="background: var(--bg-card); border-color: var(--border-color); color: var(--text-primary)"
+              hx-get="/companies/partials/table"
+              hx-trigger="change"
+              hx-target="#company-table"
+              hx-include="[name='search'],[name='status'],[name='source_sheet'],[name='sort_by'],[name='sort_order']">
+        <option value="">All Source Sheets</option>
+        {% for sheet in source_sheets %}
+        <option value="{{ sheet }}" {% if source_sheet_filter == sheet %}selected{% endif %}>{{ sheet }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label for="flagged" class="block text-sm font-medium mb-1" style="color: var(--text-secondary)">Flagged</label>
+      <select id="flagged" name="flagged"
+              class="w-full rounded border px-3 py-2 text-sm"
+              style="background: var(--bg-card); border-color: var(--border-color); color: var(--text-primary)"
+              hx-get="/companies/partials/table"
+              hx-trigger="change"
+              hx-target="#company-table"
+              hx-include="[name='search'],[name='status'],[name='source_sheet'],[name='flagged'],[name='sort_by'],[name='sort_order']">
+        <option value="">All</option>
+        <option value="yes">Flagged Only</option>
+        <option value="no">Not Flagged</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden sort inputs -->
+<input type="hidden" name="sort_by" id="sort_by" value="{{ sort_by or 'name' }}">
+<input type="hidden" name="sort_order" id="sort_order" value="{{ sort_order or 'asc' }}">
+
+<!-- Company Table -->
+<div id="company-table">
+  {% include "partials/company_table.html" %}
+</div>
+{% endblock %}

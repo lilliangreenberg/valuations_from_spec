@@ -11,6 +11,7 @@ from src.cli.commands import (
     capture_snapshots,
     capture_social_snapshots,
     check_leadership_changes,
+    dashboard,
     detect_changes,
     detect_social_changes,
     discover_ceo_linkedin,
@@ -65,3 +66,4 @@ cli.add_command(analyze_baseline)
 cli.add_command(refresh_logos)
 cli.add_command(capture_social_snapshots)
 cli.add_command(detect_social_changes)
+cli.add_command(dashboard)

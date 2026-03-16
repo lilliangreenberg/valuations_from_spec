@@ -1,0 +1,48 @@
+{% if companies %}
+<div class="card overflow-hidden">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Status</th>
+        <th>Changes</th>
+        <th>News</th>
+        <th>Social</th>
+        <th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for company in companies %}
+      <tr class="cursor-pointer hover:bg-opacity-50"
+          onclick="window.location='/companies/{{ company.id }}'">
+        <td>
+          <a href="/companies/{{ company.id }}" class="font-medium hover:underline"
+             style="color: var(--accent-blue)">{{ company.name }}</a>
+          {% if company.homepage_url %}
+          <br><span class="text-xs" style="color: var(--text-secondary)">{{ company.homepage_url | truncate_url }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if company.status %}
+          <span class="badge {{ company.status | status_badge }}">{{ company.status }}</span>
+          {% else %}
+          <span class="text-xs" style="color: var(--text-secondary)">--</span>
+          {% endif %}
+        </td>
+        <td class="text-center">{{ company.change_count | default(0) }}</td>
+        <td class="text-center">{{ company.news_count | default(0) }}</td>
+        <td class="text-center">{{ company.social_count | default(0) }}</td>
+        <td class="text-xs" style="color: var(--text-secondary)">{{ company.source_sheet or '--' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% include "partials/pagination.html" %}
+
+{% else %}
+<div class="text-center py-12" style="color: var(--text-secondary)">
+  <p class="text-lg">{{ empty_state_message("companies") }}</p>
+</div>
+{% endif %}

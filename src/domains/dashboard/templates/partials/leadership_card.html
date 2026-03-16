@@ -1,0 +1,68 @@
+{# Partial: leadership profile cards with pagination #}
+
+{% if leaders %}
+<div class="space-y-3">
+  {% for leader in leaders %}
+  <div class="bg-white dark:bg-gray-800 rounded shadow p-4 mb-3">
+    <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
+      <div>
+        <span class="text-gray-900 dark:text-gray-100 font-bold text-lg">
+          {{ leader.person_name }}
+        </span>
+        {% if leader.title %}
+        <span class="ml-2 text-gray-600 dark:text-gray-400">
+          {{ leader.title }}
+        </span>
+        {% endif %}
+      </div>
+      <div class="flex items-center gap-2">
+        {% if leader.is_current %}
+        <span class="inline-block bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 text-xs px-2 py-0.5 rounded font-medium">
+          Current
+        </span>
+        {% else %}
+        <span class="inline-block bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs px-2 py-0.5 rounded font-medium">
+          Former
+        </span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3 text-sm">
+      <a href="/companies/{{ leader.company_id }}"
+         class="text-blue-600 dark:text-blue-400 hover:underline">
+        {{ leader.company_name }}
+      </a>
+
+      {% if leader.linkedin_profile_url %}
+      <a href="{{ leader.linkedin_profile_url }}" target="_blank" rel="noopener noreferrer"
+         class="text-blue-600 dark:text-blue-400 hover:underline">
+        LinkedIn
+      </a>
+      {% endif %}
+
+      {% if leader.discovery_method %}
+      <span class="text-gray-500 dark:text-gray-400">
+        via {{ leader.discovery_method | replace("_", " ") | title }}
+      </span>
+      {% endif %}
+
+      {% if leader.confidence is not none %}
+      <span class="text-gray-500 dark:text-gray-400">
+        Confidence: {{ "%.0f" | format(leader.confidence * 100) }}%
+      </span>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{# Pagination #}
+{% set base_url = "/leadership/partials/list" %}
+{% include "partials/pagination.html" with context %}
+
+{% else %}
+<div class="text-center py-12 text-gray-500 dark:text-gray-400">
+  <p class="text-lg">{{ empty_state_message("leadership") }}</p>
+</div>
+{% endif %}

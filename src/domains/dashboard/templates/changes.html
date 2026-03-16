@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Changes - Portfolio Monitor{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
+    Changes
+    <span class="ml-2 text-base font-normal text-gray-500 dark:text-gray-400">({{ total }} total)</span>
+  </h1>
+</div>
+
+{# -- Filter bar -- #}
+<form class="bg-white dark:bg-gray-800 rounded shadow p-4 mb-6 flex flex-wrap items-end gap-4">
+  <div>
+    <label for="classification" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Classification</label>
+    <select id="classification" name="classification"
+            class="form-select rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+            hx-get="/changes/partials/list"
+            hx-target="#changes-list"
+            hx-include="[name]">
+      <option value="">All</option>
+      <option value="significant" {% if classification == 'significant' %}selected{% endif %}>Significant</option>
+      <option value="insignificant" {% if classification == 'insignificant' %}selected{% endif %}>Insignificant</option>
+      <option value="uncertain" {% if classification == 'uncertain' %}selected{% endif %}>Uncertain</option>
+    </select>
+  </div>
+
+  <div>
+    <label for="sentiment" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sentiment</label>
+    <select id="sentiment" name="sentiment"
+            class="form-select rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+            hx-get="/changes/partials/list"
+            hx-target="#changes-list"
+            hx-include="[name]">
+      <option value="">All</option>
+      <option value="positive" {% if sentiment == 'positive' %}selected{% endif %}>Positive</option>
+      <option value="negative" {% if sentiment == 'negative' %}selected{% endif %}>Negative</option>
+      <option value="neutral" {% if sentiment == 'neutral' %}selected{% endif %}>Neutral</option>
+      <option value="mixed" {% if sentiment == 'mixed' %}selected{% endif %}>Mixed</option>
+    </select>
+  </div>
+
+  <div>
+    <label for="min_confidence" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Min Confidence</label>
+    <input type="number" id="min_confidence" name="min_confidence"
+           min="0" max="100" step="5" value="{{ (min_confidence * 100) | int }}"
+           class="form-input w-24 rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+           hx-get="/changes/partials/list"
+           hx-target="#changes-list"
+           hx-include="[name]"
+           hx-trigger="change">
+  </div>
+
+  <div>
+    <label for="days" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Days</label>
+    <input type="number" id="days" name="days"
+           min="1" max="365" value="{{ days }}"
+           class="form-input w-24 rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+           hx-get="/changes/partials/list"
+           hx-target="#changes-list"
+           hx-include="[name]"
+           hx-trigger="change">
+  </div>
+</form>
+
+{# -- Results area -- #}
+<div id="changes-list">
+  {% include "partials/change_filters.html" %}
+</div>
+{% endblock %}

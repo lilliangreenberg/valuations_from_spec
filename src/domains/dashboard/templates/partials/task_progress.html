@@ -1,0 +1,79 @@
+{# Partial: single task progress/status card #}
+
+{% if error %}
+<div class="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded p-4 mb-4">
+  <p class="text-red-700 dark:text-red-300 text-sm font-medium">{{ error }}</p>
+</div>
+{% endif %}
+
+{% if task %}
+<div class="bg-white dark:bg-gray-800 rounded shadow p-4 mb-4" id="task-{{ task.task_id }}">
+  <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+    <div>
+      <span class="font-mono text-sm text-gray-900 dark:text-gray-100">
+        {{ task.display_command }}
+      </span>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if task.status == 'running' %}
+      <span class="inline-block bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 text-xs px-2 py-0.5 rounded font-medium">
+        RUNNING
+      </span>
+      {% elif task.status == 'completed' %}
+      <span class="inline-block bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 text-xs px-2 py-0.5 rounded font-medium">
+        COMPLETED
+      </span>
+      {% elif task.status == 'failed' %}
+      <span class="inline-block bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 text-xs px-2 py-0.5 rounded font-medium">
+        FAILED
+      </span>
+      {% elif task.status == 'cancelled' %}
+      <span class="inline-block bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs px-2 py-0.5 rounded font-medium">
+        CANCELLED
+      </span>
+      {% else %}
+      <span class="inline-block bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs px-2 py-0.5 rounded font-medium">
+        {{ task.status | upper }}
+      </span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if task.status == 'running' %}
+  {# Live streaming output via SSE #}
+  <div class="terminal-output bg-gray-900 text-green-400 font-mono text-xs p-3 rounded max-h-64 overflow-y-auto mb-3"
+       hx-ext="sse"
+       sse-connect="/operations/tasks/{{ task.task_id }}/stream"
+       sse-swap="output"
+       hx-swap="beforeend">
+  </div>
+
+  <button type="button"
+          class="px-3 py-1.5 bg-red-600 text-white text-sm font-medium rounded hover:bg-red-700"
+          hx-post="/operations/tasks/{{ task.task_id }}/cancel"
+          hx-target="#task-{{ task.task_id }}"
+          hx-swap="outerHTML">
+    Cancel
+  </button>
+
+  {% else %}
+  {# Completed/failed/cancelled: show all buffered output #}
+  {% if task.output_lines %}
+  <div class="terminal-output bg-gray-900 text-green-400 font-mono text-xs p-3 rounded max-h-64 overflow-y-auto mb-3">
+    {% for line in task.output_lines %}
+    <div>{{ line }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+    {% if task.return_code is not none %}
+    <span>Exit code: {{ task.return_code }}</span>
+    {% endif %}
+    {% if task.duration_seconds is not none %}
+    <span>Duration: {{ "%.1f" | format(task.duration_seconds) }}s</span>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}

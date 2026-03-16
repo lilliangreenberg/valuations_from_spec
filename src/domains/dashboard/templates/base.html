@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Portfolio Monitor{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
+    <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    {% block head_scripts %}{% endblock %}
+</head>
+<body class="min-h-screen" style="background-color: var(--bg-primary);">
+
+    <!-- Top Navigation Bar -->
+    <header class="fixed top-0 left-0 right-0 h-14 z-40 border-b border-slate-700" style="background-color: #1e293b;">
+        <div class="flex items-center h-full px-6 mx-auto gap-8" style="max-width: 1600px;">
+            <a href="/" class="text-base font-bold text-white no-underline whitespace-nowrap shrink-0">Portfolio Monitor</a>
+            <nav class="topbar-nav flex items-center gap-1 flex-1" id="topbar-nav">
+                <a href="/" class="topbar-link px-3 py-1.5 text-sm font-medium rounded-md no-underline whitespace-nowrap transition-colors text-slate-400 hover:text-slate-100 hover:bg-white/[0.08] {% if request.url.path == '/' %}!text-white !bg-white/[0.12]{% endif %}">
+                    Overview
+                </a>
+                <a href="/companies" class="topbar-link px-3 py-1.5 text-sm font-medium rounded-md no-underline whitespace-nowrap transition-colors text-slate-400 hover:text-slate-100 hover:bg-white/[0.08] {% if request.url.path.startswith('/companies') %}!text-white !bg-white/[0.12]{% endif %}">
+                    Companies
+                </a>
+                <a href="/changes" class="topbar-link px-3 py-1.5 text-sm font-medium rounded-md no-underline whitespace-nowrap transition-colors text-slate-400 hover:text-slate-100 hover:bg-white/[0.08] {% if request.url.path.startswith('/changes') %}!text-white !bg-white/[0.12]{% endif %}">
+                    Changes
+                </a>
+                <a href="/news" class="topbar-link px-3 py-1.5 text-sm font-medium rounded-md no-underline whitespace-nowrap transition-colors text-slate-400 hover:text-slate-100 hover:bg-white/[0.08] {% if request.url.path.startswith('/news') %}!text-white !bg-white/[0.12]{% endif %}">
+                    News
+                </a>
+                <a href="/leadership" class="topbar-link px-3 py-1.5 text-sm font-medium rounded-md no-underline whitespace-nowrap transition-colors text-slate-400 hover:text-slate-100 hover:bg-white/[0.08] {% if request.url.path.startswith('/leadership') %}!text-white !bg-white/[0.12]{% endif %}">
+                    Leadership
+                </a>
+                <a href="/operations" class="topbar-link px-3 py-1.5 text-sm font-medium rounded-md no-underline whitespace-nowrap transition-colors text-slate-400 hover:text-slate-100 hover:bg-white/[0.08] {% if request.url.path.startswith('/operations') %}!text-white !bg-white/[0.12]{% endif %}">
+                    Operations
+                </a>
+            </nav>
+            <div class="flex items-center gap-2 shrink-0">
+                <button onclick="toggleTheme()" id="theme-toggle"
+                        class="px-2.5 py-1 text-xs font-medium rounded-md border border-slate-600 text-slate-400 hover:text-slate-100 hover:bg-white/[0.08] transition-colors cursor-pointer"
+                        title="Toggle theme">
+                    Dark
+                </button>
+                <button onclick="toggleMobileNav()" class="topbar-hamburger hidden flex-col justify-center items-center gap-1 w-8 h-8 cursor-pointer" id="hamburger-btn"
+                        aria-label="Toggle navigation">
+                    <span class="block w-4 h-0.5 bg-slate-400 rounded-sm"></span>
+                    <span class="block w-4 h-0.5 bg-slate-400 rounded-sm"></span>
+                    <span class="block w-4 h-0.5 bg-slate-400 rounded-sm"></span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="mt-14 p-6 min-h-[calc(100vh-3.5rem)] mx-auto" style="max-width: 1600px;">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

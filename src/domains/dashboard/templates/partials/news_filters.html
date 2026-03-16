@@ -1,0 +1,62 @@
+{# Partial: news article results list with pagination #}
+
+{% if articles %}
+<div class="space-y-3">
+  {% for article in articles %}
+  <div class="bg-white dark:bg-gray-800 rounded shadow p-4 mb-3">
+    <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
+      <div class="flex-1 min-w-0">
+        <a href="{{ article.content_url }}" target="_blank" rel="noopener noreferrer"
+           class="text-blue-600 dark:text-blue-400 font-semibold hover:underline truncate block">
+          {{ article.title }}
+        </a>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        {% if article.source %}
+        <span class="inline-block bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs px-2 py-0.5 rounded">
+          {{ article.source }}
+        </span>
+        {% endif %}
+        <span class="text-sm text-gray-500 dark:text-gray-400">
+          {{ article.published_at | date_short }}
+        </span>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3 text-sm">
+      <a href="/companies/{{ article.company_id }}"
+         class="text-blue-600 dark:text-blue-400 hover:underline">
+        {{ article.company_name }}
+      </a>
+
+      {% if article.significance_classification %}
+      <span class="inline-block px-2 py-0.5 text-xs font-medium rounded {{ article.significance_classification | significance_badge }}">
+        {{ article.significance_classification | upper }}
+      </span>
+      {% endif %}
+
+      {% if article.significance_sentiment %}
+      <span class="{{ article.significance_sentiment | sentiment_color }} font-medium">
+        {{ article.significance_sentiment | title }}
+      </span>
+      {% endif %}
+
+      {% if article.match_confidence is not none %}
+      <span class="text-gray-500 dark:text-gray-400">
+        Match: {{ "%.0f" | format(article.match_confidence * 100) }}%
+      </span>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{# Pagination #}
+{% set base_url = "/news/partials/list" %}
+{% include "partials/pagination.html" with context %}
+
+{% else %}
+<div class="text-center py-12 text-gray-500 dark:text-gray-400">
+  <p class="text-lg">{{ empty_state_message("news") }}</p>
+</div>
+{% endif %}

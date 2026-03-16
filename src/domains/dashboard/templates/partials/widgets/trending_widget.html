@@ -1,0 +1,22 @@
+<div class="widget-card" data-widget="trending" data-size="{{ widget.size }}">
+  <div class="widget-header">
+    <h3 class="widget-title">Trending (12 Weeks)</h3>
+  </div>
+  <div class="widget-body widget-chart-body">
+    <canvas id="trending-chart" class="widget-chart-canvas"></canvas>
+    <script>
+      (function() {
+        var config = {{ widget.chart_config | tojson }};
+        if (typeof initTrendingChart === "function") {
+          initTrendingChart("trending-chart", config);
+        } else {
+          document.addEventListener("DOMContentLoaded", function() {
+            if (typeof initTrendingChart === "function") {
+              initTrendingChart("trending-chart", config);
+            }
+          });
+        }
+      })();
+    </script>
+  </div>
+</div>

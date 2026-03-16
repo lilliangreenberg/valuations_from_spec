@@ -1,0 +1,34 @@
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+  <div class="card p-4">
+    <p class="text-sm" style="color: var(--text-secondary)">Total Companies</p>
+    <p class="text-2xl font-bold" style="color: var(--text-primary)">{{ stats.total_companies }}</p>
+  </div>
+  <div class="card p-4">
+    <p class="text-sm" style="color: var(--text-secondary)">Last Scan</p>
+    <p class="text-2xl font-bold" style="color: var(--text-primary)">
+      {% if stats.last_scan_date %}{{ stats.last_scan_date | relative_time }}{% else %}Never{% endif %}
+    </p>
+  </div>
+  <div class="card p-4">
+    <p class="text-sm" style="color: var(--text-secondary)">Changes (30d)</p>
+    <p class="text-2xl font-bold" style="color: var(--text-primary)">{{ stats.recent_changes }}</p>
+  </div>
+  <div class="card p-4">
+    <p class="text-sm" style="color: var(--text-secondary)">Significant Changes</p>
+    <p class="text-2xl font-bold" style="color: var(--text-primary)">{{ stats.significant_changes }}</p>
+  </div>
+</div>
+
+{% if stats.status_counts %}
+<div class="card mt-4 p-4">
+  <p class="text-sm font-medium mb-2" style="color: var(--text-secondary)">Company Status Breakdown</p>
+  <div class="flex gap-4 text-sm">
+    {% for status, count in stats.status_counts.items() %}
+    <span>
+      <span class="badge {{ status | status_badge }}">{{ status }}</span>
+      {{ count }}
+    </span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}

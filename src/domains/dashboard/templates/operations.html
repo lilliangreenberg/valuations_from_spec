@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Operations - Portfolio Monitor{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
+    Operations
+    {% if running_count > 0 %}
+    <span class="ml-2 inline-block bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 text-sm px-2 py-0.5 rounded font-medium">
+      {{ running_count }} running
+    </span>
+    {% endif %}
+  </h1>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  {# -- Left column: Command form -- #}
+  <div>
+    <div class="bg-white dark:bg-gray-800 rounded shadow p-6">
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Run Command</h2>
+
+      <form hx-post="/operations/run" hx-target="#active-tasks" hx-swap="beforeend">
+        <div class="mb-4">
+          <label for="command" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Command</label>
+          <select id="command" name="command"
+                  class="form-select w-full rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+                  onchange="showCommandArgs(this.value)">
+            <option value="">-- Select a command --</option>
+            {% for cmd_name, cmd_def in commands.items() %}
+            <option value="{{ cmd_name }}"
+                    {% if selected_command == cmd_name %}selected{% endif %}>
+              [{{ cmd_def.group }}] {{ cmd_name }} - {{ cmd_def.description }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# -- Dynamic argument fields per command -- #}
+        {% for cmd_name, cmd_def in commands.items() %}
+        {% if cmd_def.args %}
+        <div id="args-{{ cmd_name }}" class="command-args mb-4 space-y-3" style="display: none;">
+          {% for arg in cmd_def.args %}
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              {{ arg.label }}
+            </label>
+            {% if arg.type == 'flag' %}
+            <label class="inline-flex items-center">
+              <input type="checkbox"
+                     name="{{ arg.name | replace('--', '') | replace('-', '_') }}"
+                     value="true"
+                     class="form-checkbox rounded border-gray-300 dark:border-gray-600">
+              <span class="ml-2 text-sm text-gray-600 dark:text-gray-400">Enable</span>
+            </label>
+            {% else %}
+            <input type="text"
+                   name="{{ arg.name | replace('--', '') | replace('-', '_') }}"
+                   value="{{ arg.default }}"
+                   placeholder="{{ arg.label }}"
+                   class="form-input w-full rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200">
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% endfor %}
+
+        <button type="submit"
+                class="w-full px-4 py-2 bg-blue-600 text-white font-medium rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                {% if running_count >= 2 %}disabled{% endif %}>
+          {% if running_count >= 2 %}
+            Max concurrent tasks reached
+          {% else %}
+            Run
+          {% endif %}
+        </button>
+      </form>
+    </div>
+  </div>
+
+  {# -- Right column: Active tasks and history -- #}
+  <div>
+    <div class="mb-6">
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Active Tasks</h2>
+      <div id="active-tasks" class="space-y-4">
+        {# Active task cards will be inserted here by HTMX #}
+      </div>
+    </div>
+
+    <div>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Task History</h2>
+      <div hx-get="/operations/partials/history"
+           hx-trigger="every 30s"
+           hx-swap="innerHTML">
+        {% include "partials/task_history.html" %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showCommandArgs(commandName) {
+  // Hide all argument sections
+  document.querySelectorAll('.command-args').forEach(function(el) {
+    el.style.display = 'none';
+  });
+  // Show the selected command's arguments
+  if (commandName) {
+    var argsEl = document.getElementById('args-' + commandName);
+    if (argsEl) {
+      argsEl.style.display = 'block';
+    }
+  }
+}
+// Initialize on page load if a command is pre-selected
+document.addEventListener('DOMContentLoaded', function() {
+  var select = document.getElementById('command');
+  if (select && select.value) {
+    showCommandArgs(select.value);
+  }
+});
+</script>
+{% endblock %}

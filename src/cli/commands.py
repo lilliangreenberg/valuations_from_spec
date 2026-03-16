@@ -1418,6 +1418,41 @@ def _build_leadership_search(config: Config) -> Any:
     return _StubSearch()
 
 
+@click.command()
+@click.option("--host", default="127.0.0.1", type=str, help="Host to bind to")
+@click.option("--port", default=8000, type=int, help="Port to bind to")
+@click.option("--no-browser", is_flag=True, help="Do not open browser on start")
+def dashboard(host: str, port: int, no_browser: bool) -> None:
+    """Launch the web dashboard."""
+    import os
+    import threading
+    import webbrowser
+
+    import uvicorn
+
+    from src.domains.dashboard.app import create_app
+
+    database_path = os.environ.get("DATABASE_PATH", "data/companies.db")
+    log_level = os.environ.get("LOG_LEVEL", "INFO")
+    configure_logging(log_level)
+
+    app = create_app(database_path=database_path)
+
+    if not no_browser:
+
+        def open_browser() -> None:
+            import time
+
+            time.sleep(1.5)
+            webbrowser.open(f"http://{host}:{port}")
+
+        threading.Thread(target=open_browser, daemon=True).start()
+
+    click.echo(f"[INFO] Dashboard running at http://{host}:{port}")
+    click.echo("[INFO] Press Ctrl+C to stop.")
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
 def _print_leadership_changes(changes: list[dict[str, Any]]) -> None:
     """Print leadership changes."""
     if not changes:

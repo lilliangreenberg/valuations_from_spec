@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Leadership - Portfolio Monitor{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
+    Leadership Profiles
+    <span class="ml-2 text-base font-normal text-gray-500 dark:text-gray-400">({{ total }} total)</span>
+  </h1>
+</div>
+
+{# -- Toggle: Current Only / Show All -- #}
+<div class="bg-white dark:bg-gray-800 rounded shadow p-4 mb-6">
+  <div class="flex items-center gap-4">
+    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Filter:</span>
+    <div class="inline-flex rounded-md shadow-sm" role="group">
+      <button type="button"
+              class="px-4 py-2 text-sm font-medium rounded-l-md border
+                     {% if current_only %}
+                       bg-blue-600 text-white border-blue-600
+                     {% else %}
+                       bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600
+                     {% endif %}"
+              hx-get="/leadership/partials/list?current_only=true"
+              hx-target="#leadership-list">
+        Current Only
+      </button>
+      <button type="button"
+              class="px-4 py-2 text-sm font-medium rounded-r-md border
+                     {% if not current_only %}
+                       bg-blue-600 text-white border-blue-600
+                     {% else %}
+                       bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600
+                     {% endif %}"
+              hx-get="/leadership/partials/list?current_only=false"
+              hx-target="#leadership-list">
+        Show All
+      </button>
+    </div>
+  </div>
+</div>
+
+{# -- Results area -- #}
+<div id="leadership-list">
+  {% include "partials/leadership_card.html" %}
+</div>
+{% endblock %}
