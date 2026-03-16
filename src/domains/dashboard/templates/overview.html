@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Overview - Portfolio Monitor{% endblock %}
+
+{% block head_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="widget-page-header">
+  <h1 class="text-2xl font-bold" style="color: var(--text-primary)">Portfolio Overview</h1>
+  <button onclick="openCustomizePanel()" class="btn btn-secondary text-sm">
+    Customize
+  </button>
+</div>
+
+{% include "partials/widgets/customize_panel.html" %}
+
+<div class="widget-grid" id="widget-grid">
+
+  <!-- Changes Widget -->
+  <div class="widget-container" data-widget-id="changes" data-size="{{ widget_data.changes.size }}"
+       hx-get="/widgets/changes?size={{ widget_data.changes.size }}"
+       hx-trigger="every {{ widget_registry.changes.refresh_seconds }}s"
+       hx-swap="innerHTML">
+    {% with widget=widget_data.changes %}
+      {% include "partials/widgets/changes_widget.html" %}
+    {% endwith %}
+  </div>
+
+  <!-- Alerts Widget -->
+  <div class="widget-container" data-widget-id="alerts" data-size="{{ widget_data.alerts.size }}"
+       hx-get="/widgets/alerts?size={{ widget_data.alerts.size }}"
+       hx-trigger="every {{ widget_registry.alerts.refresh_seconds }}s"
+       hx-swap="innerHTML">
+    {% with widget=widget_data.alerts %}
+      {% include "partials/widgets/alerts_widget.html" %}
+    {% endwith %}
+  </div>
+
+  <!-- Trending Widget (always large) -->
+  <div class="widget-container widget-large" data-widget-id="trending" data-size="large"
+       hx-get="/widgets/trending?size=large"
+       hx-trigger="every {{ widget_registry.trending.refresh_seconds }}s"
+       hx-swap="innerHTML">
+    {% with widget=widget_data.trending %}
+      {% include "partials/widgets/trending_widget.html" %}
+    {% endwith %}
+  </div>
+
+  <!-- Freshness Widget -->
+  <div class="widget-container" data-widget-id="freshness" data-size="{{ widget_data.freshness.size }}"
+       hx-get="/widgets/freshness?size={{ widget_data.freshness.size }}"
+       hx-trigger="every {{ widget_registry.freshness.refresh_seconds }}s"
+       hx-swap="innerHTML">
+    {% with widget=widget_data.freshness %}
+      {% include "partials/widgets/freshness_widget.html" %}
+    {% endwith %}
+  </div>
+
+  <!-- Activity Widget -->
+  <div class="widget-container widget-large" data-widget-id="activity" data-size="{{ widget_data.activity.size }}"
+       hx-get="/widgets/activity?size={{ widget_data.activity.size }}"
+       hx-trigger="every {{ widget_registry.activity.refresh_seconds }}s"
+       hx-swap="innerHTML">
+    {% with widget=widget_data.activity %}
+      {% include "partials/widgets/activity_widget.html" %}
+    {% endwith %}
+  </div>
+
+  <!-- Health Grid Widget -->
+  <div class="widget-container widget-large" data-widget-id="health_grid" data-size="{{ widget_data.health_grid.size }}"
+       hx-get="/widgets/health-grid?size={{ widget_data.health_grid.size }}"
+       hx-trigger="every {{ widget_registry.health_grid.refresh_seconds }}s"
+       hx-swap="innerHTML">
+    {% with widget=widget_data.health_grid %}
+      {% include "partials/widgets/health_grid_widget.html" %}
+    {% endwith %}
+  </div>
+
+</div>
+{% endblock %}

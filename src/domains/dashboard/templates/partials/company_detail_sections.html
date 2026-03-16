@@ -1,0 +1,148 @@
+{# Renders different company detail sections based on `section` variable #}
+
+{% if section == "changes" %}
+  {% if items %}
+  <div class="space-y-3">
+    {% for change in items %}
+    <div class="card p-4">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <span class="text-sm" style="color: var(--text-secondary)">{{ change.detected_at | date_short }}</span>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-mono" style="color: var(--text-secondary)">{{ change.change_magnitude | magnitude }}</span>
+          {% if change.significance_classification %}
+          <span class="badge {{ change.significance_classification | significance_badge }}">
+            {{ change.significance_classification | upper }}
+          </span>
+          {% endif %}
+          {% if change.significance_sentiment %}
+          <span class="{{ change.significance_sentiment | sentiment_color }} text-sm font-medium">
+            {{ change.significance_sentiment | title }}
+          </span>
+          {% endif %}
+        </div>
+      </div>
+      {% if change.matched_keywords %}
+      <div class="flex flex-wrap gap-1 mt-1">
+        {% for kw in change.matched_keywords %}
+        <span class="keyword-tag">{{ kw }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if change.significance_notes %}
+      <button class="change-details-toggle mt-2" onclick="toggleChangeDetails(this)">
+        <span class="toggle-arrow">&#9654;</span> Why flagged?
+      </button>
+      <div class="change-details-content">
+        <div class="change-details-notes">{{ change.significance_notes }}</div>
+        {% if change.evidence_snippets %}
+        <div class="change-details-evidence-title">Evidence</div>
+        <ul class="change-details-evidence">
+          {% for snippet in change.evidence_snippets %}
+          <li>{{ snippet }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-center py-8" style="color: var(--text-secondary)">
+    <p>{{ empty_state_message("changes") }}</p>
+  </div>
+  {% endif %}
+
+{% elif section == "news" %}
+  {% if items %}
+  <div class="space-y-3">
+    {% for article in items %}
+    <div class="card p-4">
+      <div class="flex items-start justify-between gap-2">
+        <div class="flex-1">
+          <a href="{{ article.content_url }}" target="_blank" rel="noopener"
+             class="font-medium hover:underline" style="color: var(--accent-blue)">
+            {{ article.title }}
+          </a>
+          <p class="text-sm mt-1" style="color: var(--text-secondary)">
+            {{ article.source | default('Unknown source') }} -- {{ article.published_at | date_short }}
+          </p>
+        </div>
+        {% if article.significance_classification %}
+        <span class="badge {{ article.significance_classification | significance_badge }}">
+          {{ article.significance_classification | upper }}
+        </span>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-center py-8" style="color: var(--text-secondary)">
+    <p>{{ empty_state_message("news") }}</p>
+  </div>
+  {% endif %}
+
+{% elif section == "social" %}
+  {% if items %}
+  <div class="space-y-2">
+    {% for link in items %}
+    <div class="card p-3 flex items-center justify-between">
+      <div>
+        <span class="badge bg-gray-100 text-gray-700 text-xs mr-2">{{ link.platform | platform_name }}</span>
+        <a href="{{ link.profile_url }}" target="_blank" rel="noopener"
+           class="text-sm hover:underline" style="color: var(--accent-blue)">
+          {{ link.profile_url | truncate_url }}
+        </a>
+      </div>
+      {% if link.account_type %}
+      <span class="text-xs" style="color: var(--text-secondary)">{{ link.account_type }}</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-center py-8" style="color: var(--text-secondary)">
+    <p>{{ empty_state_message("social") }}</p>
+  </div>
+  {% endif %}
+
+{% elif section == "leadership" %}
+  {% if items %}
+  <div class="space-y-3">
+    {% for leader in items %}
+    <div class="card p-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <span class="font-medium" style="color: var(--text-primary)">{{ leader.person_name }}</span>
+          {% if leader.title %}
+          <span class="text-sm ml-1" style="color: var(--text-secondary)">-- {{ leader.title }}</span>
+          {% endif %}
+        </div>
+        <div class="flex items-center gap-2">
+          {% if leader.is_current %}
+          <span class="badge bg-green-100 text-green-800 text-xs">Current</span>
+          {% else %}
+          <span class="badge bg-gray-100 text-gray-600 text-xs">Former</span>
+          {% endif %}
+          {% if leader.linkedin_profile_url %}
+          <a href="{{ leader.linkedin_profile_url }}" target="_blank" rel="noopener"
+             class="text-xs hover:underline" style="color: var(--accent-blue)">LinkedIn</a>
+          {% endif %}
+        </div>
+      </div>
+      {% if leader.confidence is not none %}
+      <p class="text-xs mt-1" style="color: var(--text-secondary)">
+        Confidence: {{ leader.confidence | confidence }}
+      </p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-center py-8" style="color: var(--text-secondary)">
+    <p>{{ empty_state_message("leadership") }}</p>
+  </div>
+  {% endif %}
+
+{% endif %}

@@ -1,0 +1,40 @@
+<div class="widget-card" data-widget="alerts" data-size="{{ widget.size }}">
+  <div class="widget-header">
+    <h3 class="widget-title">Alerts</h3>
+    <a href="/changes/?classification=significant&sentiment=negative" class="widget-link">View All</a>
+  </div>
+  <div class="widget-body">
+    <div class="widget-big-number {% if widget.total_alerts > 0 %}text-alert{% endif %}">
+      {{ widget.total_alerts }}
+    </div>
+    <div class="widget-label">alerts needing attention</div>
+
+    <div class="widget-alert-counts mt-4">
+      <div class="widget-alert-item alert-negative">
+        <span class="widget-alert-count">{{ widget.negative_significant_count }}</span>
+        <span class="widget-alert-label">Negative &amp; Significant</span>
+      </div>
+      <div class="widget-alert-item alert-uncertain">
+        <span class="widget-alert-count">{{ widget.uncertain_count }}</span>
+        <span class="widget-alert-label">Uncertain</span>
+      </div>
+    </div>
+
+    {% if widget.size == "large" and widget.flagged_companies is defined %}
+    <div class="widget-breakdown mt-4">
+      <div class="widget-breakdown-title">Flagged for Review</div>
+      {% if widget.flagged_companies %}
+      <div class="widget-breakdown-rows">
+        {% for company in widget.flagged_companies %}
+        <div class="widget-breakdown-row">
+          <a href="/companies/{{ company.id }}" class="widget-company-link">{{ company.name }}</a>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="widget-empty-note">No companies flagged</div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>

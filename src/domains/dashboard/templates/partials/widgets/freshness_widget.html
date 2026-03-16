@@ -1,0 +1,57 @@
+<div class="widget-card" data-widget="freshness" data-size="{{ widget.size }}">
+  <div class="widget-header">
+    <h3 class="widget-title">Snapshot Freshness</h3>
+  </div>
+  <div class="widget-body">
+    <div class="freshness-tiers">
+      <div class="freshness-tier tier-fresh">
+        <span class="freshness-tier-count">{{ widget.summary.get("fresh", 0) }}</span>
+        <span class="freshness-tier-label">Fresh<br><small>&lt; 7 days</small></span>
+      </div>
+      <div class="freshness-tier tier-recent">
+        <span class="freshness-tier-count">{{ widget.summary.get("recent", 0) }}</span>
+        <span class="freshness-tier-label">Recent<br><small>7-30 days</small></span>
+      </div>
+      <div class="freshness-tier tier-stale">
+        <span class="freshness-tier-count">{{ widget.summary.get("stale", 0) }}</span>
+        <span class="freshness-tier-label">Stale<br><small>30-90 days</small></span>
+      </div>
+      <div class="freshness-tier tier-very-stale">
+        <span class="freshness-tier-count">{{ widget.summary.get("very_stale", 0) }}</span>
+        <span class="freshness-tier-label">Very Stale<br><small>&gt; 90 days</small></span>
+      </div>
+      <div class="freshness-tier tier-never">
+        <span class="freshness-tier-count">{{ widget.summary.get("never_scanned", 0) }}</span>
+        <span class="freshness-tier-label">Never<br><small>Scanned</small></span>
+      </div>
+    </div>
+
+    {% if widget.size == "large" and widget.companies_by_tier is defined %}
+    <div class="freshness-details mt-4">
+      {% for tier_key in ["very_stale", "stale", "never_scanned"] %}
+        {% set companies = widget.companies_by_tier.get(tier_key, []) %}
+        {% if companies %}
+        <div class="widget-breakdown mt-2">
+          <div class="widget-breakdown-title">{{ tier_key | freshness_tier_label }}</div>
+          <div class="widget-breakdown-rows">
+            {% for company in companies[:5] %}
+            <div class="widget-breakdown-row">
+              <a href="/companies/{{ company.id }}" class="widget-company-link">{{ company.name }}</a>
+              {% if company.last_snapshot %}
+              <span class="widget-breakdown-meta">{{ company.last_snapshot | relative_time }}</span>
+              {% endif %}
+            </div>
+            {% endfor %}
+            {% if companies | length > 5 %}
+            <div class="widget-breakdown-row widget-empty-note">
+              +{{ companies | length - 5 }} more
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>

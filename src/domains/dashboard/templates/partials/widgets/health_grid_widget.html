@@ -1,0 +1,28 @@
+<div class="widget-card" data-widget="health_grid" data-size="{{ widget.size }}">
+  <div class="widget-header">
+    <h3 class="widget-title">Company Health</h3>
+    <a href="/companies/" class="widget-link">View All</a>
+  </div>
+  <div class="widget-body">
+    {% if widget.companies %}
+    <div class="health-grid-container">
+      {% for company in widget.companies %}
+      <a href="/companies/{{ company.id }}"
+         class="health-cell {{ company.status | health_grid_color }}"
+         title="{{ company.name }} - {{ company.status | title }}">
+      </a>
+      {% endfor %}
+    </div>
+    <div class="health-legend mt-3">
+      <span class="health-legend-item"><span class="health-dot health-green"></span> Operational</span>
+      <span class="health-legend-item"><span class="health-dot health-yellow"></span> Uncertain</span>
+      <span class="health-legend-item"><span class="health-dot health-red"></span> Likely Closed</span>
+      <span class="health-legend-item"><span class="health-dot health-gray"></span> Unknown</span>
+    </div>
+    {% else %}
+    <div class="widget-empty-state">
+      <p>No companies tracked yet</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
