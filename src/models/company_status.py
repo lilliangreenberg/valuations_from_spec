@@ -47,6 +47,7 @@ class CompanyStatus(BaseModel):
     indicators: list[StatusIndicator]
     last_checked: datetime
     http_last_modified: datetime | None = None
+    is_manual_override: bool = False
 
     @field_validator("confidence")
     @classmethod

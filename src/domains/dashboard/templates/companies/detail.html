@@ -19,10 +19,12 @@
         {{ company.homepage_url | truncate_url }} &nearr;
       </a>
       {% endif %}
-      <div class="mt-2 flex flex-wrap gap-2">
-        {% if company.status %}
-        <span class="badge {{ company.status | status_badge }}">{{ company.status }}</span>
-        {% endif %}
+      <div class="mt-2 flex flex-wrap items-center gap-2">
+        <div id="status-override-area" class="inline-flex items-center gap-2 flex-wrap">
+          {% set status_data = company.status %}
+          {% set company_id = company.id %}
+          {% include "partials/status_override.html" %}
+        </div>
         {% if company.source_sheet %}
         <span class="badge bg-gray-100 text-gray-700">{{ company.source_sheet }}</span>
         {% endif %}

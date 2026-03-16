@@ -4,26 +4,26 @@
   </div>
   <div class="widget-body">
     <div class="freshness-tiers">
-      <div class="freshness-tier tier-fresh">
+      <a href="/companies?freshness=fresh" class="freshness-tier tier-fresh" style="text-decoration: none; color: inherit;">
         <span class="freshness-tier-count">{{ widget.summary.get("fresh", 0) }}</span>
         <span class="freshness-tier-label">Fresh<br><small>&lt; 7 days</small></span>
-      </div>
-      <div class="freshness-tier tier-recent">
+      </a>
+      <a href="/companies?freshness=recent" class="freshness-tier tier-recent" style="text-decoration: none; color: inherit;">
         <span class="freshness-tier-count">{{ widget.summary.get("recent", 0) }}</span>
         <span class="freshness-tier-label">Recent<br><small>7-30 days</small></span>
-      </div>
-      <div class="freshness-tier tier-stale">
+      </a>
+      <a href="/companies?freshness=stale" class="freshness-tier tier-stale" style="text-decoration: none; color: inherit;">
         <span class="freshness-tier-count">{{ widget.summary.get("stale", 0) }}</span>
         <span class="freshness-tier-label">Stale<br><small>30-90 days</small></span>
-      </div>
-      <div class="freshness-tier tier-very-stale">
+      </a>
+      <a href="/companies?freshness=very_stale" class="freshness-tier tier-very-stale" style="text-decoration: none; color: inherit;">
         <span class="freshness-tier-count">{{ widget.summary.get("very_stale", 0) }}</span>
         <span class="freshness-tier-label">Very Stale<br><small>&gt; 90 days</small></span>
-      </div>
-      <div class="freshness-tier tier-never">
+      </a>
+      <a href="/companies?freshness=never" class="freshness-tier tier-never" style="text-decoration: none; color: inherit;">
         <span class="freshness-tier-count">{{ widget.summary.get("never_scanned", 0) }}</span>
         <span class="freshness-tier-label">Never<br><small>Scanned</small></span>
-      </div>
+      </a>
     </div>
 
     {% if widget.size == "large" and widget.companies_by_tier is defined %}

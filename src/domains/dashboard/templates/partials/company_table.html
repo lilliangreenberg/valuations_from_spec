@@ -5,6 +5,7 @@
       <tr>
         <th>Name</th>
         <th>Status</th>
+        <th>Last Snapshot</th>
         <th>Changes</th>
         <th>News</th>
         <th>Social</th>
@@ -25,8 +26,19 @@
         <td>
           {% if company.status %}
           <span class="badge {{ company.status | status_badge }}">{{ company.status }}</span>
+          {% if company.is_manual_override %}
+          <span class="text-xs font-medium px-1 py-0.5 rounded"
+                style="background: var(--accent-blue); color: white; opacity: 0.85;">MANUAL</span>
+          {% endif %}
           {% else %}
           <span class="text-xs" style="color: var(--text-secondary)">--</span>
+          {% endif %}
+        </td>
+        <td class="text-xs whitespace-nowrap" style="color: var(--text-secondary)">
+          {% if company.last_snapshot %}
+          {{ company.last_snapshot | relative_time }}
+          {% else %}
+          <span style="color: var(--text-muted, #9ca3af)">Never</span>
           {% endif %}
         </td>
         <td class="text-center">{{ company.change_count | default(0) }}</td>

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
-from src.domains.dashboard.dependencies import get_query_service, get_templates
+from src.domains.dashboard.dependencies import get_query_service, get_status_repo, get_templates
 
 router = APIRouter(prefix="/companies", tags=["companies"])
 
@@ -13,6 +13,7 @@ router = APIRouter(prefix="/companies", tags=["companies"])
 @router.get("/", response_class=HTMLResponse)
 async def companies_list_page(
     request: Request,
+    freshness: str = "",
     query_service: object = Depends(get_query_service),
     templates: object = Depends(get_templates),
 ) -> HTMLResponse:
@@ -27,7 +28,7 @@ async def companies_list_page(
     assert isinstance(tmpl, Jinja2Templates)
 
     source_sheets = qs.get_source_sheets()
-    result = qs.get_companies_list()
+    result = qs.get_companies_list(freshness=freshness or None)
 
     return tmpl.TemplateResponse(
         request,
@@ -42,6 +43,7 @@ async def companies_list_page(
             "search": "",
             "status_filter": "",
             "source_sheet_filter": "",
+            "freshness_filter": freshness,
             "sort_by": "name",
             "sort_order": "asc",
         },
@@ -55,6 +57,7 @@ async def companies_table_partial(
     status: str = "",
     source_sheet: str = "",
     flagged: str = "",
+    freshness: str = "",
     sort_by: str = "name",
     sort_order: str = "asc",
     page: int = 1,
@@ -82,6 +85,7 @@ async def companies_table_partial(
         status_filter=status or None,
         source_sheet_filter=source_sheet or None,
         flagged=flagged_filter,
+        freshness=freshness or None,
         sort_by=sort_by,
         sort_order=sort_order,
         page=page,
@@ -99,6 +103,7 @@ async def companies_table_partial(
             "search": search,
             "status_filter": status,
             "source_sheet_filter": source_sheet,
+            "freshness_filter": freshness,
             "sort_by": sort_by,
             "sort_order": sort_order,
         },
@@ -131,6 +136,81 @@ async def company_detail_page(
         request,
         "companies/detail.html",
         {"company": summary},
+    )
+
+
+@router.post("/{company_id}/status-override", response_class=HTMLResponse)
+async def set_status_override(
+    request: Request,
+    company_id: int,
+    status: str = Form(...),
+    status_repo: object = Depends(get_status_repo),
+    query_service: object = Depends(get_query_service),
+    templates: object = Depends(get_templates),
+) -> HTMLResponse:
+    """Set a manual status override for a company."""
+    from datetime import UTC, datetime
+
+    from starlette.templating import Jinja2Templates
+
+    from src.domains.dashboard.services.query_service import QueryService
+    from src.domains.monitoring.core.manual_override import prepare_manual_override
+    from src.domains.monitoring.repositories.company_status_repository import (
+        CompanyStatusRepository,
+    )
+
+    repo = status_repo
+    assert isinstance(repo, CompanyStatusRepository)
+    qs = query_service
+    assert isinstance(qs, QueryService)
+    tmpl = templates
+    assert isinstance(tmpl, Jinja2Templates)
+
+    now_iso = datetime.now(UTC).isoformat()
+    override_data = prepare_manual_override(company_id, status, now_iso)
+    repo.store_status(override_data)
+
+    # Re-fetch the updated status for the partial
+    latest = repo.get_latest_status(company_id)
+
+    return tmpl.TemplateResponse(
+        request,
+        "partials/status_override.html",
+        {"company_id": company_id, "status_data": latest},
+    )
+
+
+@router.post("/{company_id}/status-override/clear", response_class=HTMLResponse)
+async def clear_status_override(
+    request: Request,
+    company_id: int,
+    status_repo: object = Depends(get_status_repo),
+    query_service: object = Depends(get_query_service),
+    templates: object = Depends(get_templates),
+) -> HTMLResponse:
+    """Clear the manual status override, allowing analyze-status to resume."""
+    from starlette.templating import Jinja2Templates
+
+    from src.domains.dashboard.services.query_service import QueryService
+    from src.domains.monitoring.repositories.company_status_repository import (
+        CompanyStatusRepository,
+    )
+
+    repo = status_repo
+    assert isinstance(repo, CompanyStatusRepository)
+    qs = query_service
+    assert isinstance(qs, QueryService)
+    tmpl = templates
+    assert isinstance(tmpl, Jinja2Templates)
+
+    repo.clear_manual_override(company_id)
+
+    latest = repo.get_latest_status(company_id)
+
+    return tmpl.TemplateResponse(
+        request,
+        "partials/status_override.html",
+        {"company_id": company_id, "status_data": latest},
     )
 
 

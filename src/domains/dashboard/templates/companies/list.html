@@ -12,7 +12,8 @@
 
 <!-- Search and Filters -->
 <div class="card p-4 mb-4">
-  <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+  {% set hx_includes = "[name='search'],[name='status'],[name='source_sheet'],[name='flagged'],[name='freshness'],[name='sort_by'],[name='sort_order']" %}
+  <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
     <div>
       <label for="search" class="block text-sm font-medium mb-1" style="color: var(--text-secondary)">Search</label>
       <input type="text" id="search" name="search"
@@ -23,7 +24,7 @@
              hx-get="/companies/partials/table"
              hx-trigger="keyup changed delay:300ms"
              hx-target="#company-table"
-             hx-include="[name='search'],[name='status'],[name='source_sheet'],[name='sort_by'],[name='sort_order']">
+             hx-include="{{ hx_includes }}">
     </div>
 
     <div>
@@ -34,11 +35,29 @@
               hx-get="/companies/partials/table"
               hx-trigger="change"
               hx-target="#company-table"
-              hx-include="[name='search'],[name='status'],[name='source_sheet'],[name='sort_by'],[name='sort_order']">
+              hx-include="{{ hx_includes }}">
         <option value="">All Statuses</option>
         <option value="operational" {% if status_filter == 'operational' %}selected{% endif %}>Operational</option>
         <option value="likely_closed" {% if status_filter == 'likely_closed' %}selected{% endif %}>Likely Closed</option>
         <option value="uncertain" {% if status_filter == 'uncertain' %}selected{% endif %}>Uncertain</option>
+      </select>
+    </div>
+
+    <div>
+      <label for="freshness" class="block text-sm font-medium mb-1" style="color: var(--text-secondary)">Freshness</label>
+      <select id="freshness" name="freshness"
+              class="w-full rounded border px-3 py-2 text-sm"
+              style="background: var(--bg-card); border-color: var(--border-color); color: var(--text-primary)"
+              hx-get="/companies/partials/table"
+              hx-trigger="change"
+              hx-target="#company-table"
+              hx-include="{{ hx_includes }}">
+        <option value="">All</option>
+        <option value="fresh" {% if freshness_filter == 'fresh' %}selected{% endif %}>Fresh (&lt; 7 days)</option>
+        <option value="recent" {% if freshness_filter == 'recent' %}selected{% endif %}>Recent (7-30 days)</option>
+        <option value="stale" {% if freshness_filter == 'stale' %}selected{% endif %}>Stale (30-90 days)</option>
+        <option value="very_stale" {% if freshness_filter == 'very_stale' %}selected{% endif %}>Very Stale (&gt; 90 days)</option>
+        <option value="never" {% if freshness_filter == 'never' %}selected{% endif %}>Never Scanned</option>
       </select>
     </div>
 
@@ -50,7 +69,7 @@
               hx-get="/companies/partials/table"
               hx-trigger="change"
               hx-target="#company-table"
-              hx-include="[name='search'],[name='status'],[name='source_sheet'],[name='sort_by'],[name='sort_order']">
+              hx-include="{{ hx_includes }}">
         <option value="">All Source Sheets</option>
         {% for sheet in source_sheets %}
         <option value="{{ sheet }}" {% if source_sheet_filter == sheet %}selected{% endif %}>{{ sheet }}</option>
@@ -66,7 +85,7 @@
               hx-get="/companies/partials/table"
               hx-trigger="change"
               hx-target="#company-table"
-              hx-include="[name='search'],[name='status'],[name='source_sheet'],[name='flagged'],[name='sort_by'],[name='sort_order']">
+              hx-include="{{ hx_includes }}">
         <option value="">All</option>
         <option value="yes">Flagged Only</option>
         <option value="no">Not Flagged</option>

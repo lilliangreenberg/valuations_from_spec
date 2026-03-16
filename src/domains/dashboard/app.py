@@ -101,7 +101,7 @@ def create_app(
     if database is not None:
         db = database
     else:
-        db = Database(db_path=database_path)
+        db = Database(db_path=database_path, check_same_thread=False)
         db.init_db()
     app.state.db = db
     app.state.company_repo = CompanyRepository(db)
