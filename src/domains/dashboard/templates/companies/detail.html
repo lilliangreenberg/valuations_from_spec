@@ -5,7 +5,7 @@
 {% block content %}
 <!-- Back link -->
 <div class="mb-4">
-  <a href="/companies" onclick="if(document.referrer && new URL(document.referrer).pathname.startsWith('/companies')){history.back();return false;}"
+  <a href="/companies" onclick="if(history.length>1){history.back();return false;}"
      class="text-sm hover:underline" style="color: var(--accent-blue)">&larr; Back to Companies</a>
 </div>
 
