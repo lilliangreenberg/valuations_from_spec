@@ -13,7 +13,14 @@ router = APIRouter(prefix="/companies", tags=["companies"])
 @router.get("/", response_class=HTMLResponse)
 async def companies_list_page(
     request: Request,
+    search: str = "",
+    status: str = "",
+    source_sheet: str = "",
+    flagged: str = "",
     freshness: str = "",
+    sort_by: str = "name",
+    sort_order: str = "asc",
+    page: int = 1,
     query_service: object = Depends(get_query_service),
     templates: object = Depends(get_templates),
 ) -> HTMLResponse:
@@ -27,8 +34,23 @@ async def companies_list_page(
     tmpl = templates
     assert isinstance(tmpl, Jinja2Templates)
 
+    flagged_filter: bool | None = None
+    if flagged == "yes":
+        flagged_filter = True
+    elif flagged == "no":
+        flagged_filter = False
+
     source_sheets = qs.get_source_sheets()
-    result = qs.get_companies_list(freshness=freshness or None)
+    result = qs.get_companies_list(
+        search=search or None,
+        status_filter=status or None,
+        source_sheet_filter=source_sheet or None,
+        flagged=flagged_filter,
+        freshness=freshness or None,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        page=page,
+    )
 
     return tmpl.TemplateResponse(
         request,
@@ -40,12 +62,13 @@ async def companies_list_page(
             "per_page": result["per_page"],
             "total_pages": result["total_pages"],
             "source_sheets": source_sheets,
-            "search": "",
-            "status_filter": "",
-            "source_sheet_filter": "",
+            "search": search,
+            "status_filter": status,
+            "source_sheet_filter": source_sheet,
+            "flagged_filter": flagged,
             "freshness_filter": freshness,
-            "sort_by": "name",
-            "sort_order": "asc",
+            "sort_by": sort_by,
+            "sort_order": sort_order,
         },
     )
 
