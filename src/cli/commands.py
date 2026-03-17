@@ -241,6 +241,9 @@ def detect_changes(
         click.echo(json.dumps(result, indent=2))
     else:
         _print_summary("Change detection complete", result)
+        _print_status_changes(
+            result.get("report_details", {}).get("status_changes", [])
+        )
 
     report_config: dict[str, Any] = {
         "include_social": include_social,
@@ -1456,6 +1459,21 @@ def dashboard(host: str, port: int, no_browser: bool) -> None:
     click.echo(f"[INFO] Dashboard running at http://{host}:{port}")
     click.echo("[INFO] Press Ctrl+C to stop.")
     uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+def _print_status_changes(status_changes: list[dict[str, Any]]) -> None:
+    """Print companies whose status changed during detect-changes."""
+    if not status_changes:
+        return
+
+    click.echo("\n  Status Changes:")
+    for entry in status_changes:
+        prev = entry.get("previous_status", "unknown")
+        new = entry.get("new_status", "unknown")
+        name = entry.get("name", "")
+        reason = entry.get("status_reason", "")
+        reason_str = f" -- {reason}" if reason else ""
+        click.echo(f"    {name}: {prev} -> {new}{reason_str}")
 
 
 def _print_leadership_changes(changes: list[dict[str, Any]]) -> None:

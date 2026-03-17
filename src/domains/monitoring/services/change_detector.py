@@ -106,6 +106,7 @@ class ChangeDetector:
         changed_details: list[dict[str, Any]] = []
         failed_details: list[dict[str, Any]] = []
         skipped_details: list[dict[str, Any]] = []
+        status_change_details: list[dict[str, Any]] = []
 
         for company_id in company_ids:
             try:
@@ -221,6 +222,12 @@ class ChangeDetector:
                                                 company_id=company_id,
                                             )
                                         else:
+                                            prev = self.status_repo.get_latest_status(
+                                                company_id
+                                            )
+                                            prev_status = (
+                                                prev["status"] if prev else None
+                                            )
                                             self.status_repo.store_status({
                                                 "company_id": company_id,
                                                 "status": llm_status,
@@ -234,6 +241,16 @@ class ChangeDetector:
                                                     "status_reason", ""
                                                 ),
                                             })
+                                            if prev_status != llm_status:
+                                                status_change_details.append({
+                                                    "company_id": company_id,
+                                                    "name": company_name,
+                                                    "previous_status": prev_status or "unknown",
+                                                    "new_status": llm_status,
+                                                    "status_reason": llm_result.get(
+                                                        "status_reason", ""
+                                                    ),
+                                                })
                             except Exception as exc:
                                 logger.warning(
                                     "llm_classification_failed",
@@ -301,5 +318,6 @@ class ChangeDetector:
             "changed": changed_details,
             "failed": failed_details,
             "skipped": skipped_details,
+            "status_changes": status_change_details,
         }
         return summary

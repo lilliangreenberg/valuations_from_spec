@@ -56,6 +56,7 @@ def build_detect_changes_report(
     """
     details = result.get("report_details", {})
     changed = details.get("changed", [])
+    status_changes = details.get("status_changes", [])
 
     significance_counts: Counter[str] = Counter()
     sentiment_counts: Counter[str] = Counter()
@@ -80,6 +81,7 @@ def build_detect_changes_report(
             "no_change": (
                 result.get("successful", 0) - result.get("changes_found", 0)
             ),
+            "status_changes": len(status_changes),
             "duration_seconds": result.get("duration_seconds", 0.0),
         },
         "significance_breakdown": {
@@ -100,6 +102,7 @@ def build_detect_changes_report(
         },
         "companies": {
             "changed": changed,
+            "status_changes": status_changes,
             "failed": details.get("failed", []),
             "skipped": details.get("skipped", []),
         },
