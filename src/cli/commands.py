@@ -181,6 +181,13 @@ def capture_snapshots(
 @click.option("--batch-size", default=50, type=int, help="Companies per batch")
 @click.option("--limit", default=None, type=int, help="Max companies to process")
 @click.option(
+    "--company-id",
+    "company_ids",
+    multiple=True,
+    type=int,
+    help="Process specific company ID(s). Repeatable. Overrides --limit.",
+)
+@click.option(
     "--output-format",
     default="summary",
     type=click.Choice(["summary", "detailed", "json"]),
@@ -188,7 +195,11 @@ def capture_snapshots(
 )
 @click.option("--include-social", is_flag=True, help="Enrich LLM with social media context")
 def detect_changes(
-    batch_size: int, limit: int | None, output_format: str, include_social: bool
+    batch_size: int,
+    limit: int | None,
+    company_ids: tuple[int, ...],
+    output_format: str,
+    include_social: bool,
 ) -> None:
     """Detect content changes between snapshots with significance analysis."""
     config = _get_config()
@@ -235,7 +246,10 @@ def detect_changes(
     )
 
     click.echo("[INFO] Detecting changes...")
-    result = detector.detect_all_changes(limit=limit)
+    result = detector.detect_all_changes(
+        limit=limit,
+        company_ids=list(company_ids) if company_ids else None,
+    )
 
     if output_format == "json":
         click.echo(json.dumps(result, indent=2))

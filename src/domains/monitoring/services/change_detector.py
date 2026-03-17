@@ -89,17 +89,27 @@ class ChangeDetector:
 
         return prepare_social_context(snapshots, inactivity_results)
 
-    def detect_all_changes(self, limit: int | None = None) -> dict[str, Any]:
+    def detect_all_changes(
+        self,
+        limit: int | None = None,
+        company_ids: list[int] | None = None,
+    ) -> dict[str, Any]:
         """Detect changes for companies with 2+ snapshots.
 
         Args:
             limit: Maximum number of companies to process. None for all.
+            company_ids: Explicit list of company IDs to process. When provided,
+                overrides the full-portfolio query and ignores limit.
 
         Returns summary stats with report_details for report generation.
         """
-        company_ids = self.snapshot_repo.get_companies_with_multiple_snapshots()
-        if limit is not None:
-            company_ids = company_ids[:limit]
+        if company_ids is not None:
+            all_ids = company_ids
+        else:
+            all_ids = self.snapshot_repo.get_companies_with_multiple_snapshots()
+            if limit is not None:
+                all_ids = all_ids[:limit]
+        company_ids = all_ids
         tracker = ProgressTracker(total=len(company_ids))
         changes_found = 0
 
