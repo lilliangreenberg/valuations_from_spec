@@ -198,6 +198,9 @@ def detect_changes(
     from src.domains.monitoring.repositories.change_record_repository import (
         ChangeRecordRepository,
     )
+    from src.domains.monitoring.repositories.company_status_repository import (
+        CompanyStatusRepository,
+    )
     from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
     from src.domains.monitoring.services.change_detector import ChangeDetector
     from src.repositories.company_repository import CompanyRepository
@@ -205,6 +208,7 @@ def detect_changes(
     snapshot_repo = SnapshotRepository(db)
     change_repo = ChangeRecordRepository(db)
     company_repo = CompanyRepository(db)
+    status_repo = CompanyStatusRepository(db)
 
     llm_client = None
     if config.llm_validation_enabled and config.anthropic_api_key:
@@ -227,6 +231,7 @@ def detect_changes(
         llm_client=llm_client,
         llm_enabled=bool(llm_client),
         social_snapshot_repo=social_snapshot_repo,
+        status_repo=status_repo,
     )
 
     click.echo("[INFO] Detecting changes...")

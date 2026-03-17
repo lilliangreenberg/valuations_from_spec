@@ -26,6 +26,9 @@ if TYPE_CHECKING:
     from src.domains.monitoring.repositories.change_record_repository import (
         ChangeRecordRepository,
     )
+    from src.domains.monitoring.repositories.company_status_repository import (
+        CompanyStatusRepository,
+    )
     from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
     from src.domains.monitoring.repositories.social_snapshot_repository import (
         SocialSnapshotRepository,
@@ -48,6 +51,7 @@ class ChangeDetector:
         llm_client: Any | None = None,
         llm_enabled: bool = False,
         social_snapshot_repo: SocialSnapshotRepository | None = None,
+        status_repo: CompanyStatusRepository | None = None,
     ) -> None:
         self.snapshot_repo = snapshot_repo
         self.change_record_repo = change_record_repo
@@ -55,6 +59,7 @@ class ChangeDetector:
         self.llm_client = llm_client
         self.llm_enabled = llm_enabled
         self.social_snapshot_repo = social_snapshot_repo
+        self.status_repo = status_repo
 
     def _build_social_context(self, company_id: int) -> str:
         """Build social media context string for a company.
@@ -173,14 +178,16 @@ class ChangeDetector:
                         # LLM as primary classifier -- keywords passed as hints
                         if self.llm_enabled and self.llm_client:
                             try:
-                                llm_result = self.llm_client.classify_significance(
-                                    content_excerpt=diff_text[:_LLM_CONTENT_LIMIT],
-                                    keywords=sig_result.matched_keywords,
-                                    categories=sig_result.matched_categories,
-                                    magnitude=magnitude.value,
-                                    company_name=company_name,
-                                    homepage_url=company_url,
-                                    social_context=social_context,
+                                llm_result = (
+                                    self.llm_client.classify_significance_with_status(
+                                        content_excerpt=diff_text[:_LLM_CONTENT_LIMIT],
+                                        keywords=sig_result.matched_keywords,
+                                        categories=sig_result.matched_categories,
+                                        magnitude=magnitude.value,
+                                        company_name=company_name,
+                                        homepage_url=company_url,
+                                        social_context=social_context,
+                                    )
                                 )
                                 if not llm_result.get("error"):
                                     sig_result.classification = llm_result.get(
@@ -194,6 +201,39 @@ class ChangeDetector:
                                     )
                                     if llm_result.get("reasoning"):
                                         sig_result.notes = llm_result["reasoning"]
+
+                                    # Write LLM-determined status unless manually overridden
+                                    llm_status = llm_result.get("company_status", "")
+                                    _valid_statuses = {
+                                        "operational",
+                                        "likely_closed",
+                                        "uncertain",
+                                    }
+                                    if (
+                                        self.status_repo is not None
+                                        and llm_status in _valid_statuses
+                                    ):
+                                        if self.status_repo.has_manual_override(
+                                            company_id
+                                        ):
+                                            logger.info(
+                                                "status_update_skipped_manual_override",
+                                                company_id=company_id,
+                                            )
+                                        else:
+                                            self.status_repo.store_status({
+                                                "company_id": company_id,
+                                                "status": llm_status,
+                                                "confidence": llm_result.get(
+                                                    "confidence", 0.5
+                                                ),
+                                                "indicators": [],
+                                                "last_checked": now,
+                                                "is_manual_override": False,
+                                                "status_reason": llm_result.get(
+                                                    "status_reason", ""
+                                                ),
+                                            })
                             except Exception as exc:
                                 logger.warning(
                                     "llm_classification_failed",

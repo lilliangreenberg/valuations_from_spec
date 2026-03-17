@@ -263,6 +263,76 @@ def build_company_verification_prompt(
     return COMPANY_VERIFICATION_SYSTEM_PROMPT, user_prompt
 
 
+# --- Status-Aware Significance Classification ---
+
+STATUS_AWARE_SIGNIFICANCE_SYSTEM_PROMPT = (
+    "You are analyzing website content changes for a venture capital portfolio"
+    " monitoring system.\n"
+    "Your task is to independently classify whether detected changes represent"
+    " genuinely significant business events, AND to determine the company's"
+    " current operational status.\n\n"
+    "You will receive a content excerpt showing what changed, the magnitude of"
+    " the change, and keyword hints from an automated scanner. The keyword hints"
+    " may contain false positives or miss important context. Use them as starting"
+    " points for your analysis, but make your own independent judgment.\n\n"
+    "IMPORTANT: You will be told the company's name and homepage URL. If a keyword\n"
+    "match is simply the company's own name or a word derived from it, that is a\n"
+    "false positive -- not a real signal.\n\n"
+    "Common false positives to watch for:\n"
+    "- Keywords that match the company's own name or domain\n"
+    "- 'talent acquisition' or 'customer acquisition' (not company acquisition)\n"
+    "- 'funding opportunities' or 'funding sources' (not a funding round)\n"
+    "- Navigation menu or footer changes containing business terms\n"
+    "- Marketing language that sounds significant but is routine\n"
+    "- Copyright year updates, CSS changes, analytics tracking\n\n"
+    "For company_status, assess based on all available evidence in the diff:\n"
+    "- operational: company appears to be actively running (product updates, hiring,"
+    " recent activity, normal business content)\n"
+    "- likely_closed: clear evidence of shutdown, acquisition, or cessation"
+    " (shutdown notices, acquisition announcements, domain parked/redirected,"
+    " 'we are winding down' language)\n"
+    "- uncertain: insufficient evidence to determine status confidently\n\n"
+    "Default to 'operational' unless there is clear evidence otherwise.\n\n"
+    "Respond with a JSON object containing:\n"
+    '- classification: "significant", "insignificant", or "uncertain"\n'
+    '- sentiment: "positive", "negative", "neutral", or "mixed"\n'
+    "- confidence: float between 0.0 and 1.0\n"
+    "- reasoning: (REQUIRED) 1-3 sentences explaining WHY you classified this way."
+    " What specific evidence drove your decision?\n"
+    "- validated_keywords: list of keyword hints you confirm are relevant\n"
+    "- false_positives: list of keyword hints that are false positives\n"
+    '- company_status: "operational", "likely_closed", or "uncertain"\n'
+    "- status_reason: (REQUIRED) exactly one sentence explaining your company_status"
+    " determination. Be specific and factual. This is shown directly to users."
+)
+
+
+def build_status_aware_significance_prompt(
+    content_excerpt: str,
+    keywords: list[str],
+    categories: list[str],
+    magnitude: str,
+    company_name: str,
+    homepage_url: str,
+) -> tuple[str, str]:
+    """Build prompts for status-aware significance classification.
+
+    Like build_significance_classification_prompt but also elicits company_status
+    and status_reason fields from the LLM.
+
+    Returns (system_prompt, user_prompt).
+    """
+    user_prompt = SIGNIFICANCE_CLASSIFICATION_USER_TEMPLATE.format(
+        content_excerpt=content_excerpt[:2000],
+        keywords=", ".join(keywords) if keywords else "none detected",
+        categories=", ".join(categories) if categories else "none",
+        magnitude=magnitude,
+        company_name=company_name,
+        homepage_url=homepage_url,
+    )
+    return STATUS_AWARE_SIGNIFICANCE_SYSTEM_PROMPT, user_prompt
+
+
 # --- Enriched Significance Classification (with Social Media Context) ---
 
 ENRICHED_SIGNIFICANCE_SYSTEM_PROMPT = (
@@ -335,3 +405,73 @@ def build_enriched_significance_prompt(
         social_context=social_context,
     )
     return ENRICHED_SIGNIFICANCE_SYSTEM_PROMPT, user_prompt
+
+
+# --- Status-Aware Enriched Significance Classification ---
+
+STATUS_AWARE_ENRICHED_SYSTEM_PROMPT = (
+    "You are analyzing website content changes for a venture capital portfolio"
+    " monitoring system.\n"
+    "You will receive BOTH the homepage change data AND social media activity"
+    " data. Use all available signals to make your assessment.\n\n"
+    "Social media signals to consider:\n"
+    "- Recent blog/Medium posts about product updates, funding, or growth = positive\n"
+    "- Blog/Medium going inactive (no posts in 1+ year) = negative signal\n"
+    "- No social media presence at all = neutral (not all companies blog)\n"
+    "- Content of recent posts: what are they writing about?\n\n"
+    "You will receive keyword hints from an automated scanner. These may contain"
+    " false positives -- use them as starting points but classify independently.\n\n"
+    "IMPORTANT: You will be told the company's name and homepage URL. If a keyword\n"
+    "match is simply the company's own name or a word derived from it, that is a\n"
+    "false positive -- not a real signal.\n\n"
+    "Common false positives to watch for:\n"
+    "- Keywords that match the company's own name or domain\n"
+    "- 'talent acquisition' or 'customer acquisition' (not company acquisition)\n"
+    "- Navigation menu or footer changes containing business terms\n"
+    "- Marketing language that sounds significant but is routine\n\n"
+    "For company_status, assess based on ALL available evidence (homepage diff AND"
+    " social media signals):\n"
+    "- operational: company appears to be actively running\n"
+    "- likely_closed: clear evidence of shutdown, acquisition, or cessation\n"
+    "- uncertain: insufficient evidence to determine status confidently\n\n"
+    "Default to 'operational' unless there is clear evidence otherwise.\n\n"
+    "Respond with a JSON object containing:\n"
+    '- classification: "significant", "insignificant", or "uncertain"\n'
+    '- sentiment: "positive", "negative", "neutral", or "mixed"\n'
+    "- confidence: float between 0.0 and 1.0\n"
+    "- reasoning: (REQUIRED) 1-3 sentences explaining WHY you classified this way."
+    " Reference BOTH homepage and social media signals in your reasoning.\n"
+    "- validated_keywords: list of keyword hints you confirm are relevant\n"
+    "- false_positives: list of keyword hints that are false positives\n"
+    '- company_status: "operational", "likely_closed", or "uncertain"\n'
+    "- status_reason: (REQUIRED) exactly one sentence explaining your company_status"
+    " determination. Be specific and factual. This is shown directly to users."
+)
+
+
+def build_status_aware_enriched_prompt(
+    content_excerpt: str,
+    keywords: list[str],
+    categories: list[str],
+    magnitude: str,
+    company_name: str,
+    homepage_url: str,
+    social_context: str,
+) -> tuple[str, str]:
+    """Build prompts for status-aware enriched significance classification.
+
+    Like build_enriched_significance_prompt but also elicits company_status
+    and status_reason fields from the LLM.
+
+    Returns (system_prompt, user_prompt).
+    """
+    user_prompt = ENRICHED_SIGNIFICANCE_USER_TEMPLATE.format(
+        content_excerpt=content_excerpt[:2000],
+        keywords=", ".join(keywords) if keywords else "none detected",
+        categories=", ".join(categories) if categories else "none",
+        magnitude=magnitude,
+        company_name=company_name,
+        homepage_url=homepage_url,
+        social_context=social_context,
+    )
+    return STATUS_AWARE_ENRICHED_SYSTEM_PROMPT, user_prompt

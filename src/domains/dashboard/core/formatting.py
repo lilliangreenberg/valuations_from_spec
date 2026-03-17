@@ -207,3 +207,13 @@ def health_grid_color(status: str | None, is_manual_override: bool = False) -> s
         "uncertain": "health-yellow",
     }
     return mapping.get(status or "", "health-gray")
+
+
+def health_tooltip_reason(
+    is_manual_override: bool,
+    status_reason: str | None,
+) -> str:
+    """Return a short human-readable reason string for the health grid tooltip."""
+    if is_manual_override:
+        return "Manually set via dashboard"
+    return status_reason or ""

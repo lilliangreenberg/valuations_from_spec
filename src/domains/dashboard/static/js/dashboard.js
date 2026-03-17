@@ -7,6 +7,7 @@ function toggleTheme() {
     var current = html.getAttribute('data-theme');
     var next = current === 'dark' ? 'light' : 'dark';
     html.setAttribute('data-theme', next);
+    html.classList.toggle('dark', next === 'dark');
     localStorage.setItem('portfolio-monitor-theme', next);
     updateThemeButton(next);
 }
@@ -320,6 +321,67 @@ function initTrendingChart(canvasId, config) {
 }
 
 // ================================================================
+// Health Grid Tooltip
+// ================================================================
+
+var _healthTooltipPopup = null;
+
+function getHealthTooltipPopup() {
+    if (!_healthTooltipPopup) {
+        _healthTooltipPopup = document.createElement('div');
+        _healthTooltipPopup.id = 'health-tooltip-popup';
+        document.body.appendChild(_healthTooltipPopup);
+    }
+    return _healthTooltipPopup;
+}
+
+var TOOLTIP_GAP = 48;
+var TOOLTIP_MAX_WIDTH = 340;
+
+document.addEventListener('mouseover', function(event) {
+    var cell = event.target.closest('.health-cell');
+    if (!cell) {
+        var popup = getHealthTooltipPopup();
+        // Only hide if mouse left all cells (not just moved between children)
+        if (!event.relatedTarget || !event.relatedTarget.closest('.health-cell')) {
+            popup.style.display = 'none';
+        }
+        return;
+    }
+
+    var src = cell.querySelector('.health-tooltip');
+    if (!src) return;
+
+    var popup = getHealthTooltipPopup();
+    popup.innerHTML = src.innerHTML;
+    popup.style.display = 'block';
+
+    // Position using fixed coords — no containing-block math needed
+    var x = event.clientX;
+    var y = event.clientY;
+
+    popup.style.top = y + 'px';   // translateY(-50%) in CSS centers it vertically
+
+    if (x + TOOLTIP_GAP + TOOLTIP_MAX_WIDTH > window.innerWidth) {
+        // Not enough room to the right — show to the left
+        popup.style.left = '';
+        popup.style.right = (window.innerWidth - x + TOOLTIP_GAP) + 'px';
+    } else {
+        popup.style.right = '';
+        popup.style.left = (x + TOOLTIP_GAP) + 'px';
+    }
+});
+
+document.addEventListener('mouseout', function(event) {
+    var cell = event.target.closest('.health-cell');
+    if (!cell) return;
+    if (!event.relatedTarget || !event.relatedTarget.closest('.health-cell')) {
+        var popup = getHealthTooltipPopup();
+        popup.style.display = 'none';
+    }
+});
+
+// ================================================================
 // Initialization
 // ================================================================
 
@@ -328,6 +390,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Restore theme
     var saved = localStorage.getItem('portfolio-monitor-theme') || 'light';
     document.documentElement.setAttribute('data-theme', saved);
+    document.documentElement.classList.toggle('dark', saved === 'dark');
     updateThemeButton(saved);
 
     // Initialize command form if present

@@ -618,11 +618,13 @@ class TestIncludeSocialChangeDetectorEnrichment:
         social_snapshot_repo = SocialSnapshotRepository(db)
 
         mock_llm = MagicMock()
-        mock_llm.classify_significance.return_value = {
+        mock_llm.classify_significance_with_status.return_value = {
             "classification": "significant",
             "sentiment": "negative",
             "confidence": 0.9,
             "reasoning": "Layoffs detected with social context.",
+            "company_status": "operational",
+            "status_reason": "Company shows active operations.",
         }
 
         detector = ChangeDetector(
@@ -637,8 +639,8 @@ class TestIncludeSocialChangeDetectorEnrichment:
         detector.detect_all_changes()
 
         # Verify LLM was called with a non-empty social_context
-        assert mock_llm.classify_significance.called
-        call_kwargs = mock_llm.classify_significance.call_args
+        assert mock_llm.classify_significance_with_status.called
+        call_kwargs = mock_llm.classify_significance_with_status.call_args
         social_context_arg = call_kwargs.kwargs.get("social_context", "")
         assert social_context_arg != "", "social_context should be non-empty"
         assert "medium" in social_context_arg.lower()
@@ -658,10 +660,12 @@ class TestIncludeSocialChangeDetectorEnrichment:
         company_repo = CompanyRepository(db)
 
         mock_llm = MagicMock()
-        mock_llm.classify_significance.return_value = {
+        mock_llm.classify_significance_with_status.return_value = {
             "classification": "significant",
             "sentiment": "negative",
             "confidence": 0.85,
+            "company_status": "operational",
+            "status_reason": "Active company detected.",
         }
 
         detector = ChangeDetector(
@@ -675,8 +679,8 @@ class TestIncludeSocialChangeDetectorEnrichment:
 
         detector.detect_all_changes()
 
-        assert mock_llm.classify_significance.called
-        call_kwargs = mock_llm.classify_significance.call_args
+        assert mock_llm.classify_significance_with_status.called
+        call_kwargs = mock_llm.classify_significance_with_status.call_args
         social_context_arg = call_kwargs.kwargs.get("social_context", "")
         assert social_context_arg == ""
 

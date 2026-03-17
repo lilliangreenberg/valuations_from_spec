@@ -7,9 +7,16 @@
     {% if widget.companies %}
     <div class="health-grid-container">
       {% for company in widget.companies %}
+      {% set reason = health_tooltip_reason(company.is_manual_override, company.status_reason) %}
       <a href="/companies/{{ company.id }}"
-         class="health-cell {{ company.status | health_grid_color(company.is_manual_override) }}"
-         title="{{ company.name }} - {{ company.status | title }}{% if company.is_manual_override %} (Manual){% endif %}">
+         class="health-cell {{ company.status | health_grid_color(company.is_manual_override) }}">
+        <span class="health-tooltip">
+          <strong>{{ company.name }}</strong>
+          <span class="tooltip-status">
+            {{ company.status | replace('_', ' ') | title }}{% if company.is_manual_override %} (Manual){% endif %}{% if company.confidence %} &middot; {{ (company.confidence * 100) | int }}%{% endif %}
+          </span>
+          {% if reason %}<span class="tooltip-reason">{{ reason }}</span>{% endif %}
+        </span>
       </a>
       {% endfor %}
     </div>

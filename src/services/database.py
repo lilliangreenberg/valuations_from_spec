@@ -178,6 +178,7 @@ class Database:
                     indicators TEXT NOT NULL,
                     last_checked TEXT NOT NULL,
                     http_last_modified TEXT,
+                    status_reason TEXT,
                     FOREIGN KEY (company_id)
                         REFERENCES companies(id) ON DELETE CASCADE
                 )
@@ -429,6 +430,10 @@ class Database:
                 "ALTER TABLE company_statuses"
                 " ADD COLUMN is_manual_override INTEGER NOT NULL DEFAULT 0"
             )
+
+        # Migration: add status_reason to company_statuses
+        with contextlib.suppress(sqlite3.OperationalError):
+            self.execute("ALTER TABLE company_statuses ADD COLUMN status_reason TEXT")
 
         # Migrations: add baseline columns to snapshots table
         baseline_columns = [
