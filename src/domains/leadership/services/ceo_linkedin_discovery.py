@@ -192,6 +192,7 @@ class CeoLinkedinDiscovery:
         limit: int | None = None,
         max_workers: int = 5,
         dry_run: bool = False,
+        exclude_company_ids: set[int] | None = None,
     ) -> dict[str, Any]:
         """Discover CEO/founder LinkedIn for all companies in batch.
 
@@ -199,10 +200,22 @@ class CeoLinkedinDiscovery:
             limit: Process first N companies.
             max_workers: Parallel Kagi search workers.
             dry_run: If True, show what would be done without writing to DB.
+            exclude_company_ids: Company IDs to exclude (e.g. manually closed).
 
         Returns aggregate summary.
         """
         companies = self.company_repo.get_companies_with_homepage()
+        if exclude_company_ids:
+            pre = len(companies)
+            companies = [c for c in companies if c["id"] not in exclude_company_ids]
+            excluded = pre - len(companies)
+            if excluded:
+                logger.info(
+                    "excluded_manually_closed",
+                    total=pre,
+                    excluded=excluded,
+                    remaining=len(companies),
+                )
         if limit is not None:
             companies = companies[:limit]
 

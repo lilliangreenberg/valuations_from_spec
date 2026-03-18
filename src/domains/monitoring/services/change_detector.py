@@ -93,6 +93,7 @@ class ChangeDetector:
         self,
         limit: int | None = None,
         company_ids: list[int] | None = None,
+        exclude_company_ids: set[int] | None = None,
     ) -> dict[str, Any]:
         """Detect changes for companies with 2+ snapshots.
 
@@ -100,6 +101,7 @@ class ChangeDetector:
             limit: Maximum number of companies to process. None for all.
             company_ids: Explicit list of company IDs to process. When provided,
                 overrides the full-portfolio query and ignores limit.
+            exclude_company_ids: Company IDs to exclude (e.g. manually closed).
 
         Returns summary stats with report_details for report generation.
         """
@@ -109,6 +111,17 @@ class ChangeDetector:
             all_ids = self.snapshot_repo.get_companies_with_multiple_snapshots()
             if limit is not None:
                 all_ids = all_ids[:limit]
+        if exclude_company_ids:
+            pre = len(all_ids)
+            all_ids = [cid for cid in all_ids if cid not in exclude_company_ids]
+            excluded = pre - len(all_ids)
+            if excluded:
+                logger.info(
+                    "excluded_manually_closed",
+                    total=pre,
+                    excluded=excluded,
+                    remaining=len(all_ids),
+                )
         company_ids = all_ids
         tracker = ProgressTracker(total=len(company_ids))
         changes_found = 0
@@ -128,11 +141,13 @@ class ChangeDetector:
                 snapshots = self.snapshot_repo.get_latest_snapshots(company_id, limit=2)
                 if len(snapshots) < 2:
                     tracker.record_skip()
-                    skipped_details.append({
-                        "company_id": company_id,
-                        "name": company_name,
-                        "reason": "fewer_than_2_snapshots",
-                    })
+                    skipped_details.append(
+                        {
+                            "company_id": company_id,
+                            "name": company_name,
+                            "reason": "fewer_than_2_snapshots",
+                        }
+                    )
                     continue
 
                 new_snap = snapshots[0]  # Most recent
@@ -180,25 +195,44 @@ class ChangeDetector:
                     sig_classification = "uncertain"
                     sig_sentiment = "neutral"
                     sig_notes = note
-                    record_data.update({
-                        "significance_classification": "uncertain",
-                        "significance_sentiment": "neutral",
-                        "significance_confidence": 0.0,
-                        "matched_keywords": [],
-                        "matched_categories": [],
-                        "significance_notes": note,
-                        "evidence_snippets": [],
-                    })
+                    record_data.update(
+                        {
+                            "significance_classification": "uncertain",
+                            "significance_sentiment": "neutral",
+                            "significance_confidence": 0.0,
+                            "matched_keywords": [],
+                            "matched_categories": [],
+                            "significance_notes": note,
+                            "evidence_snippets": [],
+                        }
+                    )
                 elif has_changed:
                     diff_text = extract_content_diff(
                         old_snap.get("content_markdown") or "",
                         new_snap.get("content_markdown") or "",
                     )
-                    analysis_text = diff_text.strip() or (
-                        new_snap.get("content_markdown") or ""
-                    ).strip() or (
-                        old_snap.get("content_markdown") or ""
-                    ).strip()
+                    analysis_text = (
+                        diff_text.strip()
+                        or (new_snap.get("content_markdown") or "").strip()
+                        or (old_snap.get("content_markdown") or "").strip()
+                    )
+                    if not analysis_text:
+                        # No content to analyze but change was detected
+                        record_data.update(
+                            {
+                                "significance_classification": "insignificant",
+                                "significance_sentiment": "neutral",
+                                "significance_confidence": 0.5,
+                                "matched_keywords": [],
+                                "matched_categories": [],
+                                "significance_notes": ("No analyzable content in diff."),
+                                "evidence_snippets": [],
+                            }
+                        )
+                        sig_classification = "insignificant"
+                        sig_sentiment = "neutral"
+                        sig_confidence = 0.5
+                        sig_notes = "No analyzable content in diff."
                     if analysis_text:
                         sig_result = analyze_content_significance(
                             analysis_text,
@@ -214,17 +248,15 @@ class ChangeDetector:
                         # LLM as primary classifier -- keywords passed as hints
                         if self.llm_enabled and self.llm_client:
                             try:
-                                llm_result = (
-                                    self.llm_client.classify_significance_with_status(
-                                        content_excerpt=analysis_text[:_LLM_CONTENT_LIMIT],
-                                        keywords=sig_result.matched_keywords,
-                                        categories=sig_result.matched_categories,
-                                        magnitude=magnitude.value,
-                                        company_name=company_name,
-                                        homepage_url=company_url,
-                                        social_context=social_context,
-                                        company_notes=company_notes,
-                                    )
+                                llm_result = self.llm_client.classify_significance_with_status(
+                                    content_excerpt=analysis_text[:_LLM_CONTENT_LIMIT],
+                                    keywords=sig_result.matched_keywords,
+                                    categories=sig_result.matched_categories,
+                                    magnitude=magnitude.value,
+                                    company_name=company_name,
+                                    homepage_url=company_url,
+                                    social_context=social_context,
+                                    company_notes=company_notes,
                                 )
                                 if not llm_result.get("error"):
                                     sig_result.classification = llm_result.get(
@@ -250,43 +282,39 @@ class ChangeDetector:
                                         self.status_repo is not None
                                         and llm_status in _valid_statuses
                                     ):
-                                        if self.status_repo.has_manual_override(
-                                            company_id
-                                        ):
+                                        if self.status_repo.has_manual_override(company_id):
                                             logger.info(
                                                 "status_update_skipped_manual_override",
                                                 company_id=company_id,
                                             )
                                         else:
-                                            prev = self.status_repo.get_latest_status(
-                                                company_id
-                                            )
-                                            prev_status = (
-                                                prev["status"] if prev else None
-                                            )
-                                            self.status_repo.store_status({
-                                                "company_id": company_id,
-                                                "status": llm_status,
-                                                "confidence": llm_result.get(
-                                                    "confidence", 0.5
-                                                ),
-                                                "indicators": [],
-                                                "last_checked": now,
-                                                "is_manual_override": False,
-                                                "status_reason": llm_result.get(
-                                                    "status_reason", ""
-                                                ),
-                                            })
-                                            if prev_status != llm_status:
-                                                status_change_details.append({
+                                            prev = self.status_repo.get_latest_status(company_id)
+                                            prev_status = prev["status"] if prev else None
+                                            self.status_repo.store_status(
+                                                {
                                                     "company_id": company_id,
-                                                    "name": company_name,
-                                                    "previous_status": prev_status or "unknown",
-                                                    "new_status": llm_status,
+                                                    "status": llm_status,
+                                                    "confidence": llm_result.get("confidence", 0.5),
+                                                    "indicators": [],
+                                                    "last_checked": now,
+                                                    "is_manual_override": False,
                                                     "status_reason": llm_result.get(
                                                         "status_reason", ""
                                                     ),
-                                                })
+                                                }
+                                            )
+                                            if prev_status != llm_status:
+                                                status_change_details.append(
+                                                    {
+                                                        "company_id": company_id,
+                                                        "name": company_name,
+                                                        "previous_status": prev_status or "unknown",
+                                                        "new_status": llm_status,
+                                                        "status_reason": llm_result.get(
+                                                            "status_reason", ""
+                                                        ),
+                                                    }
+                                                )
                             except Exception as exc:
                                 logger.warning(
                                     "llm_classification_failed",
@@ -312,23 +340,38 @@ class ChangeDetector:
                         sig_keywords = sig_result.matched_keywords
                         sig_categories = sig_result.matched_categories
                         sig_notes = sig_result.notes
+                else:
+                    # No change detected -- mark as insignificant
+                    record_data.update(
+                        {
+                            "significance_classification": "insignificant",
+                            "significance_sentiment": "neutral",
+                            "significance_confidence": 1.0,
+                            "matched_keywords": [],
+                            "matched_categories": [],
+                            "significance_notes": "No content change detected.",
+                            "evidence_snippets": [],
+                        }
+                    )
 
                 self.change_record_repo.store_change_record(record_data)
 
                 if has_changed:
                     changes_found += 1
-                    changed_details.append({
-                        "company_id": company_id,
-                        "name": company_name,
-                        "homepage_url": company_url,
-                        "change_magnitude": magnitude.value,
-                        "significance": sig_classification,
-                        "sentiment": sig_sentiment,
-                        "confidence": sig_confidence,
-                        "matched_keywords": sig_keywords,
-                        "matched_categories": sig_categories,
-                        "significance_notes": sig_notes,
-                    })
+                    changed_details.append(
+                        {
+                            "company_id": company_id,
+                            "name": company_name,
+                            "homepage_url": company_url,
+                            "change_magnitude": magnitude.value,
+                            "significance": sig_classification,
+                            "sentiment": sig_sentiment,
+                            "confidence": sig_confidence,
+                            "matched_keywords": sig_keywords,
+                            "matched_categories": sig_categories,
+                            "significance_notes": sig_notes,
+                        }
+                    )
 
                 tracker.record_success()
             except Exception as exc:
@@ -338,13 +381,15 @@ class ChangeDetector:
                     error=str(exc),
                 )
                 tracker.record_failure(f"Company {company_id}: {exc}")
-                failed_details.append({
-                    "company_id": company_id,
-                    "name": (
-                        self.company_repo.get_company_by_id(company_id) or {}
-                    ).get("name", f"Company {company_id}"),
-                    "error": f"Company {company_id}: {exc}",
-                })
+                failed_details.append(
+                    {
+                        "company_id": company_id,
+                        "name": (self.company_repo.get_company_by_id(company_id) or {}).get(
+                            "name", f"Company {company_id}"
+                        ),
+                        "error": f"Company {company_id}: {exc}",
+                    }
+                )
 
             tracker.log_progress(every_n=10)
 

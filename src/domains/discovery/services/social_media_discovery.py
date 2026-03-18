@@ -44,6 +44,7 @@ class SocialMediaDiscovery:
         batch_size: int = 50,
         limit: int | None = None,
         company_id: int | None = None,
+        exclude_company_ids: set[int] | None = None,
     ) -> dict[str, Any]:
         """Discover social media for all companies.
 
@@ -56,6 +57,18 @@ class SocialMediaDiscovery:
             companies = [company]
         else:
             companies = self.company_repo.get_companies_with_homepage()
+
+        if exclude_company_ids:
+            pre = len(companies)
+            companies = [c for c in companies if c["id"] not in exclude_company_ids]
+            excluded = pre - len(companies)
+            if excluded:
+                logger.info(
+                    "excluded_manually_closed",
+                    total=pre,
+                    excluded=excluded,
+                    remaining=len(companies),
+                )
 
         if limit is not None:
             companies = companies[:limit]
@@ -79,11 +92,13 @@ class SocialMediaDiscovery:
                 urls.append(url)
             else:
                 tracker.record_skip()
-                skipped_details.append({
-                    "company_id": company["id"],
-                    "name": company.get("name", ""),
-                    "reason": "no_homepage_url",
-                })
+                skipped_details.append(
+                    {
+                        "company_id": company["id"],
+                        "name": company.get("name", ""),
+                        "reason": "no_homepage_url",
+                    }
+                )
 
         # Process in batches
         for i in range(0, len(urls), batch_size):
@@ -121,12 +136,14 @@ class SocialMediaDiscovery:
 
                     if not matched_company:
                         tracker.record_failure(f"No company match for {doc_url}")
-                        failed_details.append({
-                            "company_id": None,
-                            "name": "",
-                            "homepage_url": doc_url,
-                            "error": f"No company match for {doc_url}",
-                        })
+                        failed_details.append(
+                            {
+                                "company_id": None,
+                                "name": "",
+                                "homepage_url": doc_url,
+                                "error": f"No company match for {doc_url}",
+                            }
+                        )
                         continue
 
                     links_count, blogs_count, link_details, blog_details = (
@@ -137,30 +154,36 @@ class SocialMediaDiscovery:
                     tracker.record_success()
 
                     if links_count > 0 or blogs_count > 0:
-                        discovered_details.append({
-                            "company_id": matched_company["id"],
-                            "name": matched_company.get("name", ""),
-                            "homepage_url": matched_company.get("homepage_url", ""),
-                            "social_links": link_details,
-                            "blogs": blog_details,
-                        })
+                        discovered_details.append(
+                            {
+                                "company_id": matched_company["id"],
+                                "name": matched_company.get("name", ""),
+                                "homepage_url": matched_company.get("homepage_url", ""),
+                                "social_links": link_details,
+                                "blogs": blog_details,
+                            }
+                        )
                     else:
-                        no_links_found_details.append({
-                            "company_id": matched_company["id"],
-                            "name": matched_company.get("name", ""),
-                            "homepage_url": matched_company.get("homepage_url", ""),
-                        })
+                        no_links_found_details.append(
+                            {
+                                "company_id": matched_company["id"],
+                                "name": matched_company.get("name", ""),
+                                "homepage_url": matched_company.get("homepage_url", ""),
+                            }
+                        )
             except Exception as exc:
                 logger.error("batch_discovery_failed", error=str(exc))
                 for url in batch_urls:
                     tracker.record_failure(str(exc))
                     company_info = url_to_company.get(url, {})
-                    failed_details.append({
-                        "company_id": company_info.get("id"),
-                        "name": company_info.get("name", ""),
-                        "homepage_url": url,
-                        "error": str(exc),
-                    })
+                    failed_details.append(
+                        {
+                            "company_id": company_info.get("id"),
+                            "name": company_info.get("name", ""),
+                            "homepage_url": url,
+                            "error": str(exc),
+                        }
+                    )
 
             tracker.log_progress(every_n=1)
 
@@ -215,10 +238,12 @@ class SocialMediaDiscovery:
                     }
                 )
                 blogs_stored += 1
-                blog_details.append({
-                    "blog_type": blog_type.value,
-                    "blog_url": normalized_blog,
-                })
+                blog_details.append(
+                    {
+                        "blog_type": blog_type.value,
+                        "blog_url": normalized_blog,
+                    }
+                )
                 continue
 
             # Check if it's a social media URL
@@ -239,9 +264,11 @@ class SocialMediaDiscovery:
                 }
             )
             links_stored += 1
-            link_details.append({
-                "platform": platform.value,
-                "profile_url": normalized_url,
-            })
+            link_details.append(
+                {
+                    "platform": platform.value,
+                    "profile_url": normalized_url,
+                }
+            )
 
         return links_stored, blogs_stored, link_details, blog_details
