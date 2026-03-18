@@ -314,11 +314,15 @@ def build_status_aware_significance_prompt(
     magnitude: str,
     company_name: str,
     homepage_url: str,
+    company_notes: str = "",
 ) -> tuple[str, str]:
     """Build prompts for status-aware significance classification.
 
     Like build_significance_classification_prompt but also elicits company_status
     and status_reason fields from the LLM.
+
+    When company_notes is provided, it is appended to the user prompt as analyst
+    context to help the LLM handle unusual or edge-case companies.
 
     Returns (system_prompt, user_prompt).
     """
@@ -330,6 +334,12 @@ def build_status_aware_significance_prompt(
         company_name=company_name,
         homepage_url=homepage_url,
     )
+    if company_notes.strip():
+        user_prompt += (
+            f"\n\nAnalyst notes about this company:\n{company_notes.strip()}\n\n"
+            "Take these notes into account when making your classification"
+            " and status determination."
+        )
     return STATUS_AWARE_SIGNIFICANCE_SYSTEM_PROMPT, user_prompt
 
 
@@ -457,11 +467,15 @@ def build_status_aware_enriched_prompt(
     company_name: str,
     homepage_url: str,
     social_context: str,
+    company_notes: str = "",
 ) -> tuple[str, str]:
     """Build prompts for status-aware enriched significance classification.
 
     Like build_enriched_significance_prompt but also elicits company_status
     and status_reason fields from the LLM.
+
+    When company_notes is provided, it is appended to the user prompt as analyst
+    context to help the LLM handle unusual or edge-case companies.
 
     Returns (system_prompt, user_prompt).
     """
@@ -474,4 +488,10 @@ def build_status_aware_enriched_prompt(
         homepage_url=homepage_url,
         social_context=social_context,
     )
+    if company_notes.strip():
+        user_prompt += (
+            f"\n\nAnalyst notes about this company:\n{company_notes.strip()}\n\n"
+            "Take these notes into account when making your classification"
+            " and status determination."
+        )
     return STATUS_AWARE_ENRICHED_SYSTEM_PROMPT, user_prompt

@@ -104,8 +104,18 @@ def import_urls() -> None:
 @click.option("--batch-size", default=20, type=int, help="URLs per batch (max 1000)")
 @click.option("--timeout", default=300, type=int, help="Timeout per batch in seconds")
 @click.option("--company-id", default=None, type=int, help="Capture snapshot for a single company")
+@click.option(
+    "--skip-if-snapshot-since",
+    default=None,
+    type=str,
+    help="Skip companies that already have a snapshot on or after this date (YYYY-MM-DD)",
+)
 def capture_snapshots(
-    use_batch_api: bool, batch_size: int, timeout: int, company_id: int | None
+    use_batch_api: bool,
+    batch_size: int,
+    timeout: int,
+    company_id: int | None,
+    skip_if_snapshot_since: str | None,
 ) -> None:
     """Capture website snapshots for all companies."""
     config = _get_config()
@@ -125,6 +135,16 @@ def capture_snapshots(
     company_repo = CompanyRepository(db)
     logo_repo = SocialMediaLinkRepository(db)
     logo_processor = BrandingLogoProcessor(logo_repo)
+
+    # Build exclusion set if --skip-if-snapshot-since is provided
+    exclude_ids: set[int] | None = None
+    if skip_if_snapshot_since:
+        exclude_ids = snapshot_repo.get_company_ids_with_snapshot_since(skip_if_snapshot_since)
+        skip_count = len(exclude_ids)
+        click.echo(
+            f"[INFO] Skipping {skip_count} companies"
+            f" with snapshots since {skip_if_snapshot_since}"
+        )
 
     if company_id is not None:
         from src.services.snapshot_manager import SnapshotManager
@@ -147,7 +167,9 @@ def capture_snapshots(
             logo_processor=logo_processor,
         )
         click.echo(f"[INFO] Capturing snapshots using batch API (batch size: {batch_size})...")
-        result = manager.capture_batch_snapshots(batch_size=batch_size, timeout=timeout)
+        result = manager.capture_batch_snapshots(
+            batch_size=batch_size, timeout=timeout, exclude_company_ids=exclude_ids
+        )
     else:
         from src.services.snapshot_manager import SnapshotManager
 
@@ -158,7 +180,7 @@ def capture_snapshots(
             logo_processor=logo_processor,
         )  # type: ignore[assignment]
         click.echo("[INFO] Capturing snapshots sequentially...")
-        result = manager.capture_all_snapshots()
+        result = manager.capture_all_snapshots(exclude_company_ids=exclude_ids)
 
     _print_summary("Snapshot capture complete", result)
 
@@ -255,9 +277,7 @@ def detect_changes(
         click.echo(json.dumps(result, indent=2))
     else:
         _print_summary("Change detection complete", result)
-        _print_status_changes(
-            result.get("report_details", {}).get("status_changes", [])
-        )
+        _print_status_changes(result.get("report_details", {}).get("status_changes", []))
 
     report_config: dict[str, Any] = {
         "include_social": include_social,
@@ -555,6 +575,80 @@ def show_status(company_name: str) -> None:
         for ind in indicators:
             if isinstance(ind, dict):
                 click.echo(f"    - {ind.get('type')}: {ind.get('value')} ({ind.get('signal')})")
+    db.close()
+
+
+@click.command()
+@click.option("--company-id", type=int, default=None, help="Company ID")
+@click.option("--company-name", type=str, default=None, help="Company name")
+@click.option("--notes", type=str, required=True, help="Analyst notes to set (use '' to clear)")
+def set_company_notes(company_id: int | None, company_name: str | None, notes: str) -> None:
+    """Set analyst notes for a company to guide LLM classification."""
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    from src.repositories.company_repository import CompanyRepository
+
+    repo = CompanyRepository(db)
+    company: dict[str, Any] | None = None
+
+    if company_id is not None:
+        company = repo.get_company_by_id(company_id)
+    elif company_name is not None:
+        company = repo.get_company_by_name(company_name)
+    else:
+        click.echo("[ERROR] Provide --company-id or --company-name.")
+        db.close()
+        return
+
+    if not company:
+        click.echo("[ERROR] Company not found.")
+        db.close()
+        return
+
+    notes_value: str | None = notes.strip() or None
+    repo.update_notes(company["id"], notes_value)
+    if notes_value:
+        click.echo(f"[SUCCESS] Notes set for '{company['name']}':\n  {notes_value}")
+    else:
+        click.echo(f"[SUCCESS] Notes cleared for '{company['name']}'.")
+    db.close()
+
+
+@click.command()
+@click.option("--company-id", type=int, default=None, help="Company ID")
+@click.option("--company-name", type=str, default=None, help="Company name")
+def get_company_notes(company_id: int | None, company_name: str | None) -> None:
+    """Show the current analyst notes for a company."""
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    from src.repositories.company_repository import CompanyRepository
+
+    repo = CompanyRepository(db)
+    company: dict[str, Any] | None = None
+
+    if company_id is not None:
+        company = repo.get_company_by_id(company_id)
+    elif company_name is not None:
+        company = repo.get_company_by_name(company_name)
+    else:
+        click.echo("[ERROR] Provide --company-id or --company-name.")
+        db.close()
+        return
+
+    if not company:
+        click.echo("[ERROR] Company not found.")
+        db.close()
+        return
+
+    notes = company.get("notes")
+    if notes:
+        click.echo(f"[INFO] Notes for '{company['name']}':\n  {notes}")
+    else:
+        click.echo(f"[INFO] No notes set for '{company['name']}'.")
     db.close()
 
 

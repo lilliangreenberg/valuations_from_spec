@@ -116,11 +116,15 @@ class LLMClient:
         company_name: str,
         homepage_url: str,
         social_context: str = "",
+        company_notes: str = "",
     ) -> dict[str, Any]:
         """Classify significance and determine company status in a single LLM call.
 
         Identical signature to classify_significance but uses status-aware prompts
         that also elicit company_status and status_reason in the response.
+
+        When company_notes is provided, it is injected into the prompt as analyst
+        context to help the LLM handle unusual or edge-case companies.
 
         Returns dict with: classification, sentiment, confidence, reasoning,
         validated_keywords, false_positives, company_status, status_reason, error.
@@ -134,6 +138,7 @@ class LLMClient:
                 company_name,
                 homepage_url,
                 social_context,
+                company_notes=company_notes,
             )
         else:
             system_prompt, user_prompt = build_status_aware_significance_prompt(
@@ -143,6 +148,7 @@ class LLMClient:
                 magnitude,
                 company_name,
                 homepage_url,
+                company_notes=company_notes,
             )
         return self._call_llm(
             system_prompt, user_prompt, "classify_significance_with_status"

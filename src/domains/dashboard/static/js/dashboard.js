@@ -58,6 +58,178 @@ document.addEventListener('htmx:sseMessage', function(event) {
     }
 });
 
+// ================================================================
+// Live Operation Progress Panel
+// ================================================================
+
+// Strip ANSI escape codes from a string
+function stripAnsi(str) {
+    return str.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+// Format seconds into human-readable elapsed time
+function formatElapsed(secondsStr) {
+    var secs = parseFloat(secondsStr);
+    if (isNaN(secs)) return secondsStr;
+    if (secs < 60) return Math.round(secs) + 's';
+    var mins = Math.floor(secs / 60);
+    var rem = Math.round(secs % 60);
+    if (mins < 60) return mins + 'm ' + rem + 's';
+    var hrs = Math.floor(mins / 60);
+    mins = mins % 60;
+    return hrs + 'h ' + mins + 'm';
+}
+
+// Parse a batch_progress log line and return metrics object or null
+function parseProgressLine(rawLine) {
+    var line = stripAnsi(rawLine);
+    if (line.indexOf('batch_progress') === -1) return null;
+
+    var metrics = {};
+    var fields = ['processed', 'total', 'successful', 'failed', 'skipped', 'percentage', 'elapsed'];
+    for (var i = 0; i < fields.length; i++) {
+        var match = line.match(new RegExp(fields[i] + '=([^\\s]+)'));
+        if (match) {
+            metrics[fields[i]] = match[1];
+        }
+    }
+    // Need at least processed and total
+    if (!metrics.processed || !metrics.total) return null;
+    return metrics;
+}
+
+// Check if a line indicates task completion
+function parseCompletionLine(rawLine) {
+    var line = stripAnsi(rawLine);
+    if (line.indexOf('[SUCCESS]') !== -1) return 'success';
+    if (line.indexOf('[ERROR]') !== -1 || line.indexOf('[FAILED]') !== -1) return 'failed';
+    return null;
+}
+
+// Update the progress panel with new metrics
+function updateProgressPanel(terminal, metrics) {
+    // Find the progress panel (sibling before the terminal)
+    var taskCard = terminal.closest('[id^="task-"]');
+    if (!taskCard) return;
+    var panel = taskCard.querySelector('.progress-panel');
+    if (!panel) return;
+
+    // Show the panel
+    panel.classList.remove('hidden');
+
+    var processed = parseInt(metrics.processed, 10);
+    var total = parseInt(metrics.total, 10);
+    var successful = parseInt(metrics.successful || '0', 10);
+    var failed = parseInt(metrics.failed || '0', 10);
+    var skipped = parseInt(metrics.skipped || '0', 10);
+    var pctStr = metrics.percentage || (total > 0 ? ((processed / total) * 100).toFixed(1) + '%' : '0%');
+    var pctNum = parseFloat(pctStr);
+
+    // Progress bar
+    var bar = panel.querySelector('.progress-bar');
+    if (bar) bar.style.width = pctNum + '%';
+
+    // Percentage text
+    var pctEl = panel.querySelector('.progress-pct');
+    if (pctEl) pctEl.textContent = pctStr;
+
+    // Status text
+    var statusEl = panel.querySelector('.progress-status');
+    if (statusEl) {
+        statusEl.textContent = 'Processing ' + processed + ' of ' + total + '...';
+    }
+
+    // Processed count
+    var procEl = panel.querySelector('.progress-processed');
+    if (procEl) procEl.textContent = processed + ' of ' + total + ' processed';
+
+    // Succeeded
+    var succEl = panel.querySelector('.progress-succeeded');
+    if (succEl) succEl.textContent = successful + ' succeeded';
+
+    // Failed (show only if > 0)
+    var failEl = panel.querySelector('.progress-failed');
+    if (failEl) {
+        failEl.textContent = failed + ' failed';
+        if (failed > 0) {
+            failEl.classList.remove('hidden');
+        }
+    }
+
+    // Skipped (show only if > 0)
+    var skipEl = panel.querySelector('.progress-skipped');
+    if (skipEl) {
+        skipEl.textContent = skipped + ' skipped';
+        if (skipped > 0) {
+            skipEl.classList.remove('hidden');
+        }
+    }
+
+    // Elapsed time
+    var elapsedEl = panel.querySelector('.progress-elapsed');
+    if (elapsedEl && metrics.elapsed) {
+        elapsedEl.textContent = formatElapsed(metrics.elapsed.replace('s', ''));
+    }
+}
+
+// Mark the progress panel as completed
+function markProgressComplete(terminal, outcome) {
+    var taskCard = terminal.closest('[id^="task-"]');
+    if (!taskCard) return;
+    var panel = taskCard.querySelector('.progress-panel');
+    if (!panel || panel.classList.contains('hidden')) return;
+
+    var statusEl = panel.querySelector('.progress-status');
+    var bar = panel.querySelector('.progress-bar');
+    var pctEl = panel.querySelector('.progress-pct');
+
+    if (outcome === 'success') {
+        if (statusEl) statusEl.textContent = 'Completed';
+        if (bar) {
+            bar.style.width = '100%';
+            bar.classList.remove('bg-blue-500');
+            bar.classList.add('bg-green-500');
+        }
+        if (pctEl) {
+            pctEl.textContent = '100%';
+            pctEl.classList.remove('text-blue-600', 'dark:text-blue-400');
+            pctEl.classList.add('text-green-600', 'dark:text-green-400');
+        }
+    } else if (outcome === 'failed') {
+        if (statusEl) statusEl.textContent = 'Failed';
+        if (bar) {
+            bar.classList.remove('bg-blue-500');
+            bar.classList.add('bg-red-500');
+        }
+        if (pctEl) {
+            pctEl.classList.remove('text-blue-600', 'dark:text-blue-400');
+            pctEl.classList.add('text-red-600', 'dark:text-red-400');
+        }
+    }
+}
+
+// Intercept SSE messages to parse progress data
+document.addEventListener('htmx:sseMessage', function(event) {
+    var terminal = event.target.closest('.terminal-output');
+    if (!terminal) return;
+
+    var data = event.detail ? event.detail.data : '';
+    if (!data) return;
+
+    // Check for progress update
+    var metrics = parseProgressLine(data);
+    if (metrics) {
+        updateProgressPanel(terminal, metrics);
+        return;
+    }
+
+    // Check for completion
+    var completion = parseCompletionLine(data);
+    if (completion) {
+        markProgressComplete(terminal, completion);
+    }
+});
+
 // Loading indicator management
 document.addEventListener('htmx:beforeRequest', function(event) {
     var indicator = event.target.querySelector('.htmx-indicator');

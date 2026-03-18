@@ -13,6 +13,13 @@
         <span class="ml-2 text-sm text-gray-500 dark:text-gray-400">
           {{ change.detected_at | date_short }}
         </span>
+        {% if change.company_status and change.company_status != 'unknown' %}
+        <span class="ml-2 badge {{ change.company_status | status_badge }}">{{ change.company_status }}</span>
+        {% if change.company_status_manual %}
+        <span class="ml-1 text-xs font-medium px-1.5 py-0.5 rounded"
+              style="background: var(--accent-blue); color: white; opacity: 0.85;">MANUAL</span>
+        {% endif %}
+        {% endif %}
       </div>
       <div class="flex items-center gap-2">
         <span class="text-xs font-mono text-gray-600 dark:text-gray-400">
@@ -50,9 +57,15 @@
     </div>
     {% endif %}
 
-    {% if change.evidence_snippets and change.evidence_snippets | length > 0 %}
-    <p class="mt-2 text-sm text-gray-600 dark:text-gray-400 truncate">
-      {{ change.evidence_snippets[0] }}
+    {% if change.significance_notes %}
+    <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+      {{ change.significance_notes }}
+    </p>
+    {% endif %}
+
+    {% if change.company_notes %}
+    <p class="mt-2 text-xs italic" style="color: var(--text-secondary)">
+      Analyst note: {{ change.company_notes }}
     </p>
     {% endif %}
   </div>

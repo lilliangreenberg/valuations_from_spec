@@ -13,6 +13,11 @@ router = APIRouter(prefix="/changes", tags=["changes"])
 @router.get("/", response_class=HTMLResponse)
 async def changes_page(
     request: Request,
+    classification: str = "",
+    sentiment: str = "",
+    min_confidence: float = 0.0,
+    days: int = 180,
+    page: int = 1,
     query_service: object = Depends(get_query_service),
     templates: object = Depends(get_templates),
 ) -> HTMLResponse:
@@ -26,7 +31,13 @@ async def changes_page(
     tmpl = templates
     assert isinstance(tmpl, Jinja2Templates)
 
-    result = qs.get_changes_filtered()
+    result = qs.get_changes_filtered(
+        classification=classification or None,
+        sentiment=sentiment or None,
+        min_confidence=min_confidence,
+        days=days,
+        page=page,
+    )
 
     return tmpl.TemplateResponse(
         request,
@@ -37,10 +48,10 @@ async def changes_page(
             "page": result["page"],
             "per_page": result["per_page"],
             "total_pages": result["total_pages"],
-            "classification": "",
-            "sentiment": "",
-            "min_confidence": 0.0,
-            "days": 180,
+            "classification": classification,
+            "sentiment": sentiment,
+            "min_confidence": min_confidence,
+            "days": days,
         },
     )
 

@@ -123,6 +123,7 @@ class ChangeDetector:
                 company = self.company_repo.get_company_by_id(company_id)
                 company_name = company["name"] if company else f"Company {company_id}"
                 company_url = company.get("homepage_url", "") if company else ""
+                company_notes = company.get("notes") or "" if company else ""
 
                 snapshots = self.snapshot_repo.get_latest_snapshots(company_id, limit=2)
                 if len(snapshots) < 2:
@@ -168,15 +169,39 @@ class ChangeDetector:
                 sig_categories: list[str] = []
                 sig_notes = ""
 
-                # Run significance analysis on diff content only
-                if has_changed:
+                # Run significance analysis on diff content.
+                # If the new snapshot has a scrape error we can't trust the
+                # change, so mark it uncertain immediately and skip LLM.
+                # Otherwise fall back to new-then-old content when the additions
+                # diff is empty (content removed/replaced rather than added).
+                new_snap_error = (new_snap.get("error_message") or "").strip()
+                if has_changed and new_snap_error:
+                    note = f"Snapshot capture failed: {new_snap_error[:300]}"
+                    sig_classification = "uncertain"
+                    sig_sentiment = "neutral"
+                    sig_notes = note
+                    record_data.update({
+                        "significance_classification": "uncertain",
+                        "significance_sentiment": "neutral",
+                        "significance_confidence": 0.0,
+                        "matched_keywords": [],
+                        "matched_categories": [],
+                        "significance_notes": note,
+                        "evidence_snippets": [],
+                    })
+                elif has_changed:
                     diff_text = extract_content_diff(
                         old_snap.get("content_markdown") or "",
                         new_snap.get("content_markdown") or "",
                     )
-                    if diff_text.strip():
+                    analysis_text = diff_text.strip() or (
+                        new_snap.get("content_markdown") or ""
+                    ).strip() or (
+                        old_snap.get("content_markdown") or ""
+                    ).strip()
+                    if analysis_text:
                         sig_result = analyze_content_significance(
-                            diff_text,
+                            analysis_text,
                             magnitude=magnitude.value,
                             exclude_categories=HOMEPAGE_EXCLUDED_CATEGORIES,
                         )
@@ -191,13 +216,14 @@ class ChangeDetector:
                             try:
                                 llm_result = (
                                     self.llm_client.classify_significance_with_status(
-                                        content_excerpt=diff_text[:_LLM_CONTENT_LIMIT],
+                                        content_excerpt=analysis_text[:_LLM_CONTENT_LIMIT],
                                         keywords=sig_result.matched_keywords,
                                         categories=sig_result.matched_categories,
                                         magnitude=magnitude.value,
                                         company_name=company_name,
                                         homepage_url=company_url,
                                         social_context=social_context,
+                                        company_notes=company_notes,
                                     )
                                 )
                                 if not llm_result.get("error"):

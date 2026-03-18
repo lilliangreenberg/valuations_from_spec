@@ -401,9 +401,16 @@ class QueryService:
         offset = (page - 1) * per_page
 
         rows = self.db.fetchall(
-            f"""SELECT cr.*, c.name as company_name
+            f"""SELECT cr.*, c.name as company_name, c.notes as company_notes,
+                       COALESCE(cs.status, 'unknown') as company_status,
+                       COALESCE(cs.is_manual_override, 0) as company_status_manual
                 FROM change_records cr
                 JOIN companies c ON cr.company_id = c.id
+                LEFT JOIN (
+                    SELECT company_id, status, is_manual_override
+                    FROM company_statuses
+                    WHERE id IN (SELECT MAX(id) FROM company_statuses GROUP BY company_id)
+                ) cs ON c.id = cs.company_id
                 WHERE {where_clause}
                 ORDER BY cr.detected_at DESC
                 LIMIT ? OFFSET ?""",

@@ -40,11 +40,45 @@
   </div>
 
   {% if task.status == 'running' %}
+  {# Live progress summary panel -- hidden until first batch_progress line arrives #}
+  <div class="progress-panel hidden bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded p-4 mb-3"
+       id="progress-{{ task.task_id }}">
+    <div class="flex items-center justify-between mb-2">
+      <span class="progress-status text-sm font-medium text-gray-700 dark:text-gray-200">
+        Processing...
+      </span>
+      <span class="progress-pct text-sm font-semibold text-blue-600 dark:text-blue-400">
+        0%
+      </span>
+    </div>
+    <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5 mb-3">
+      <div class="progress-bar bg-blue-500 h-2.5 rounded-full transition-all duration-300"
+           style="width: 0%"></div>
+    </div>
+    <div class="flex flex-wrap items-center gap-4 text-sm">
+      <span class="progress-processed text-gray-600 dark:text-gray-300">
+        0 of 0 processed
+      </span>
+      <span class="progress-succeeded text-green-600 dark:text-green-400 font-medium">
+        0 succeeded
+      </span>
+      <span class="progress-failed text-red-600 dark:text-red-400 font-medium hidden">
+        0 failed
+      </span>
+      <span class="progress-skipped text-gray-500 dark:text-gray-400 hidden">
+        0 skipped
+      </span>
+      <span class="progress-elapsed text-gray-400 dark:text-gray-500 ml-auto">
+      </span>
+    </div>
+  </div>
+
   {# Live streaming output via SSE #}
   <div class="terminal-output bg-gray-900 text-green-400 font-mono text-xs p-3 rounded max-h-64 overflow-y-auto mb-3"
        hx-ext="sse"
        sse-connect="/operations/tasks/{{ task.task_id }}/stream"
        sse-swap="output"
+       sse-close="done"
        hx-swap="beforeend">
   </div>
 
