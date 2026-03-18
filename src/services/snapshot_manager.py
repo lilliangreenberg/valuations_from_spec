@@ -85,12 +85,27 @@ class SnapshotManager:
 
         return tracker.summary()
 
-    def capture_all_snapshots(self) -> dict[str, Any]:
+    def capture_all_snapshots(
+        self,
+        exclude_company_ids: set[int] | None = None,
+    ) -> dict[str, Any]:
         """Capture snapshots for all companies with homepage URLs.
+
+        Args:
+            exclude_company_ids: Company IDs to skip.
 
         Returns summary stats dict with report_details for report generation.
         """
         companies = self.company_repo.get_companies_with_homepage()
+        if exclude_company_ids:
+            pre_filter_count = len(companies)
+            companies = [c for c in companies if c["id"] not in exclude_company_ids]
+            logger.info(
+                "filtered_companies",
+                total=pre_filter_count,
+                excluded=pre_filter_count - len(companies),
+                remaining=len(companies),
+            )
         tracker = ProgressTracker(total=len(companies))
 
         failed_details: list[dict[str, Any]] = []
@@ -102,11 +117,13 @@ class SnapshotManager:
 
             if not url:
                 tracker.record_skip()
-                skipped_details.append({
-                    "company_id": company_id,
-                    "name": company.get("name", ""),
-                    "reason": "no_homepage_url",
-                })
+                skipped_details.append(
+                    {
+                        "company_id": company_id,
+                        "name": company.get("name", ""),
+                        "reason": "no_homepage_url",
+                    }
+                )
                 continue
 
             try:
@@ -136,12 +153,14 @@ class SnapshotManager:
                     error=str(exc),
                 )
                 tracker.record_failure(f"Company {company_id}: {exc}")
-                failed_details.append({
-                    "company_id": company_id,
-                    "name": company.get("name", ""),
-                    "homepage_url": url,
-                    "error": str(exc),
-                })
+                failed_details.append(
+                    {
+                        "company_id": company_id,
+                        "name": company.get("name", ""),
+                        "homepage_url": url,
+                        "error": str(exc),
+                    }
+                )
                 self.company_repo.store_processing_error(
                     entity_type="snapshot",
                     entity_id=company_id,

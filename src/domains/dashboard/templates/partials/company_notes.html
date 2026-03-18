@@ -1,0 +1,27 @@
+<div id="company-notes-area">
+  <form hx-post="/companies/{{ company_id }}/notes"
+        hx-target="#company-notes-area"
+        hx-swap="outerHTML">
+    <label class="block text-xs font-semibold mb-1" style="color: var(--text-secondary)">
+      Analyst Notes
+      <span class="font-normal ml-1" style="color: var(--text-tertiary, var(--text-secondary)); opacity: 0.7">
+        (fed to LLM during change detection)
+      </span>
+    </label>
+    <textarea name="notes"
+              rows="3"
+              placeholder="Add context to guide LLM classification, e.g. 'This company specializes in winding down other companies — closure language on the site is not about their own status.'"
+              class="w-full rounded border px-3 py-2 text-sm resize-y"
+              style="background: var(--bg-card); border-color: var(--border-color); color: var(--text-primary); min-height: 4rem;">{{ notes }}</textarea>
+    <div class="mt-2 flex items-center gap-2">
+      <button type="submit"
+              class="text-xs font-medium px-3 py-1 rounded cursor-pointer"
+              style="background: var(--accent); color: white; border: none;">
+        Save Notes
+      </button>
+      {% if notes %}
+      <span class="text-xs" style="color: var(--text-secondary)">Notes are active and will be used by the LLM.</span>
+      {% endif %}
+    </div>
+  </form>
+</div>

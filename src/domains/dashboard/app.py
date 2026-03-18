@@ -43,6 +43,22 @@ _TEMPLATES_DIR = _DASHBOARD_DIR / "templates"
 _STATIC_DIR = _DASHBOARD_DIR / "static"
 
 
+def _css_version() -> str:
+    """Compute a short hash of dashboard.css for cache-busting."""
+    import hashlib
+
+    css_path = _STATIC_DIR / "css" / "dashboard.css"
+    return hashlib.md5(css_path.read_bytes()).hexdigest()[:8]  # noqa: S324
+
+
+def _js_version() -> str:
+    """Compute a short hash of dashboard.js for cache-busting."""
+    import hashlib
+
+    js_path = _STATIC_DIR / "js" / "dashboard.js"
+    return hashlib.md5(js_path.read_bytes()).hexdigest()[:8]  # noqa: S324
+
+
 def _register_template_filters(templates: Jinja2Templates) -> None:
     """Register custom Jinja2 filters and globals from formatting module."""
     env = templates.env
@@ -59,6 +75,9 @@ def _register_template_filters(templates: Jinja2Templates) -> None:
     env.filters["freshness_tier"] = formatting.freshness_tier
     env.filters["freshness_tier_label"] = formatting.freshness_tier_label
     env.filters["health_grid_color"] = formatting.health_grid_color
+    env.globals["health_tooltip_reason"] = formatting.health_tooltip_reason
+    env.globals["css_version"] = _css_version()
+    env.globals["js_version"] = _js_version()
 
 
 def create_app(

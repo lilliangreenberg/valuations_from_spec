@@ -126,6 +126,18 @@ class SnapshotRepository:
         )
         return (row["cnt"] if row else 0) > 0
 
+    def get_company_ids_with_snapshot_since(self, since_date: str) -> set[int]:
+        """Get company IDs that have at least one snapshot on or after since_date.
+
+        Args:
+            since_date: ISO 8601 date string (e.g. '2026-03-17').
+        """
+        rows = self.db.fetchall(
+            "SELECT DISTINCT company_id FROM snapshots WHERE captured_at >= ?",
+            (since_date,),
+        )
+        return {row["company_id"] for row in rows}
+
     def get_snapshots_without_baseline(self, company_id: int | None = None) -> list[dict[str, Any]]:
         """Get snapshots that need baseline analysis.
 

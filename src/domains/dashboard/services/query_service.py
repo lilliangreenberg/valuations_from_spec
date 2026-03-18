@@ -401,9 +401,16 @@ class QueryService:
         offset = (page - 1) * per_page
 
         rows = self.db.fetchall(
-            f"""SELECT cr.*, c.name as company_name
+            f"""SELECT cr.*, c.name as company_name, c.notes as company_notes,
+                       COALESCE(cs.status, 'unknown') as company_status,
+                       COALESCE(cs.is_manual_override, 0) as company_status_manual
                 FROM change_records cr
                 JOIN companies c ON cr.company_id = c.id
+                LEFT JOIN (
+                    SELECT company_id, status, is_manual_override
+                    FROM company_statuses
+                    WHERE id IN (SELECT MAX(id) FROM company_statuses GROUP BY company_id)
+                ) cs ON c.id = cs.company_id
                 WHERE {where_clause}
                 ORDER BY cr.detected_at DESC
                 LIMIT ? OFFSET ?""",
@@ -729,10 +736,14 @@ class QueryService:
             SELECT
                 c.id, c.name,
                 COALESCE(cs.status, 'unknown') as status,
-                COALESCE(cs.is_manual_override, 0) as is_manual_override
+                COALESCE(cs.is_manual_override, 0) as is_manual_override,
+                cs.confidence,
+                cs.indicators,
+                cs.status_reason
             FROM companies c
             LEFT JOIN (
-                SELECT company_id, status, is_manual_override
+                SELECT company_id, status, is_manual_override, confidence,
+                       indicators, status_reason
                 FROM company_statuses
                 WHERE id IN (
                     SELECT MAX(id) FROM company_statuses GROUP BY company_id
@@ -740,7 +751,18 @@ class QueryService:
             ) cs ON c.id = cs.company_id
             ORDER BY c.name
         """)
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            d = dict(r)
+            if d.get("indicators"):
+                try:
+                    d["indicators"] = json.loads(d["indicators"])
+                except (json.JSONDecodeError, TypeError):
+                    d["indicators"] = []
+            else:
+                d["indicators"] = []
+            result.append(d)
+        return result
 
     def _deserialize_json_fields(self, data: dict[str, Any]) -> dict[str, Any]:
         """Deserialize JSON string fields to Python objects."""

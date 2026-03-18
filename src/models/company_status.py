@@ -48,6 +48,7 @@ class CompanyStatus(BaseModel):
     last_checked: datetime
     http_last_modified: datetime | None = None
     is_manual_override: bool = False
+    status_reason: str | None = None
 
     @field_validator("confidence")
     @classmethod

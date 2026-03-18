@@ -24,8 +24,8 @@ class CompanyStatusRepository:
         cursor = self.db.execute(
             """INSERT INTO company_statuses
                (company_id, status, confidence, indicators, last_checked,
-                http_last_modified, is_manual_override)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                http_last_modified, is_manual_override, status_reason)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["company_id"],
                 data["status"],
@@ -34,6 +34,7 @@ class CompanyStatusRepository:
                 data["last_checked"],
                 data.get("http_last_modified"),
                 int(data.get("is_manual_override", False)),
+                data.get("status_reason"),
             ),
         )
         self.db.connection.commit()

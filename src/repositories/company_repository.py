@@ -94,6 +94,15 @@ class CompanyRepository:
         row = self.db.fetchone("SELECT COUNT(*) as count FROM companies")
         return row["count"] if row else 0
 
+    def update_notes(self, company_id: int, notes: str | None) -> None:
+        """Update the analyst notes for a company."""
+        now = datetime.now(UTC).isoformat()
+        self.db.execute(
+            "UPDATE companies SET notes = ?, updated_at = ? WHERE id = ?",
+            (notes, now, company_id),
+        )
+        self.db.connection.commit()
+
     def flag_company(self, company_id: int, reason: str) -> None:
         """Flag a company for manual review."""
         now = datetime.now(UTC).isoformat()

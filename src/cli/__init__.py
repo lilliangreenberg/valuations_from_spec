@@ -21,6 +21,7 @@ from src.cli.commands import (
     extract_companies,
     extract_leadership,
     extract_leadership_all,
+    get_company_notes,
     import_urls,
     list_active,
     list_inactive,
@@ -29,6 +30,7 @@ from src.cli.commands import (
     refresh_logos,
     search_news,
     search_news_all,
+    set_company_notes,
     show_changes,
     show_social_links,
     show_status,
@@ -64,6 +66,8 @@ cli.add_command(check_leadership_changes)
 cli.add_command(discover_ceo_linkedin)
 cli.add_command(analyze_baseline)
 cli.add_command(refresh_logos)
+cli.add_command(set_company_notes)
+cli.add_command(get_company_notes)
 cli.add_command(capture_social_snapshots)
 cli.add_command(detect_social_changes)
 cli.add_command(dashboard)

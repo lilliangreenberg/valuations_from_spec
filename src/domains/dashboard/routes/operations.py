@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from sse_starlette.sse import EventSourceResponse
 
 from src.domains.dashboard.dependencies import get_task_runner, get_templates
@@ -95,6 +95,24 @@ async def run_command(
         "partials/task_progress.html",
         {"task": task, "error": None},
     )
+
+
+@router.get("/tasks/{task_id}/poll")
+async def task_poll(
+    request: Request,
+    task_id: str,
+    task_runner: object = Depends(get_task_runner),
+) -> Response:
+    """Lightweight poll endpoint. Returns HX-Refresh when the task is done."""
+    from src.domains.dashboard.services.task_runner import TaskRunner
+
+    tr = task_runner
+    assert isinstance(tr, TaskRunner)
+
+    task = tr.get_task(task_id)
+    if task and task.status in ("completed", "failed", "cancelled"):
+        return Response(status_code=204, headers={"HX-Refresh": "true"})
+    return Response(status_code=204)
 
 
 @router.get("/tasks/{task_id}/stream")

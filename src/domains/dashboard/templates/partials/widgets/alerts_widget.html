@@ -10,14 +10,14 @@
     <div class="widget-label">alerts needing attention</div>
 
     <div class="widget-alert-counts mt-4">
-      <div class="widget-alert-item alert-negative">
+      <a href="/changes/?classification=significant&sentiment=negative" class="widget-alert-item alert-negative" style="text-decoration: none; cursor: pointer;">
         <span class="widget-alert-count">{{ widget.negative_significant_count }}</span>
         <span class="widget-alert-label">Negative &amp; Significant</span>
-      </div>
-      <div class="widget-alert-item alert-uncertain">
+      </a>
+      <a href="/changes/?classification=uncertain" class="widget-alert-item alert-uncertain" style="text-decoration: none; cursor: pointer;">
         <span class="widget-alert-count">{{ widget.uncertain_count }}</span>
         <span class="widget-alert-label">Uncertain</span>
-      </div>
+      </a>
     </div>
 
     {% if widget.size == "large" and widget.flagged_companies is defined %}

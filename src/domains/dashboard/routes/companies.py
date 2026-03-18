@@ -5,7 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
-from src.domains.dashboard.dependencies import get_query_service, get_status_repo, get_templates
+from src.domains.dashboard.dependencies import (
+    get_query_service,
+    get_status_repo,
+    get_task_runner,
+    get_templates,
+)
 
 router = APIRouter(prefix="/companies", tags=["companies"])
 
@@ -234,6 +239,86 @@ async def clear_status_override(
         request,
         "partials/status_override.html",
         {"company_id": company_id, "status_data": latest},
+    )
+
+
+@router.post("/{company_id}/actions/run", response_class=HTMLResponse)
+async def run_company_action(
+    request: Request,
+    company_id: int,
+    action: str = Form(...),
+    task_runner: object = Depends(get_task_runner),
+    templates: object = Depends(get_templates),
+) -> HTMLResponse:
+    """Start a per-company background action (rescrape or detect-changes)."""
+    from starlette.templating import Jinja2Templates
+
+    from src.domains.dashboard.services.task_runner import TaskRunner
+
+    tr = task_runner
+    assert isinstance(tr, TaskRunner)
+    tmpl = templates
+    assert isinstance(tmpl, Jinja2Templates)
+
+    valid_actions: dict[str, tuple[str, list[str]]] = {
+        "rescrape": ("capture-snapshots", ["--company-id", str(company_id)]),
+        "detect-changes": ("detect-changes", ["--company-id", str(company_id)]),
+    }
+
+    if action not in valid_actions:
+        return tmpl.TemplateResponse(
+            request,
+            "partials/company_action_progress.html",
+            {"task": None, "error": f"Unknown action: {action}"},
+        )
+
+    if tr.get_running_count() >= tr.max_concurrent:
+        return tmpl.TemplateResponse(
+            request,
+            "partials/company_action_progress.html",
+            {
+                "task": None,
+                "error": "Maximum concurrent tasks reached. Wait for a task to complete.",
+            },
+        )
+
+    command, args = valid_actions[action]
+    task_id = await tr.start_task(command, args)
+    task = tr.get_task(task_id)
+
+    return tmpl.TemplateResponse(
+        request,
+        "partials/company_action_progress.html",
+        {"task": task, "error": None},
+    )
+
+
+@router.post("/{company_id}/notes", response_class=HTMLResponse)
+async def set_company_notes(
+    request: Request,
+    company_id: int,
+    notes: str = Form(default=""),
+    query_service: object = Depends(get_query_service),
+    templates: object = Depends(get_templates),
+) -> HTMLResponse:
+    """Save analyst notes for a company."""
+    from starlette.templating import Jinja2Templates
+
+    from src.domains.dashboard.dependencies import get_company_repo
+    from src.repositories.company_repository import CompanyRepository
+
+    tmpl = templates
+    assert isinstance(tmpl, Jinja2Templates)
+    company_repo = get_company_repo(request)
+    assert isinstance(company_repo, CompanyRepository)
+
+    notes_value: str | None = notes.strip() or None
+    company_repo.update_notes(company_id, notes_value)
+
+    return tmpl.TemplateResponse(
+        request,
+        "partials/company_notes.html",
+        {"company_id": company_id, "notes": notes_value or ""},
     )
 
 

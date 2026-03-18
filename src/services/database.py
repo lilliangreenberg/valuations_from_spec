@@ -103,6 +103,7 @@ class Database:
                     source_sheet TEXT NOT NULL,
                     flagged_for_review INTEGER DEFAULT 0,
                     flag_reason TEXT,
+                    notes TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE(name, homepage_url)
@@ -178,6 +179,7 @@ class Database:
                     indicators TEXT NOT NULL,
                     last_checked TEXT NOT NULL,
                     http_last_modified TEXT,
+                    status_reason TEXT,
                     FOREIGN KEY (company_id)
                         REFERENCES companies(id) ON DELETE CASCADE
                 )
@@ -429,6 +431,14 @@ class Database:
                 "ALTER TABLE company_statuses"
                 " ADD COLUMN is_manual_override INTEGER NOT NULL DEFAULT 0"
             )
+
+        # Migration: add status_reason to company_statuses
+        with contextlib.suppress(sqlite3.OperationalError):
+            self.execute("ALTER TABLE company_statuses ADD COLUMN status_reason TEXT")
+
+        # Migration: add notes to companies
+        with contextlib.suppress(sqlite3.OperationalError):
+            self.execute("ALTER TABLE companies ADD COLUMN notes TEXT")
 
         # Migrations: add baseline columns to snapshots table
         baseline_columns = [

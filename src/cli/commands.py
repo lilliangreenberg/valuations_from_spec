@@ -104,8 +104,18 @@ def import_urls() -> None:
 @click.option("--batch-size", default=20, type=int, help="URLs per batch (max 1000)")
 @click.option("--timeout", default=300, type=int, help="Timeout per batch in seconds")
 @click.option("--company-id", default=None, type=int, help="Capture snapshot for a single company")
+@click.option(
+    "--skip-if-snapshot-since",
+    default=None,
+    type=str,
+    help="Skip companies that already have a snapshot on or after this date (YYYY-MM-DD)",
+)
 def capture_snapshots(
-    use_batch_api: bool, batch_size: int, timeout: int, company_id: int | None
+    use_batch_api: bool,
+    batch_size: int,
+    timeout: int,
+    company_id: int | None,
+    skip_if_snapshot_since: str | None,
 ) -> None:
     """Capture website snapshots for all companies."""
     config = _get_config()
@@ -125,6 +135,16 @@ def capture_snapshots(
     company_repo = CompanyRepository(db)
     logo_repo = SocialMediaLinkRepository(db)
     logo_processor = BrandingLogoProcessor(logo_repo)
+
+    # Build exclusion set if --skip-if-snapshot-since is provided
+    exclude_ids: set[int] | None = None
+    if skip_if_snapshot_since:
+        exclude_ids = snapshot_repo.get_company_ids_with_snapshot_since(skip_if_snapshot_since)
+        skip_count = len(exclude_ids)
+        click.echo(
+            f"[INFO] Skipping {skip_count} companies"
+            f" with snapshots since {skip_if_snapshot_since}"
+        )
 
     if company_id is not None:
         from src.services.snapshot_manager import SnapshotManager
@@ -147,7 +167,9 @@ def capture_snapshots(
             logo_processor=logo_processor,
         )
         click.echo(f"[INFO] Capturing snapshots using batch API (batch size: {batch_size})...")
-        result = manager.capture_batch_snapshots(batch_size=batch_size, timeout=timeout)
+        result = manager.capture_batch_snapshots(
+            batch_size=batch_size, timeout=timeout, exclude_company_ids=exclude_ids
+        )
     else:
         from src.services.snapshot_manager import SnapshotManager
 
@@ -158,7 +180,7 @@ def capture_snapshots(
             logo_processor=logo_processor,
         )  # type: ignore[assignment]
         click.echo("[INFO] Capturing snapshots sequentially...")
-        result = manager.capture_all_snapshots()
+        result = manager.capture_all_snapshots(exclude_company_ids=exclude_ids)
 
     _print_summary("Snapshot capture complete", result)
 
@@ -181,6 +203,13 @@ def capture_snapshots(
 @click.option("--batch-size", default=50, type=int, help="Companies per batch")
 @click.option("--limit", default=None, type=int, help="Max companies to process")
 @click.option(
+    "--company-id",
+    "company_ids",
+    multiple=True,
+    type=int,
+    help="Process specific company ID(s). Repeatable. Overrides --limit.",
+)
+@click.option(
     "--output-format",
     default="summary",
     type=click.Choice(["summary", "detailed", "json"]),
@@ -188,7 +217,11 @@ def capture_snapshots(
 )
 @click.option("--include-social", is_flag=True, help="Enrich LLM with social media context")
 def detect_changes(
-    batch_size: int, limit: int | None, output_format: str, include_social: bool
+    batch_size: int,
+    limit: int | None,
+    company_ids: tuple[int, ...],
+    output_format: str,
+    include_social: bool,
 ) -> None:
     """Detect content changes between snapshots with significance analysis."""
     config = _get_config()
@@ -198,6 +231,9 @@ def detect_changes(
     from src.domains.monitoring.repositories.change_record_repository import (
         ChangeRecordRepository,
     )
+    from src.domains.monitoring.repositories.company_status_repository import (
+        CompanyStatusRepository,
+    )
     from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
     from src.domains.monitoring.services.change_detector import ChangeDetector
     from src.repositories.company_repository import CompanyRepository
@@ -205,6 +241,7 @@ def detect_changes(
     snapshot_repo = SnapshotRepository(db)
     change_repo = ChangeRecordRepository(db)
     company_repo = CompanyRepository(db)
+    status_repo = CompanyStatusRepository(db)
 
     llm_client = None
     if config.llm_validation_enabled and config.anthropic_api_key:
@@ -227,15 +264,20 @@ def detect_changes(
         llm_client=llm_client,
         llm_enabled=bool(llm_client),
         social_snapshot_repo=social_snapshot_repo,
+        status_repo=status_repo,
     )
 
     click.echo("[INFO] Detecting changes...")
-    result = detector.detect_all_changes(limit=limit)
+    result = detector.detect_all_changes(
+        limit=limit,
+        company_ids=list(company_ids) if company_ids else None,
+    )
 
     if output_format == "json":
         click.echo(json.dumps(result, indent=2))
     else:
         _print_summary("Change detection complete", result)
+        _print_status_changes(result.get("report_details", {}).get("status_changes", []))
 
     report_config: dict[str, Any] = {
         "include_social": include_social,
@@ -533,6 +575,80 @@ def show_status(company_name: str) -> None:
         for ind in indicators:
             if isinstance(ind, dict):
                 click.echo(f"    - {ind.get('type')}: {ind.get('value')} ({ind.get('signal')})")
+    db.close()
+
+
+@click.command()
+@click.option("--company-id", type=int, default=None, help="Company ID")
+@click.option("--company-name", type=str, default=None, help="Company name")
+@click.option("--notes", type=str, required=True, help="Analyst notes to set (use '' to clear)")
+def set_company_notes(company_id: int | None, company_name: str | None, notes: str) -> None:
+    """Set analyst notes for a company to guide LLM classification."""
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    from src.repositories.company_repository import CompanyRepository
+
+    repo = CompanyRepository(db)
+    company: dict[str, Any] | None = None
+
+    if company_id is not None:
+        company = repo.get_company_by_id(company_id)
+    elif company_name is not None:
+        company = repo.get_company_by_name(company_name)
+    else:
+        click.echo("[ERROR] Provide --company-id or --company-name.")
+        db.close()
+        return
+
+    if not company:
+        click.echo("[ERROR] Company not found.")
+        db.close()
+        return
+
+    notes_value: str | None = notes.strip() or None
+    repo.update_notes(company["id"], notes_value)
+    if notes_value:
+        click.echo(f"[SUCCESS] Notes set for '{company['name']}':\n  {notes_value}")
+    else:
+        click.echo(f"[SUCCESS] Notes cleared for '{company['name']}'.")
+    db.close()
+
+
+@click.command()
+@click.option("--company-id", type=int, default=None, help="Company ID")
+@click.option("--company-name", type=str, default=None, help="Company name")
+def get_company_notes(company_id: int | None, company_name: str | None) -> None:
+    """Show the current analyst notes for a company."""
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    from src.repositories.company_repository import CompanyRepository
+
+    repo = CompanyRepository(db)
+    company: dict[str, Any] | None = None
+
+    if company_id is not None:
+        company = repo.get_company_by_id(company_id)
+    elif company_name is not None:
+        company = repo.get_company_by_name(company_name)
+    else:
+        click.echo("[ERROR] Provide --company-id or --company-name.")
+        db.close()
+        return
+
+    if not company:
+        click.echo("[ERROR] Company not found.")
+        db.close()
+        return
+
+    notes = company.get("notes")
+    if notes:
+        click.echo(f"[INFO] Notes for '{company['name']}':\n  {notes}")
+    else:
+        click.echo(f"[INFO] No notes set for '{company['name']}'.")
     db.close()
 
 
@@ -1451,6 +1567,21 @@ def dashboard(host: str, port: int, no_browser: bool) -> None:
     click.echo(f"[INFO] Dashboard running at http://{host}:{port}")
     click.echo("[INFO] Press Ctrl+C to stop.")
     uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+def _print_status_changes(status_changes: list[dict[str, Any]]) -> None:
+    """Print companies whose status changed during detect-changes."""
+    if not status_changes:
+        return
+
+    click.echo("\n  Status Changes:")
+    for entry in status_changes:
+        prev = entry.get("previous_status", "unknown")
+        new = entry.get("new_status", "unknown")
+        name = entry.get("name", "")
+        reason = entry.get("status_reason", "")
+        reason_str = f" -- {reason}" if reason else ""
+        click.echo(f"    {name}: {prev} -> {new}{reason_str}")
 
 
 def _print_leadership_changes(changes: list[dict[str, Any]]) -> None:

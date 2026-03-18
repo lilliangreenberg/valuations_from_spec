@@ -39,12 +39,27 @@ class BatchSnapshotManager:
         self,
         batch_size: int = 20,
         timeout: int = 300,
+        exclude_company_ids: set[int] | None = None,
     ) -> dict[str, Any]:
         """Capture snapshots for all companies using batch API.
+
+        Args:
+            batch_size: Number of URLs per batch.
+            timeout: Timeout per batch in seconds.
+            exclude_company_ids: Company IDs to skip.
 
         Returns summary stats dict with report_details for report generation.
         """
         companies = self.company_repo.get_companies_with_homepage()
+        if exclude_company_ids:
+            pre_filter_count = len(companies)
+            companies = [c for c in companies if c["id"] not in exclude_company_ids]
+            logger.info(
+                "filtered_companies",
+                total=pre_filter_count,
+                excluded=pre_filter_count - len(companies),
+                remaining=len(companies),
+            )
         tracker = ProgressTracker(total=len(companies))
 
         failed_details: list[dict[str, Any]] = []
@@ -62,11 +77,13 @@ class BatchSnapshotManager:
                 urls.append(url)
             else:
                 tracker.record_skip()
-                skipped_details.append({
-                    "company_id": company["id"],
-                    "name": company.get("name", ""),
-                    "reason": "no_homepage_url",
-                })
+                skipped_details.append(
+                    {
+                        "company_id": company["id"],
+                        "name": company.get("name", ""),
+                        "reason": "no_homepage_url",
+                    }
+                )
 
         # Process in batches
         for i in range(0, len(urls), batch_size):
@@ -117,34 +134,40 @@ class BatchSnapshotManager:
                         else:
                             error_msg = f"No company match for URL: {doc_url}"
                             tracker.record_failure(error_msg)
-                            failed_details.append({
-                                "company_id": None,
-                                "name": "",
-                                "homepage_url": doc_url,
-                                "error": error_msg,
-                            })
+                            failed_details.append(
+                                {
+                                    "company_id": None,
+                                    "name": "",
+                                    "homepage_url": doc_url,
+                                    "error": error_msg,
+                                }
+                            )
                 else:
                     batch_error = f"Batch failed: {result.get('errors', [])}"
                     for url in batch_urls:
                         tracker.record_failure(batch_error)
                         company_info = url_to_company_info.get(url, {})
-                        failed_details.append({
-                            "company_id": company_info.get("id"),
-                            "name": company_info.get("name", ""),
-                            "homepage_url": url,
-                            "error": batch_error,
-                        })
+                        failed_details.append(
+                            {
+                                "company_id": company_info.get("id"),
+                                "name": company_info.get("name", ""),
+                                "homepage_url": url,
+                                "error": batch_error,
+                            }
+                        )
             except Exception as exc:
                 logger.error("batch_processing_failed", error=str(exc))
                 for url in batch_urls:
                     tracker.record_failure(str(exc))
                     company_info = url_to_company_info.get(url, {})
-                    failed_details.append({
-                        "company_id": company_info.get("id"),
-                        "name": company_info.get("name", ""),
-                        "homepage_url": url,
-                        "error": str(exc),
-                    })
+                    failed_details.append(
+                        {
+                            "company_id": company_info.get("id"),
+                            "name": company_info.get("name", ""),
+                            "homepage_url": url,
+                            "error": str(exc),
+                        }
+                    )
 
             tracker.log_progress(every_n=1)
 

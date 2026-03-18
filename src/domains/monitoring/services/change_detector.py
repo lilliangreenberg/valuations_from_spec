@@ -26,6 +26,9 @@ if TYPE_CHECKING:
     from src.domains.monitoring.repositories.change_record_repository import (
         ChangeRecordRepository,
     )
+    from src.domains.monitoring.repositories.company_status_repository import (
+        CompanyStatusRepository,
+    )
     from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
     from src.domains.monitoring.repositories.social_snapshot_repository import (
         SocialSnapshotRepository,
@@ -48,6 +51,7 @@ class ChangeDetector:
         llm_client: Any | None = None,
         llm_enabled: bool = False,
         social_snapshot_repo: SocialSnapshotRepository | None = None,
+        status_repo: CompanyStatusRepository | None = None,
     ) -> None:
         self.snapshot_repo = snapshot_repo
         self.change_record_repo = change_record_repo
@@ -55,6 +59,7 @@ class ChangeDetector:
         self.llm_client = llm_client
         self.llm_enabled = llm_enabled
         self.social_snapshot_repo = social_snapshot_repo
+        self.status_repo = status_repo
 
     def _build_social_context(self, company_id: int) -> str:
         """Build social media context string for a company.
@@ -84,29 +89,41 @@ class ChangeDetector:
 
         return prepare_social_context(snapshots, inactivity_results)
 
-    def detect_all_changes(self, limit: int | None = None) -> dict[str, Any]:
+    def detect_all_changes(
+        self,
+        limit: int | None = None,
+        company_ids: list[int] | None = None,
+    ) -> dict[str, Any]:
         """Detect changes for companies with 2+ snapshots.
 
         Args:
             limit: Maximum number of companies to process. None for all.
+            company_ids: Explicit list of company IDs to process. When provided,
+                overrides the full-portfolio query and ignores limit.
 
         Returns summary stats with report_details for report generation.
         """
-        company_ids = self.snapshot_repo.get_companies_with_multiple_snapshots()
-        if limit is not None:
-            company_ids = company_ids[:limit]
+        if company_ids is not None:
+            all_ids = company_ids
+        else:
+            all_ids = self.snapshot_repo.get_companies_with_multiple_snapshots()
+            if limit is not None:
+                all_ids = all_ids[:limit]
+        company_ids = all_ids
         tracker = ProgressTracker(total=len(company_ids))
         changes_found = 0
 
         changed_details: list[dict[str, Any]] = []
         failed_details: list[dict[str, Any]] = []
         skipped_details: list[dict[str, Any]] = []
+        status_change_details: list[dict[str, Any]] = []
 
         for company_id in company_ids:
             try:
                 company = self.company_repo.get_company_by_id(company_id)
                 company_name = company["name"] if company else f"Company {company_id}"
                 company_url = company.get("homepage_url", "") if company else ""
+                company_notes = company.get("notes") or "" if company else ""
 
                 snapshots = self.snapshot_repo.get_latest_snapshots(company_id, limit=2)
                 if len(snapshots) < 2:
@@ -152,15 +169,39 @@ class ChangeDetector:
                 sig_categories: list[str] = []
                 sig_notes = ""
 
-                # Run significance analysis on diff content only
-                if has_changed:
+                # Run significance analysis on diff content.
+                # If the new snapshot has a scrape error we can't trust the
+                # change, so mark it uncertain immediately and skip LLM.
+                # Otherwise fall back to new-then-old content when the additions
+                # diff is empty (content removed/replaced rather than added).
+                new_snap_error = (new_snap.get("error_message") or "").strip()
+                if has_changed and new_snap_error:
+                    note = f"Snapshot capture failed: {new_snap_error[:300]}"
+                    sig_classification = "uncertain"
+                    sig_sentiment = "neutral"
+                    sig_notes = note
+                    record_data.update({
+                        "significance_classification": "uncertain",
+                        "significance_sentiment": "neutral",
+                        "significance_confidence": 0.0,
+                        "matched_keywords": [],
+                        "matched_categories": [],
+                        "significance_notes": note,
+                        "evidence_snippets": [],
+                    })
+                elif has_changed:
                     diff_text = extract_content_diff(
                         old_snap.get("content_markdown") or "",
                         new_snap.get("content_markdown") or "",
                     )
-                    if diff_text.strip():
+                    analysis_text = diff_text.strip() or (
+                        new_snap.get("content_markdown") or ""
+                    ).strip() or (
+                        old_snap.get("content_markdown") or ""
+                    ).strip()
+                    if analysis_text:
                         sig_result = analyze_content_significance(
-                            diff_text,
+                            analysis_text,
                             magnitude=magnitude.value,
                             exclude_categories=HOMEPAGE_EXCLUDED_CATEGORIES,
                         )
@@ -173,14 +214,17 @@ class ChangeDetector:
                         # LLM as primary classifier -- keywords passed as hints
                         if self.llm_enabled and self.llm_client:
                             try:
-                                llm_result = self.llm_client.classify_significance(
-                                    content_excerpt=diff_text[:_LLM_CONTENT_LIMIT],
-                                    keywords=sig_result.matched_keywords,
-                                    categories=sig_result.matched_categories,
-                                    magnitude=magnitude.value,
-                                    company_name=company_name,
-                                    homepage_url=company_url,
-                                    social_context=social_context,
+                                llm_result = (
+                                    self.llm_client.classify_significance_with_status(
+                                        content_excerpt=analysis_text[:_LLM_CONTENT_LIMIT],
+                                        keywords=sig_result.matched_keywords,
+                                        categories=sig_result.matched_categories,
+                                        magnitude=magnitude.value,
+                                        company_name=company_name,
+                                        homepage_url=company_url,
+                                        social_context=social_context,
+                                        company_notes=company_notes,
+                                    )
                                 )
                                 if not llm_result.get("error"):
                                     sig_result.classification = llm_result.get(
@@ -194,6 +238,55 @@ class ChangeDetector:
                                     )
                                     if llm_result.get("reasoning"):
                                         sig_result.notes = llm_result["reasoning"]
+
+                                    # Write LLM-determined status unless manually overridden
+                                    llm_status = llm_result.get("company_status", "")
+                                    _valid_statuses = {
+                                        "operational",
+                                        "likely_closed",
+                                        "uncertain",
+                                    }
+                                    if (
+                                        self.status_repo is not None
+                                        and llm_status in _valid_statuses
+                                    ):
+                                        if self.status_repo.has_manual_override(
+                                            company_id
+                                        ):
+                                            logger.info(
+                                                "status_update_skipped_manual_override",
+                                                company_id=company_id,
+                                            )
+                                        else:
+                                            prev = self.status_repo.get_latest_status(
+                                                company_id
+                                            )
+                                            prev_status = (
+                                                prev["status"] if prev else None
+                                            )
+                                            self.status_repo.store_status({
+                                                "company_id": company_id,
+                                                "status": llm_status,
+                                                "confidence": llm_result.get(
+                                                    "confidence", 0.5
+                                                ),
+                                                "indicators": [],
+                                                "last_checked": now,
+                                                "is_manual_override": False,
+                                                "status_reason": llm_result.get(
+                                                    "status_reason", ""
+                                                ),
+                                            })
+                                            if prev_status != llm_status:
+                                                status_change_details.append({
+                                                    "company_id": company_id,
+                                                    "name": company_name,
+                                                    "previous_status": prev_status or "unknown",
+                                                    "new_status": llm_status,
+                                                    "status_reason": llm_result.get(
+                                                        "status_reason", ""
+                                                    ),
+                                                })
                             except Exception as exc:
                                 logger.warning(
                                     "llm_classification_failed",
@@ -261,5 +354,6 @@ class ChangeDetector:
             "changed": changed_details,
             "failed": failed_details,
             "skipped": skipped_details,
+            "status_changes": status_change_details,
         }
         return summary
