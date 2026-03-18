@@ -98,6 +98,7 @@ class NewsMonitorManager:
         self,
         limit: int | None = None,
         max_workers: int = 5,
+        exclude_company_ids: set[int] | None = None,
     ) -> dict[str, Any]:
         """Search news for all companies with parallel Kagi API calls.
 
@@ -107,10 +108,22 @@ class NewsMonitorManager:
         Args:
             limit: Process only the first N companies.
             max_workers: Number of parallel workers for Kagi API calls.
+            exclude_company_ids: Company IDs to exclude (e.g. manually closed).
 
         Returns aggregate summary with report_details for report generation.
         """
         companies = self.company_repo.get_all_companies()
+        if exclude_company_ids:
+            pre = len(companies)
+            companies = [c for c in companies if c["id"] not in exclude_company_ids]
+            excluded = pre - len(companies)
+            if excluded:
+                logger.info(
+                    "excluded_manually_closed",
+                    total=pre,
+                    excluded=excluded,
+                    remaining=len(companies),
+                )
         if limit is not None:
             companies = companies[:limit]
 
@@ -145,11 +158,13 @@ class NewsMonitorManager:
                         error=str(exc),
                     )
                     tracker.record_failure(f"{company['name']}: {exc}")
-                    failed_details.append({
-                        "company_id": company["id"],
-                        "name": company.get("name", ""),
-                        "error": f"{company['name']}: {exc}",
-                    })
+                    failed_details.append(
+                        {
+                            "company_id": company["id"],
+                            "name": company.get("name", ""),
+                            "error": f"{company['name']}: {exc}",
+                        }
+                    )
 
         # Phase 2: Sequential verification + DB writes
         for company_id, (company, articles) in search_results.items():
@@ -167,15 +182,17 @@ class NewsMonitorManager:
 
                 # Collect stored article detail for report
                 if store_result["articles_stored"] > 0:
-                    with_news_details.append({
-                        "company_id": company_id,
-                        "name": company["name"],
-                        "homepage_url": company.get("homepage_url", ""),
-                        "articles_found": store_result["articles_found"],
-                        "articles_verified": store_result["articles_verified"],
-                        "articles_stored": store_result["articles_stored"],
-                        "articles": store_result.get("article_details", []),
-                    })
+                    with_news_details.append(
+                        {
+                            "company_id": company_id,
+                            "name": company["name"],
+                            "homepage_url": company.get("homepage_url", ""),
+                            "articles_found": store_result["articles_found"],
+                            "articles_verified": store_result["articles_verified"],
+                            "articles_stored": store_result["articles_stored"],
+                            "articles": store_result.get("article_details", []),
+                        }
+                    )
             except Exception as exc:
                 logger.error(
                     "news_processing_failed",
@@ -183,11 +200,13 @@ class NewsMonitorManager:
                     error=str(exc),
                 )
                 tracker.record_failure(f"{company['name']}: {exc}")
-                failed_details.append({
-                    "company_id": company["id"],
-                    "name": company.get("name", ""),
-                    "error": f"{company['name']}: {exc}",
-                })
+                failed_details.append(
+                    {
+                        "company_id": company["id"],
+                        "name": company.get("name", ""),
+                        "error": f"{company['name']}: {exc}",
+                    }
+                )
 
             tracker.log_progress(every_n=10)
 
@@ -369,17 +388,19 @@ class NewsMonitorManager:
                 }
             )
             stored += 1
-            article_details.append({
-                "title": article.get("title", ""),
-                "content_url": article["url"],
-                "source": article.get("source", ""),
-                "published_at": article.get("published", now),
-                "match_confidence": confidence,
-                "significance": sig_result.classification,
-                "sentiment": sig_result.sentiment,
-                "matched_keywords": sig_result.matched_keywords,
-                "matched_categories": sig_result.matched_categories,
-            })
+            article_details.append(
+                {
+                    "title": article.get("title", ""),
+                    "content_url": article["url"],
+                    "source": article.get("source", ""),
+                    "published_at": article.get("published", now),
+                    "match_confidence": confidence,
+                    "significance": sig_result.classification,
+                    "sentiment": sig_result.sentiment,
+                    "matched_keywords": sig_result.matched_keywords,
+                    "matched_categories": sig_result.matched_categories,
+                }
+            )
 
         return {
             "articles_found": found,

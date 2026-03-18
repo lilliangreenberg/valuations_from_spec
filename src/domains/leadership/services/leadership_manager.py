@@ -184,12 +184,14 @@ class LeadershipManager:
         for person in people:
             profile_url = normalize_social_url(person.get("profile_url", ""))
             if profile_url:
-                leader_details.append({
-                    "person_name": person.get("name", "Unknown"),
-                    "title": person.get("title", ""),
-                    "linkedin_profile_url": profile_url,
-                    "confidence": confidence,
-                })
+                leader_details.append(
+                    {
+                        "person_name": person.get("name", "Unknown"),
+                        "title": person.get("title", ""),
+                        "linkedin_profile_url": profile_url,
+                        "confidence": confidence,
+                    }
+                )
 
         return {
             "company_id": company_id,
@@ -214,6 +216,7 @@ class LeadershipManager:
         self,
         limit: int | None = None,
         max_workers: int = 1,
+        exclude_company_ids: set[int] | None = None,
     ) -> dict[str, Any]:
         """Extract leadership for all companies.
 
@@ -222,10 +225,22 @@ class LeadershipManager:
             max_workers: Number of parallel workers. Default 1 because
                 Playwright browser is single-threaded. Use higher values
                 only when using Kagi-only mode (no browser).
+            exclude_company_ids: Company IDs to exclude (e.g. manually closed).
 
         Returns aggregate summary with report_details for report generation.
         """
         companies = self.company_repo.get_all_companies()
+        if exclude_company_ids:
+            pre = len(companies)
+            companies = [c for c in companies if c["id"] not in exclude_company_ids]
+            excluded = pre - len(companies)
+            if excluded:
+                logger.info(
+                    "excluded_manually_closed",
+                    total=pre,
+                    excluded=excluded,
+                    remaining=len(companies),
+                )
         if limit is not None:
             companies = companies[:limit]
 
@@ -264,11 +279,13 @@ class LeadershipManager:
                         result = future.result()
                         if result.get("error"):
                             tracker.record_failure(result["error"])
-                            failed_details.append({
-                                "company_id": company["id"],
-                                "name": company.get("name", ""),
-                                "error": result["error"],
-                            })
+                            failed_details.append(
+                                {
+                                    "company_id": company["id"],
+                                    "name": company.get("name", ""),
+                                    "error": result["error"],
+                                }
+                            )
                         else:
                             total_leaders += result.get("leaders_found", 0)
                             for change in result.get("leadership_changes", []):
@@ -277,14 +294,16 @@ class LeadershipManager:
                                         {**change, "company_name": company["name"]}
                                     )
                             tracker.record_success()
-                            extracted_details.append({
-                                "company_id": result["company_id"],
-                                "name": result["company_name"],
-                                "method_used": result["method_used"],
-                                "leaders_found": result["leaders_found"],
-                                "leaders": result.get("leaders", []),
-                                "leadership_changes": result.get("leadership_changes", []),
-                            })
+                            extracted_details.append(
+                                {
+                                    "company_id": result["company_id"],
+                                    "name": result["company_name"],
+                                    "method_used": result["method_used"],
+                                    "leaders_found": result["leaders_found"],
+                                    "leaders": result.get("leaders", []),
+                                    "leadership_changes": result.get("leadership_changes", []),
+                                }
+                            )
                     except Exception as exc:
                         logger.error(
                             "leadership_extraction_failed",
@@ -292,11 +311,13 @@ class LeadershipManager:
                             error=str(exc),
                         )
                         tracker.record_failure(str(exc))
-                        failed_details.append({
-                            "company_id": company["id"],
-                            "name": company.get("name", ""),
-                            "error": str(exc),
-                        })
+                        failed_details.append(
+                            {
+                                "company_id": company["id"],
+                                "name": company.get("name", ""),
+                                "error": str(exc),
+                            }
+                        )
 
                     tracker.log_progress(every_n=1)
 
@@ -328,24 +349,28 @@ class LeadershipManager:
             result = self.extract_company_leadership(company["id"])
             if result.get("error"):
                 tracker.record_failure(result["error"])
-                failed_details.append({
-                    "company_id": company["id"],
-                    "name": company.get("name", ""),
-                    "error": result["error"],
-                })
+                failed_details.append(
+                    {
+                        "company_id": company["id"],
+                        "name": company.get("name", ""),
+                        "error": result["error"],
+                    }
+                )
                 return 0
             for change in result.get("leadership_changes", []):
                 if change.get("severity") == "critical":
                     all_critical_changes.append({**change, "company_name": company["name"]})
             tracker.record_success()
-            extracted_details.append({
-                "company_id": result["company_id"],
-                "name": result["company_name"],
-                "method_used": result["method_used"],
-                "leaders_found": result["leaders_found"],
-                "leaders": result.get("leaders", []),
-                "leadership_changes": result.get("leadership_changes", []),
-            })
+            extracted_details.append(
+                {
+                    "company_id": result["company_id"],
+                    "name": result["company_name"],
+                    "method_used": result["method_used"],
+                    "leaders_found": result["leaders_found"],
+                    "leaders": result.get("leaders", []),
+                    "leadership_changes": result.get("leadership_changes", []),
+                }
+            )
             return int(result.get("leaders_found", 0))
         except Exception as exc:
             logger.error(
@@ -354,11 +379,13 @@ class LeadershipManager:
                 error=str(exc),
             )
             tracker.record_failure(str(exc))
-            failed_details.append({
-                "company_id": company["id"],
-                "name": company.get("name", ""),
-                "error": str(exc),
-            })
+            failed_details.append(
+                {
+                    "company_id": company["id"],
+                    "name": company.get("name", ""),
+                    "error": str(exc),
+                }
+            )
             return 0
 
     def _find_linkedin_company_url(self, company_id: int) -> str | None:

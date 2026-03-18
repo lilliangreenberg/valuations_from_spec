@@ -56,17 +56,33 @@ class SocialChangeDetector:
         self.llm_client = llm_client
         self.llm_enabled = llm_enabled
 
-    def detect_all_changes(self, limit: int | None = None) -> dict[str, Any]:
+    def detect_all_changes(
+        self,
+        limit: int | None = None,
+        exclude_company_ids: set[int] | None = None,
+    ) -> dict[str, Any]:
         """Detect changes across all social media sources.
 
         Pattern mirrors ChangeDetector.detect_all_changes() exactly.
 
         Args:
             limit: Maximum number of (company_id, source_url) pairs to process.
+            exclude_company_ids: Company IDs to exclude (e.g. manually closed).
 
         Returns summary stats with report_details for report generation.
         """
         pairs = self.social_snapshot_repo.get_companies_with_multiple_snapshots()
+        if exclude_company_ids:
+            pre = len(pairs)
+            pairs = [(cid, url) for cid, url in pairs if cid not in exclude_company_ids]
+            excluded = pre - len(pairs)
+            if excluded:
+                logger.info(
+                    "excluded_manually_closed",
+                    total=pre,
+                    excluded=excluded,
+                    remaining=len(pairs),
+                )
         if limit is not None:
             pairs = pairs[:limit]
         tracker = ProgressTracker(total=len(pairs))
@@ -87,12 +103,14 @@ class SocialChangeDetector:
                 )
                 if len(snapshots) < 2:
                     tracker.record_skip()
-                    skipped_details.append({
-                        "company_id": company_id,
-                        "name": company_name,
-                        "source_url": source_url,
-                        "reason": "fewer_than_2_snapshots",
-                    })
+                    skipped_details.append(
+                        {
+                            "company_id": company_id,
+                            "name": company_name,
+                            "source_url": source_url,
+                            "reason": "fewer_than_2_snapshots",
+                        }
+                    )
                     continue
 
                 new_snap = snapshots[0]  # Most recent
@@ -197,18 +215,20 @@ class SocialChangeDetector:
 
                 if has_changed:
                     changes_found += 1
-                    changed_details.append({
-                        "company_id": company_id,
-                        "name": company_name,
-                        "source_url": source_url,
-                        "source_type": source_type,
-                        "change_magnitude": magnitude.value,
-                        "significance": sig_classification,
-                        "sentiment": sig_sentiment,
-                        "confidence": sig_confidence,
-                        "matched_keywords": sig_keywords,
-                        "matched_categories": sig_categories,
-                    })
+                    changed_details.append(
+                        {
+                            "company_id": company_id,
+                            "name": company_name,
+                            "source_url": source_url,
+                            "source_type": source_type,
+                            "change_magnitude": magnitude.value,
+                            "significance": sig_classification,
+                            "sentiment": sig_sentiment,
+                            "confidence": sig_confidence,
+                            "matched_keywords": sig_keywords,
+                            "matched_categories": sig_categories,
+                        }
+                    )
 
                 tracker.record_success()
             except Exception as exc:
@@ -219,14 +239,16 @@ class SocialChangeDetector:
                     error=str(exc),
                 )
                 tracker.record_failure(f"Company {company_id} ({source_url}): {exc}")
-                failed_details.append({
-                    "company_id": company_id,
-                    "name": (
-                        self.company_repo.get_company_by_id(company_id) or {}
-                    ).get("name", f"Company {company_id}"),
-                    "source_url": source_url,
-                    "error": str(exc),
-                })
+                failed_details.append(
+                    {
+                        "company_id": company_id,
+                        "name": (self.company_repo.get_company_by_id(company_id) or {}).get(
+                            "name", f"Company {company_id}"
+                        ),
+                        "source_url": source_url,
+                        "error": str(exc),
+                    }
+                )
 
             tracker.log_progress(every_n=10)
 

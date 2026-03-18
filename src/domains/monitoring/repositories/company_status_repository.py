@@ -101,6 +101,32 @@ class CompanyStatusRepository:
             }
         )
 
+    def get_manually_closed_company_ids(self) -> set[int]:
+        """Get company IDs where the latest status is manually set to likely_closed.
+
+        Uses a subquery to find each company's latest status row (by MAX id),
+        then filters for manually-overridden likely_closed statuses.
+        Auto-detected likely_closed statuses are NOT included.
+        """
+        rows = self.db.fetchall(
+            """SELECT cs.company_id
+               FROM company_statuses cs
+               INNER JOIN (
+                   SELECT company_id, MAX(id) AS max_id
+                   FROM company_statuses
+                   GROUP BY company_id
+               ) latest ON cs.id = latest.max_id
+               WHERE cs.status = 'likely_closed'
+                 AND cs.is_manual_override = 1""",
+        )
+        result = {row["company_id"] for row in rows}
+        if result:
+            logger.info(
+                "found_manually_closed_companies",
+                count=len(result),
+            )
+        return result
+
     def _deserialize_row(self, row: Any) -> dict[str, Any]:
         """Deserialize JSON fields."""
         data = dict(row)

@@ -35,6 +35,22 @@ def _get_db(config: Config) -> Database:
     return db
 
 
+def _get_manually_closed_ids(db: Database) -> set[int]:
+    """Get company IDs that have been manually set to likely_closed.
+
+    These companies are excluded from batch operations by default.
+    """
+    from src.domains.monitoring.repositories.company_status_repository import (
+        CompanyStatusRepository,
+    )
+
+    status_repo = CompanyStatusRepository(db)
+    closed_ids = status_repo.get_manually_closed_company_ids()
+    if closed_ids:
+        click.echo(f"[INFO] Excluding {len(closed_ids)} manually-closed companies")
+    return closed_ids
+
+
 def _print_summary(title: str, stats: dict[str, Any]) -> None:
     """Print a formatted summary of batch operation results."""
     click.echo(f"\n[SUCCESS] {title}")
@@ -110,12 +126,19 @@ def import_urls() -> None:
     type=str,
     help="Skip companies that already have a snapshot on or after this date (YYYY-MM-DD)",
 )
+@click.option(
+    "--include-manually-closed",
+    is_flag=True,
+    default=False,
+    help="Include companies manually set to likely_closed (excluded by default)",
+)
 def capture_snapshots(
     use_batch_api: bool,
     batch_size: int,
     timeout: int,
     company_id: int | None,
     skip_if_snapshot_since: str | None,
+    include_manually_closed: bool,
 ) -> None:
     """Capture website snapshots for all companies."""
     config = _get_config()
@@ -136,15 +159,20 @@ def capture_snapshots(
     logo_repo = SocialMediaLinkRepository(db)
     logo_processor = BrandingLogoProcessor(logo_repo)
 
-    # Build exclusion set if --skip-if-snapshot-since is provided
+    # Build exclusion set from manually-closed companies and --skip-if-snapshot-since
     exclude_ids: set[int] | None = None
+    if not include_manually_closed and company_id is None:
+        closed_ids = _get_manually_closed_ids(db)
+        if closed_ids:
+            exclude_ids = closed_ids
+
     if skip_if_snapshot_since:
-        exclude_ids = snapshot_repo.get_company_ids_with_snapshot_since(skip_if_snapshot_since)
-        skip_count = len(exclude_ids)
+        since_ids = snapshot_repo.get_company_ids_with_snapshot_since(skip_if_snapshot_since)
+        skip_count = len(since_ids)
         click.echo(
-            f"[INFO] Skipping {skip_count} companies"
-            f" with snapshots since {skip_if_snapshot_since}"
+            f"[INFO] Skipping {skip_count} companies with snapshots since {skip_if_snapshot_since}"
         )
+        exclude_ids = exclude_ids | since_ids if exclude_ids else since_ids
 
     if company_id is not None:
         from src.services.snapshot_manager import SnapshotManager
@@ -216,12 +244,19 @@ def capture_snapshots(
     help="Output format",
 )
 @click.option("--include-social", is_flag=True, help="Enrich LLM with social media context")
+@click.option(
+    "--include-manually-closed",
+    is_flag=True,
+    default=False,
+    help="Include companies manually set to likely_closed (excluded by default)",
+)
 def detect_changes(
     batch_size: int,
     limit: int | None,
     company_ids: tuple[int, ...],
     output_format: str,
     include_social: bool,
+    include_manually_closed: bool,
 ) -> None:
     """Detect content changes between snapshots with significance analysis."""
     config = _get_config()
@@ -267,10 +302,15 @@ def detect_changes(
         status_repo=status_repo,
     )
 
+    exclude_ids: set[int] | None = None
+    if not include_manually_closed and not company_ids:
+        exclude_ids = _get_manually_closed_ids(db) or None
+
     click.echo("[INFO] Detecting changes...")
     result = detector.detect_all_changes(
         limit=limit,
         company_ids=list(company_ids) if company_ids else None,
+        exclude_company_ids=exclude_ids,
     )
 
     if output_format == "json":
@@ -796,11 +836,18 @@ def show_social_links(company_id: int | None, company_name: str | None) -> None:
     default=False,
     help="Skip CEO LinkedIn discovery after social media discovery",
 )
+@click.option(
+    "--include-manually-closed",
+    is_flag=True,
+    default=False,
+    help="Include companies manually set to likely_closed (excluded by default)",
+)
 def discover_social_media(
     batch_size: int,
     limit: int | None,
     company_id: int | None,
     skip_ceo_search: bool,
+    include_manually_closed: bool,
 ) -> None:
     """Discover social media links from company homepages."""
     config = _get_config()
@@ -819,15 +866,24 @@ def discover_social_media(
     company_repo = CompanyRepository(db)
     discovery = SocialMediaDiscovery(firecrawl, social_repo, company_repo)
 
+    exclude_ids: set[int] | None = None
+    if not include_manually_closed and company_id is None:
+        exclude_ids = _get_manually_closed_ids(db) or None
+
     click.echo("[INFO] Discovering social media links...")
-    result = discovery.discover_all(batch_size=batch_size, limit=limit, company_id=company_id)
+    result = discovery.discover_all(
+        batch_size=batch_size,
+        limit=limit,
+        company_id=company_id,
+        exclude_company_ids=exclude_ids,
+    )
     _print_summary("Social media discovery complete", result)
 
     # Chain CEO LinkedIn discovery (opt-out via --skip-ceo-search)
     if not skip_ceo_search and config.kagi_api_key:
         click.echo("\n[INFO] Running CEO LinkedIn discovery...")
         ceo_discovery = _build_ceo_linkedin_discovery(db, config, social_repo, company_repo)
-        ceo_result = ceo_discovery.discover_all(limit=limit)
+        ceo_result = ceo_discovery.discover_all(limit=limit, exclude_company_ids=exclude_ids)
         _print_summary("CEO LinkedIn discovery complete", ceo_result)
 
     report_config: dict[str, Any] = {
@@ -1121,7 +1177,13 @@ def search_news(company_name: str | None, company_id: int | None) -> None:
 @click.command()
 @click.option("--limit", default=None, type=int, help="Process first N companies")
 @click.option("--max-workers", default=5, type=int, help="Parallel workers for Kagi API calls")
-def search_news_all(limit: int | None, max_workers: int) -> None:
+@click.option(
+    "--include-manually-closed",
+    is_flag=True,
+    default=False,
+    help="Include companies manually set to likely_closed (excluded by default)",
+)
+def search_news_all(limit: int | None, max_workers: int, include_manually_closed: bool) -> None:
     """Search news for all companies with parallel Kagi API calls."""
     config = _get_config()
     configure_logging(config.log_level)
@@ -1151,8 +1213,16 @@ def search_news_all(limit: int | None, max_workers: int) -> None:
 
     manager = NewsMonitorManager(kagi, news_repo, company_repo, snapshot_repo, llm_client)
 
+    exclude_ids: set[int] | None = None
+    if not include_manually_closed:
+        exclude_ids = _get_manually_closed_ids(db) or None
+
     click.echo(f"[INFO] Searching news for all companies ({max_workers} workers)...")
-    result = manager.search_all_companies(limit=limit, max_workers=max_workers)
+    result = manager.search_all_companies(
+        limit=limit,
+        max_workers=max_workers,
+        exclude_company_ids=exclude_ids,
+    )
     _print_summary("News search complete", result)
 
     report_config: dict[str, Any] = {
@@ -1239,11 +1309,18 @@ def extract_leadership(company_id: int, headless: bool, profile_dir: str | None)
     type=int,
     help="Parallel workers (default 1 for Playwright safety; increase for Kagi-only mode)",
 )
+@click.option(
+    "--include-manually-closed",
+    is_flag=True,
+    default=False,
+    help="Include companies manually set to likely_closed (excluded by default)",
+)
 def extract_leadership_all(
     limit: int | None,
     headless: bool,
     profile_dir: str | None,
     max_workers: int,
+    include_manually_closed: bool,
 ) -> None:
     """Extract leadership profiles for all companies."""
     config = _get_config()
@@ -1278,8 +1355,16 @@ def extract_leadership_all(
         company_repo=company_repo,
     )
 
+    exclude_ids: set[int] | None = None
+    if not include_manually_closed:
+        exclude_ids = _get_manually_closed_ids(db) or None
+
     click.echo(f"[INFO] Extracting leadership for all companies ({max_workers} workers)...")
-    result = manager.extract_all_leadership(limit=limit, max_workers=max_workers)
+    result = manager.extract_all_leadership(
+        limit=limit,
+        max_workers=max_workers,
+        exclude_company_ids=exclude_ids,
+    )
     _print_summary("Leadership extraction complete", result)
 
     critical = result.get("critical_changes", [])
@@ -1417,7 +1502,18 @@ def analyze_baseline(limit: int | None, dry_run: bool) -> None:
 @click.option("--batch-size", default=50, type=int, help="URLs per Firecrawl batch")
 @click.option("--limit", default=None, type=int, help="Max URLs to capture")
 @click.option("--company-id", default=None, type=int, help="Single company ID")
-def capture_social_snapshots(batch_size: int, limit: int | None, company_id: int | None) -> None:
+@click.option(
+    "--include-manually-closed",
+    is_flag=True,
+    default=False,
+    help="Include companies manually set to likely_closed (excluded by default)",
+)
+def capture_social_snapshots(
+    batch_size: int,
+    limit: int | None,
+    company_id: int | None,
+    include_manually_closed: bool,
+) -> None:
     """Capture snapshots of Medium and blog pages for social media monitoring."""
     config = _get_config()
     configure_logging(config.log_level)
@@ -1442,9 +1538,16 @@ def capture_social_snapshots(batch_size: int, limit: int | None, company_id: int
 
     manager = SocialSnapshotManager(social_snapshot_repo, social_link_repo, company_repo, firecrawl)
 
+    exclude_ids: set[int] | None = None
+    if not include_manually_closed and company_id is None:
+        exclude_ids = _get_manually_closed_ids(db) or None
+
     click.echo("[INFO] Capturing social media snapshots...")
     result = manager.capture_social_snapshots(
-        batch_size=batch_size, limit=limit, company_id=company_id
+        batch_size=batch_size,
+        limit=limit,
+        company_id=company_id,
+        exclude_company_ids=exclude_ids,
     )
     _print_summary("Social snapshot capture complete", result)
 
@@ -1462,7 +1565,13 @@ def capture_social_snapshots(batch_size: int, limit: int | None, company_id: int
 
 @click.command()
 @click.option("--limit", default=None, type=int, help="Max source pairs to process")
-def detect_social_changes(limit: int | None) -> None:
+@click.option(
+    "--include-manually-closed",
+    is_flag=True,
+    default=False,
+    help="Include companies manually set to likely_closed (excluded by default)",
+)
+def detect_social_changes(limit: int | None, include_manually_closed: bool) -> None:
     """Detect content changes in social media snapshots."""
     config = _get_config()
     configure_logging(config.log_level)
@@ -1497,8 +1606,12 @@ def detect_social_changes(limit: int | None) -> None:
         llm_enabled=bool(llm_client),
     )
 
+    exclude_ids: set[int] | None = None
+    if not include_manually_closed:
+        exclude_ids = _get_manually_closed_ids(db) or None
+
     click.echo("[INFO] Detecting social media changes...")
-    result = detector.detect_all_changes(limit=limit)
+    result = detector.detect_all_changes(limit=limit, exclude_company_ids=exclude_ids)
     _print_summary("Social change detection complete", result)
 
     report_config: dict[str, Any] = {
@@ -1648,12 +1761,19 @@ def _build_ceo_linkedin_discovery(
 @click.option("--max-workers", default=5, type=int, help="Parallel Kagi workers")
 @click.option("--ceo-name", default=None, type=str, help="Known CEO name for targeted search")
 @click.option("--dry-run", is_flag=True, help="Show what would be done without writing to DB")
+@click.option(
+    "--include-manually-closed",
+    is_flag=True,
+    default=False,
+    help="Include companies manually set to likely_closed (excluded by default)",
+)
 def discover_ceo_linkedin(
     company_id: int | None,
     limit: int | None,
     max_workers: int,
     ceo_name: str | None,
     dry_run: bool,
+    include_manually_closed: bool,
 ) -> None:
     """Discover CEO/founder LinkedIn profiles via Kagi search.
 
@@ -1679,8 +1799,17 @@ def discover_ceo_linkedin(
         else:
             _print_summary("CEO LinkedIn discovery complete", result)
     else:
+        exclude_ids: set[int] | None = None
+        if not include_manually_closed:
+            exclude_ids = _get_manually_closed_ids(db) or None
+
         click.echo(f"{mode}[INFO] Discovering CEO LinkedIn for all companies...")
-        result = ceo_discovery.discover_all(limit=limit, max_workers=max_workers, dry_run=dry_run)
+        result = ceo_discovery.discover_all(
+            limit=limit,
+            max_workers=max_workers,
+            dry_run=dry_run,
+            exclude_company_ids=exclude_ids,
+        )
         _print_summary("CEO LinkedIn discovery complete", result)
 
     db.close()

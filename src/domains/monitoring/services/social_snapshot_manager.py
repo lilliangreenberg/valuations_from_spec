@@ -96,15 +96,33 @@ class SocialSnapshotManager:
         batch_size: int = 50,
         limit: int | None = None,
         company_id: int | None = None,
+        exclude_company_ids: set[int] | None = None,
     ) -> dict[str, Any]:
         """Batch-capture social media snapshots.
 
         Uses FirecrawlClient.batch_capture_snapshots() for cost efficiency.
         Inherits the critical only_main_content=False invariant automatically.
 
+        Args:
+            batch_size: URLs per Firecrawl batch.
+            limit: Max URLs to capture.
+            company_id: Process single company only.
+            exclude_company_ids: Company IDs to exclude (e.g. manually closed).
+
         Returns summary dict with report_details for report generation.
         """
         social_urls = self.collect_social_urls(company_id=company_id)
+        if exclude_company_ids:
+            pre = len(social_urls)
+            social_urls = [u for u in social_urls if u["company_id"] not in exclude_company_ids]
+            excluded = pre - len(social_urls)
+            if excluded:
+                logger.info(
+                    "excluded_manually_closed",
+                    total=pre,
+                    excluded=excluded,
+                    remaining=len(social_urls),
+                )
         if limit is not None:
             social_urls = social_urls[:limit]
 
@@ -152,12 +170,14 @@ class SocialSnapshotManager:
                     tracker.record_failure(f"Batch failed for {url}: {exc}")
                     meta = url_to_meta.get(url, {})
                     company_name = self._resolve_company_name(meta.get("company_id"))
-                    failed_details.append({
-                        "company_id": meta.get("company_id"),
-                        "name": company_name,
-                        "source_url": url,
-                        "error": str(exc),
-                    })
+                    failed_details.append(
+                        {
+                            "company_id": meta.get("company_id"),
+                            "name": company_name,
+                            "source_url": url,
+                            "error": str(exc),
+                        }
+                    )
                 continue
 
             documents = result.get("documents", [])
@@ -206,21 +226,25 @@ class SocialSnapshotManager:
                             "name": self._resolve_company_name(cid),
                             "sources": [],
                         }
-                    captured_by_company[cid]["sources"].append({
-                        "source_url": meta["source_url"],
-                        "source_type": meta["source_type"],
-                    })
+                    captured_by_company[cid]["sources"].append(
+                        {
+                            "source_url": meta["source_url"],
+                            "source_type": meta["source_type"],
+                        }
+                    )
                 except Exception as exc:
                     tracker.record_failure(
                         f"Failed to store snapshot for {meta['source_url']}: {exc}"
                     )
                     company_name = self._resolve_company_name(meta.get("company_id"))
-                    failed_details.append({
-                        "company_id": meta.get("company_id"),
-                        "name": company_name,
-                        "source_url": meta["source_url"],
-                        "error": str(exc),
-                    })
+                    failed_details.append(
+                        {
+                            "company_id": meta.get("company_id"),
+                            "name": company_name,
+                            "source_url": meta["source_url"],
+                            "error": str(exc),
+                        }
+                    )
 
             # Track URLs that had no corresponding document
             captured_urls = {doc.get("source_url") or doc.get("url", "") for doc in documents}
@@ -231,12 +255,14 @@ class SocialSnapshotManager:
                     tracker.record_failure(f"No document returned for {url}")
                     meta = url_to_meta.get(url, {})
                     company_name = self._resolve_company_name(meta.get("company_id"))
-                    failed_details.append({
-                        "company_id": meta.get("company_id"),
-                        "name": company_name,
-                        "source_url": url,
-                        "error": f"No document returned for {url}",
-                    })
+                    failed_details.append(
+                        {
+                            "company_id": meta.get("company_id"),
+                            "name": company_name,
+                            "source_url": url,
+                            "error": f"No document returned for {url}",
+                        }
+                    )
 
         summary: dict[str, Any] = {
             "total": tracker.total,
