@@ -35,6 +35,12 @@
           {{ change.performed_by }}
         </span>
         {% endif %}
+        <button class="btn-delete"
+                hx-delete="/companies/{{ change.company_id }}/changes/{{ change.id }}"
+                hx-confirm="Delete this change record?"
+                hx-target="closest .bg-white"
+                hx-swap="outerHTML swap:0.3s"
+                title="Delete entry">&times;</button>
       </div>
     </div>
 

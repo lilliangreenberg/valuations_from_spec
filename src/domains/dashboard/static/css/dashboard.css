@@ -573,6 +573,35 @@ body {
     font-size: 0.75rem;
 }
 
+/* Delete button */
+.btn-delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    padding: 0;
+    border: none;
+    border-radius: 0.25rem;
+    background: transparent;
+    color: var(--text-muted, #9ca3af);
+    font-size: 0.875rem;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, background-color 0.15s;
+}
+
+.card:hover .btn-delete,
+.bg-white:hover .btn-delete {
+    opacity: 1;
+}
+
+.btn-delete:hover {
+    background-color: #fee2e2;
+    color: #dc2626;
+}
+
 /* Empty state */
 .empty-state {
     text-align: center;

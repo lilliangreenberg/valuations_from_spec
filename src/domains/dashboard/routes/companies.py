@@ -428,3 +428,38 @@ async def company_leadership_partial(
         "partials/company_detail_sections.html",
         {"section": "leadership", "items": leaders, "company_id": company_id},
     )
+
+
+# --- Entry Deletion Endpoints ---
+
+_DELETE_TABLES: dict[str, str] = {
+    "changes": "change_records",
+    "news": "news_articles",
+    "social": "social_media_links",
+    "leadership": "company_leadership",
+}
+
+
+@router.delete("/{company_id}/{entry_type}/{entry_id}")
+async def delete_entry(
+    request: Request,
+    company_id: int,
+    entry_type: str,
+    entry_id: int,
+) -> HTMLResponse:
+    """Delete a single entry by type and ID.
+
+    Uses company_id guard to prevent cross-company deletion.
+    Returns empty 200 so HTMX can remove the element from the DOM.
+    """
+    table = _DELETE_TABLES.get(entry_type)
+    if not table:
+        return HTMLResponse(status_code=404, content="Unknown entry type")
+
+    db = request.app.state.db
+    db.execute(
+        f"DELETE FROM {table} WHERE id = ? AND company_id = ?",  # noqa: S608
+        (entry_id, company_id),
+    )
+    db.connection.commit()
+    return HTMLResponse(status_code=200, content="")
