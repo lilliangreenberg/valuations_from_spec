@@ -87,9 +87,9 @@ class TestSocialSnapshotManagerCollectUrls:
         _insert_blog_link(db, company_id, "https://testco.com/blog")
 
         manager = SocialSnapshotManager(
-            social_snapshot_repo=SocialSnapshotRepository(db),
-            social_link_repo=SocialMediaLinkRepository(db),
-            company_repo=CompanyRepository(db),
+            social_snapshot_repo=SocialSnapshotRepository(db, "test-user"),
+            social_link_repo=SocialMediaLinkRepository(db, "test-user"),
+            company_repo=CompanyRepository(db, "test-user"),
             firecrawl_client=MagicMock(),
         )
 
@@ -106,9 +106,9 @@ class TestSocialSnapshotManagerCollectUrls:
         _insert_blog_link(db, co1, "https://co1.com/blog")
 
         manager = SocialSnapshotManager(
-            social_snapshot_repo=SocialSnapshotRepository(db),
-            social_link_repo=SocialMediaLinkRepository(db),
-            company_repo=CompanyRepository(db),
+            social_snapshot_repo=SocialSnapshotRepository(db, "test-user"),
+            social_link_repo=SocialMediaLinkRepository(db, "test-user"),
+            company_repo=CompanyRepository(db, "test-user"),
             firecrawl_client=MagicMock(),
         )
 
@@ -120,9 +120,9 @@ class TestSocialSnapshotManagerCollectUrls:
         _insert_company(db, "EmptyCo", "https://empty.com")
 
         manager = SocialSnapshotManager(
-            social_snapshot_repo=SocialSnapshotRepository(db),
-            social_link_repo=SocialMediaLinkRepository(db),
-            company_repo=CompanyRepository(db),
+            social_snapshot_repo=SocialSnapshotRepository(db, "test-user"),
+            social_link_repo=SocialMediaLinkRepository(db, "test-user"),
+            company_repo=CompanyRepository(db, "test-user"),
             firecrawl_client=MagicMock(),
         )
 
@@ -149,11 +149,11 @@ class TestSocialSnapshotManagerCapture:
             ]
         )
 
-        snap_repo = SocialSnapshotRepository(db)
+        snap_repo = SocialSnapshotRepository(db, "test-user")
         manager = SocialSnapshotManager(
             social_snapshot_repo=snap_repo,
-            social_link_repo=SocialMediaLinkRepository(db),
-            company_repo=CompanyRepository(db),
+            social_link_repo=SocialMediaLinkRepository(db, "test-user"),
+            company_repo=CompanyRepository(db, "test-user"),
             firecrawl_client=mock_fc,
         )
 
@@ -173,9 +173,9 @@ class TestSocialSnapshotManagerCapture:
         _insert_company(db, "Empty", "https://empty.com")
 
         manager = SocialSnapshotManager(
-            social_snapshot_repo=SocialSnapshotRepository(db),
-            social_link_repo=SocialMediaLinkRepository(db),
-            company_repo=CompanyRepository(db),
+            social_snapshot_repo=SocialSnapshotRepository(db, "test-user"),
+            social_link_repo=SocialMediaLinkRepository(db, "test-user"),
+            company_repo=CompanyRepository(db, "test-user"),
             firecrawl_client=MagicMock(),
         )
 
@@ -200,9 +200,9 @@ class TestSocialSnapshotManagerCapture:
         )
 
         manager = SocialSnapshotManager(
-            social_snapshot_repo=SocialSnapshotRepository(db),
-            social_link_repo=SocialMediaLinkRepository(db),
-            company_repo=CompanyRepository(db),
+            social_snapshot_repo=SocialSnapshotRepository(db, "test-user"),
+            social_link_repo=SocialMediaLinkRepository(db, "test-user"),
+            company_repo=CompanyRepository(db, "test-user"),
             firecrawl_client=mock_fc,
         )
 
@@ -217,9 +217,9 @@ class TestSocialSnapshotManagerCapture:
         mock_fc.batch_capture_snapshots.side_effect = ConnectionError("Network error")
 
         manager = SocialSnapshotManager(
-            social_snapshot_repo=SocialSnapshotRepository(db),
-            social_link_repo=SocialMediaLinkRepository(db),
-            company_repo=CompanyRepository(db),
+            social_snapshot_repo=SocialSnapshotRepository(db, "test-user"),
+            social_link_repo=SocialMediaLinkRepository(db, "test-user"),
+            company_repo=CompanyRepository(db, "test-user"),
             firecrawl_client=mock_fc,
         )
 

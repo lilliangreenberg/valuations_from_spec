@@ -15,8 +15,9 @@ logger = structlog.get_logger(__name__)
 class LeadershipRepository:
     """Repository for company leadership data access."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, operator: str) -> None:
         self.db = db
+        self.operator = operator
 
     def store_leadership(self, data: dict[str, Any]) -> int:
         """Store a leadership record. Uses explicit check to skip duplicates.
@@ -37,8 +38,8 @@ class LeadershipRepository:
             """INSERT INTO company_leadership
                (company_id, person_name, title, linkedin_profile_url,
                 discovery_method, confidence, is_current, discovered_at,
-                last_verified_at, source_company_linkedin_url)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                last_verified_at, source_company_linkedin_url, performed_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 company_id,
                 data["person_name"],
@@ -50,6 +51,7 @@ class LeadershipRepository:
                 data["discovered_at"],
                 data.get("last_verified_at"),
                 data.get("source_company_linkedin_url"),
+                self.operator,
             ),
         )
         self.db.connection.commit()

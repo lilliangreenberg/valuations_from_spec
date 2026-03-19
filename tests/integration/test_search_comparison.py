@@ -29,9 +29,7 @@ KAGI_API_KEY = os.getenv("KAGI_API_KEY", "")
 FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY", "")
 
 requires_kagi = pytest.mark.skipif(not KAGI_API_KEY, reason="KAGI_API_KEY not set")
-requires_firecrawl = pytest.mark.skipif(
-    not FIRECRAWL_API_KEY, reason="FIRECRAWL_API_KEY not set"
-)
+requires_firecrawl = pytest.mark.skipif(not FIRECRAWL_API_KEY, reason="FIRECRAWL_API_KEY not set")
 requires_both = pytest.mark.skipif(
     not KAGI_API_KEY or not FIRECRAWL_API_KEY,
     reason="Both KAGI_API_KEY and FIRECRAWL_API_KEY required",
@@ -229,9 +227,11 @@ class TestFirecrawlSearchCapabilities:
         news = result.news or []
         if news:
             item = news[0]
-            print(f"  Fields present: title={item.title is not None}, "
-                  f"url={item.url is not None}, snippet={item.snippet is not None}, "
-                  f"date={item.date is not None}")
+            print(
+                f"  Fields present: title={item.title is not None}, "
+                f"url={item.url is not None}, snippet={item.snippet is not None}, "
+                f"date={item.date is not None}"
+            )
             assert item.url is not None
 
 
@@ -371,12 +371,16 @@ class TestSearchComparison:
         fc_stats = snippet_stats(fc_articles)
 
         print(f"\n  [{company['name']}] Snippet quality:")
-        print(f"    Kagi:           {kagi_stats['with_snippet']}/{kagi_stats['total']} "
-              f"have snippets, avg {kagi_stats['avg_length']:.0f} chars "
-              f"(range {kagi_stats['min_length']}-{kagi_stats['max_length']})")
-        print(f"    Firecrawl news: {fc_stats['with_snippet']}/{fc_stats['total']} "
-              f"have snippets, avg {fc_stats['avg_length']:.0f} chars "
-              f"(range {fc_stats['min_length']}-{fc_stats['max_length']})")
+        print(
+            f"    Kagi:           {kagi_stats['with_snippet']}/{kagi_stats['total']} "
+            f"have snippets, avg {kagi_stats['avg_length']:.0f} chars "
+            f"(range {kagi_stats['min_length']}-{kagi_stats['max_length']})"
+        )
+        print(
+            f"    Firecrawl news: {fc_stats['with_snippet']}/{fc_stats['total']} "
+            f"have snippets, avg {fc_stats['avg_length']:.0f} chars "
+            f"(range {fc_stats['min_length']}-{fc_stats['max_length']})"
+        )
 
     @requires_both
     @pytest.mark.parametrize("company", TEST_COMPANIES, ids=lambda c: c["name"])
@@ -424,10 +428,8 @@ class TestSearchComparison:
         fc_sources = {a.get("source", "") for a in fc_articles}
 
         print(f"\n  [{company['name']}] Source diversity:")
-        print(f"    Kagi:           {len(kagi_sources)} unique sources: "
-              f"{sorted(kagi_sources)[:8]}")
-        print(f"    Firecrawl news: {len(fc_sources)} unique sources: "
-              f"{sorted(fc_sources)[:8]}")
+        print(f"    Kagi:           {len(kagi_sources)} unique sources: {sorted(kagi_sources)[:8]}")
+        print(f"    Firecrawl news: {len(fc_sources)} unique sources: {sorted(fc_sources)[:8]}")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -525,9 +527,7 @@ class TestVerificationPipelineCompatibility:
                 if domain_matched:
                     domain_hits += 1
 
-                context_matched = check_name_in_context(
-                    article.get("snippet", ""), company_name
-                )
+                context_matched = check_name_in_context(article.get("snippet", ""), company_name)
                 signals["context"] = 1.0 if context_matched else 0.0
                 if context_matched:
                     context_hits += 1
@@ -547,10 +547,14 @@ class TestVerificationPipelineCompatibility:
         fc_eval = evaluate_articles(fc_articles)
 
         print(f"\n  [Odeko Inc.] Verification pass rate (no LLM):")
-        print(f"    Kagi:           {kagi_eval['passed']}/{kagi_eval['total']} passed "
-              f"(domain: {kagi_eval['domain_hits']}, context: {kagi_eval['context_hits']})")
-        print(f"    Firecrawl news: {fc_eval['passed']}/{fc_eval['total']} passed "
-              f"(domain: {fc_eval['domain_hits']}, context: {fc_eval['context_hits']})")
+        print(
+            f"    Kagi:           {kagi_eval['passed']}/{kagi_eval['total']} passed "
+            f"(domain: {kagi_eval['domain_hits']}, context: {kagi_eval['context_hits']})"
+        )
+        print(
+            f"    Firecrawl news: {fc_eval['passed']}/{fc_eval['total']} passed "
+            f"(domain: {fc_eval['domain_hits']}, context: {fc_eval['context_hits']})"
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────

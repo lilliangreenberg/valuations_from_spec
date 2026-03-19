@@ -453,4 +453,24 @@ class Database:
             with contextlib.suppress(sqlite3.OperationalError):
                 self.execute(f"ALTER TABLE snapshots ADD COLUMN {col_name} {col_type}")
 
+        # Migration: add performed_by to all tables for operator attribution
+        performed_by_tables = [
+            "companies",
+            "snapshots",
+            "change_records",
+            "company_statuses",
+            "social_media_links",
+            "blog_links",
+            "company_logos",
+            "news_articles",
+            "processing_errors",
+            "company_leadership",
+            "social_media_snapshots",
+            "social_media_change_records",
+            "leadership_mentions",
+        ]
+        for table in performed_by_tables:
+            with contextlib.suppress(sqlite3.OperationalError):
+                self.execute(f"ALTER TABLE {table} ADD COLUMN performed_by TEXT")
+
         logger.info("database_initialized", path=self.db_path)

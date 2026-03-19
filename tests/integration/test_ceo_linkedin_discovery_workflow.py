@@ -84,11 +84,11 @@ def _build_ceo_discovery(
 
     return CeoLinkedinDiscovery(
         leadership_search=mock_search,
-        leadership_repo=LeadershipRepository(db),
-        leadership_mention_repo=LeadershipMentionRepository(db),
-        snapshot_repo=SnapshotRepository(db),
-        social_link_repo=SocialMediaLinkRepository(db),
-        company_repo=CompanyRepository(db),
+        leadership_repo=LeadershipRepository(db, "test-user"),
+        leadership_mention_repo=LeadershipMentionRepository(db, "test-user"),
+        snapshot_repo=SnapshotRepository(db, "test-user"),
+        social_link_repo=SocialMediaLinkRepository(db, "test-user"),
+        company_repo=CompanyRepository(db, "test-user"),
     )
 
 
@@ -123,20 +123,20 @@ class TestCeoLinkedinDiscoveryWorkflow:
         assert result["ceo_name_used"] == "Sarah Chen"
 
         # Verify leadership mention stored
-        mention_repo = LeadershipMentionRepository(tmp_db)
+        mention_repo = LeadershipMentionRepository(tmp_db, "test-user")
         mentions = mention_repo.get_mentions_for_company(company_id)
         assert len(mentions) >= 1
         assert any(m["person_name"] == "Sarah Chen" for m in mentions)
 
         # Verify company_leadership stored
-        leadership_repo = LeadershipRepository(tmp_db)
+        leadership_repo = LeadershipRepository(tmp_db, "test-user")
         leaders = leadership_repo.get_leadership_for_company(company_id)
         assert len(leaders) == 1
         assert leaders[0]["person_name"] == "Sarah Chen"
         assert leaders[0]["discovery_method"] == "kagi_ceo_search"
 
         # Verify social_media_links stored
-        social_repo = SocialMediaLinkRepository(tmp_db)
+        social_repo = SocialMediaLinkRepository(tmp_db, "test-user")
         links = social_repo.get_links_for_company(company_id)
         linkedin_links = [lk for lk in links if lk["platform"] == "linkedin"]
         assert len(linkedin_links) == 1
@@ -155,11 +155,11 @@ class TestCeoLinkedinDiscoveryWorkflow:
 
         discovery = CeoLinkedinDiscovery(
             leadership_search=mock_search,
-            leadership_repo=LeadershipRepository(tmp_db),
-            leadership_mention_repo=LeadershipMentionRepository(tmp_db),
-            snapshot_repo=SnapshotRepository(tmp_db),
-            social_link_repo=SocialMediaLinkRepository(tmp_db),
-            company_repo=CompanyRepository(tmp_db),
+            leadership_repo=LeadershipRepository(tmp_db, "test-user"),
+            leadership_mention_repo=LeadershipMentionRepository(tmp_db, "test-user"),
+            snapshot_repo=SnapshotRepository(tmp_db, "test-user"),
+            social_link_repo=SocialMediaLinkRepository(tmp_db, "test-user"),
+            company_repo=CompanyRepository(tmp_db, "test-user"),
         )
 
         result = discovery.discover_for_company(company_id, ceo_name="Override Name")
@@ -208,7 +208,7 @@ class TestCeoLinkedinDiscoveryWorkflow:
         assert result["already_existed"] == 1
 
         # Should still be only 1 LinkedIn link, not 2
-        social_repo = SocialMediaLinkRepository(tmp_db)
+        social_repo = SocialMediaLinkRepository(tmp_db, "test-user")
         links = social_repo.get_links_for_company(company_id)
         linkedin_links = [lk for lk in links if lk["platform"] == "linkedin"]
         assert len(linkedin_links) == 1
@@ -242,7 +242,7 @@ class TestCeoLinkedinDiscoveryWorkflow:
         assert result["profiles_found"] == 2
 
         # Both stored in company_leadership
-        leadership_repo = LeadershipRepository(tmp_db)
+        leadership_repo = LeadershipRepository(tmp_db, "test-user")
         leaders = leadership_repo.get_leadership_for_company(company_id)
         names = {leader["person_name"] for leader in leaders}
         assert "Alice Jones" in names
@@ -273,7 +273,7 @@ class TestCeoLinkedinDiscoveryWorkflow:
         assert result2["reverified"] == 1
 
         # Only 1 record in DB (not duplicated)
-        leadership_repo = LeadershipRepository(tmp_db)
+        leadership_repo = LeadershipRepository(tmp_db, "test-user")
         leaders = leadership_repo.get_leadership_for_company(company_id)
         assert len(leaders) == 1
 
@@ -292,11 +292,11 @@ class TestCeoLinkedinDiscoveryWorkflow:
 
         discovery = CeoLinkedinDiscovery(
             leadership_search=mock_search,
-            leadership_repo=LeadershipRepository(tmp_db),
-            leadership_mention_repo=LeadershipMentionRepository(tmp_db),
-            snapshot_repo=SnapshotRepository(tmp_db),
-            social_link_repo=SocialMediaLinkRepository(tmp_db),
-            company_repo=CompanyRepository(tmp_db),
+            leadership_repo=LeadershipRepository(tmp_db, "test-user"),
+            leadership_mention_repo=LeadershipMentionRepository(tmp_db, "test-user"),
+            snapshot_repo=SnapshotRepository(tmp_db, "test-user"),
+            social_link_repo=SocialMediaLinkRepository(tmp_db, "test-user"),
+            company_repo=CompanyRepository(tmp_db, "test-user"),
         )
 
         result = discovery.discover_for_company(company_id)
@@ -330,15 +330,15 @@ class TestCeoLinkedinDiscoveryWorkflow:
         assert result["profiles_found"] == 1
 
         # No records should be written to DB
-        leadership_repo = LeadershipRepository(tmp_db)
+        leadership_repo = LeadershipRepository(tmp_db, "test-user")
         leaders = leadership_repo.get_leadership_for_company(company_id)
         assert len(leaders) == 0
 
-        mention_repo = LeadershipMentionRepository(tmp_db)
+        mention_repo = LeadershipMentionRepository(tmp_db, "test-user")
         mentions = mention_repo.get_mentions_for_company(company_id)
         assert len(mentions) == 0
 
-        social_repo = SocialMediaLinkRepository(tmp_db)
+        social_repo = SocialMediaLinkRepository(tmp_db, "test-user")
         links = social_repo.get_links_for_company(company_id)
         assert len(links) == 0
 

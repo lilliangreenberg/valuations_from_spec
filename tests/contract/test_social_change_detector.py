@@ -57,7 +57,7 @@ def _insert_social_snapshot(
     captured_at: str,
 ) -> int:
     checksum = _md5(content)
-    repo = SocialSnapshotRepository(db)
+    repo = SocialSnapshotRepository(db, "test-user")
     return repo.store_snapshot(
         {
             "company_id": company_id,
@@ -96,16 +96,16 @@ class TestSocialChangeDetector:
         )
 
         detector = SocialChangeDetector(
-            social_snapshot_repo=SocialSnapshotRepository(db),
-            social_change_record_repo=SocialChangeRecordRepository(db),
-            company_repo=CompanyRepository(db),
+            social_snapshot_repo=SocialSnapshotRepository(db, "test-user"),
+            social_change_record_repo=SocialChangeRecordRepository(db, "test-user"),
+            company_repo=CompanyRepository(db, "test-user"),
         )
 
         result = detector.detect_all_changes()
         assert result["changes_found"] == 1
 
         # Verify record stored
-        change_repo = SocialChangeRecordRepository(db)
+        change_repo = SocialChangeRecordRepository(db, "test-user")
         changes = change_repo.get_changes_for_company(company_id)
         assert len(changes) == 1
         assert changes[0]["has_changed"] == 1
@@ -133,16 +133,16 @@ class TestSocialChangeDetector:
         )
 
         detector = SocialChangeDetector(
-            social_snapshot_repo=SocialSnapshotRepository(db),
-            social_change_record_repo=SocialChangeRecordRepository(db),
-            company_repo=CompanyRepository(db),
+            social_snapshot_repo=SocialSnapshotRepository(db, "test-user"),
+            social_change_record_repo=SocialChangeRecordRepository(db, "test-user"),
+            company_repo=CompanyRepository(db, "test-user"),
         )
 
         result = detector.detect_all_changes()
         assert result["changes_found"] == 0
 
         # Record is still stored (with has_changed=0)
-        changes = SocialChangeRecordRepository(db).get_changes_for_company(company_id)
+        changes = SocialChangeRecordRepository(db, "test-user").get_changes_for_company(company_id)
         assert len(changes) == 1
         assert changes[0]["has_changed"] == 0
 
@@ -159,9 +159,9 @@ class TestSocialChangeDetector:
         )
 
         detector = SocialChangeDetector(
-            social_snapshot_repo=SocialSnapshotRepository(db),
-            social_change_record_repo=SocialChangeRecordRepository(db),
-            company_repo=CompanyRepository(db),
+            social_snapshot_repo=SocialSnapshotRepository(db, "test-user"),
+            social_change_record_repo=SocialChangeRecordRepository(db, "test-user"),
+            company_repo=CompanyRepository(db, "test-user"),
         )
 
         result = detector.detect_all_changes()
@@ -188,14 +188,14 @@ class TestSocialChangeDetector:
         )
 
         detector = SocialChangeDetector(
-            social_snapshot_repo=SocialSnapshotRepository(db),
-            social_change_record_repo=SocialChangeRecordRepository(db),
-            company_repo=CompanyRepository(db),
+            social_snapshot_repo=SocialSnapshotRepository(db, "test-user"),
+            social_change_record_repo=SocialChangeRecordRepository(db, "test-user"),
+            company_repo=CompanyRepository(db, "test-user"),
         )
 
         detector.detect_all_changes()
 
-        changes = SocialChangeRecordRepository(db).get_changes_for_company(company_id)
+        changes = SocialChangeRecordRepository(db, "test-user").get_changes_for_company(company_id)
         assert len(changes) == 1
         assert changes[0]["significance_classification"] is not None
         # "funding" should be detected
@@ -227,9 +227,9 @@ class TestSocialChangeDetector:
             )
 
         detector = SocialChangeDetector(
-            social_snapshot_repo=SocialSnapshotRepository(db),
-            social_change_record_repo=SocialChangeRecordRepository(db),
-            company_repo=CompanyRepository(db),
+            social_snapshot_repo=SocialSnapshotRepository(db, "test-user"),
+            social_change_record_repo=SocialChangeRecordRepository(db, "test-user"),
+            company_repo=CompanyRepository(db, "test-user"),
         )
 
         result = detector.detect_all_changes(limit=1)
@@ -275,9 +275,9 @@ class TestSocialChangeDetector:
         )
 
         detector = SocialChangeDetector(
-            social_snapshot_repo=SocialSnapshotRepository(db),
-            social_change_record_repo=SocialChangeRecordRepository(db),
-            company_repo=CompanyRepository(db),
+            social_snapshot_repo=SocialSnapshotRepository(db, "test-user"),
+            social_change_record_repo=SocialChangeRecordRepository(db, "test-user"),
+            company_repo=CompanyRepository(db, "test-user"),
         )
 
         result = detector.detect_all_changes()

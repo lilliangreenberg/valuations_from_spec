@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import getpass
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -123,12 +124,13 @@ def create_app(
         db = Database(db_path=database_path, check_same_thread=False)
         db.init_db()
     app.state.db = db
-    app.state.company_repo = CompanyRepository(db)
-    app.state.snapshot_repo = SnapshotRepository(db)
-    app.state.change_repo = ChangeRecordRepository(db)
-    app.state.status_repo = CompanyStatusRepository(db)
-    app.state.news_repo = NewsArticleRepository(db)
-    app.state.leadership_repo = LeadershipRepository(db)
+    operator = getpass.getuser()
+    app.state.company_repo = CompanyRepository(db, operator)
+    app.state.snapshot_repo = SnapshotRepository(db, operator)
+    app.state.change_repo = ChangeRecordRepository(db, operator)
+    app.state.status_repo = CompanyStatusRepository(db, operator)
+    app.state.news_repo = NewsArticleRepository(db, operator)
+    app.state.leadership_repo = LeadershipRepository(db, operator)
 
     # Dashboard services
     app.state.query_service = QueryService(db)

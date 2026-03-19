@@ -85,9 +85,9 @@ def _build_manager(
     return LeadershipManager(
         linkedin_browser=mock_browser,
         leadership_search=mock_search,
-        leadership_repo=LeadershipRepository(tmp_db),
-        social_link_repo=SocialMediaLinkRepository(tmp_db),
-        company_repo=CompanyRepository(tmp_db),
+        leadership_repo=LeadershipRepository(tmp_db, "test-user"),
+        social_link_repo=SocialMediaLinkRepository(tmp_db, "test-user"),
+        company_repo=CompanyRepository(tmp_db, "test-user"),
     )
 
 
@@ -121,7 +121,7 @@ class TestLeadershipExtractionWorkflow:
         assert result["leaders_found"] == 2
 
         # Verify in database
-        repo = LeadershipRepository(tmp_db)
+        repo = LeadershipRepository(tmp_db, "test-user")
         leaders = repo.get_leadership_for_company(company_with_linkedin)
         assert len(leaders) == 2
 
@@ -177,7 +177,7 @@ class TestLeadershipExtractionWorkflow:
         manager.extract_company_leadership(company_with_linkedin)
 
         # Should still have only 1 record
-        repo = LeadershipRepository(tmp_db)
+        repo = LeadershipRepository(tmp_db, "test-user")
         leaders = repo.get_leadership_for_company(company_with_linkedin)
         assert len(leaders) == 1
 
@@ -218,7 +218,7 @@ class TestLeadershipExtractionWorkflow:
         assert any(c.get("severity") == "critical" for c in departures)
 
         # Old CEO should be marked not current
-        repo = LeadershipRepository(tmp_db)
+        repo = LeadershipRepository(tmp_db, "test-user")
         current = repo.get_current_leadership(company_with_linkedin)
         old_ceo = [
             leader for leader in current if "old-ceo" in leader.get("linkedin_profile_url", "")

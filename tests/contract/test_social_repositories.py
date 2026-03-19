@@ -62,7 +62,7 @@ class TestSocialSnapshotRepository:
 
     def test_store_and_retrieve_snapshot(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SocialSnapshotRepository(db)
+        repo = SocialSnapshotRepository(db, "test-user")
 
         data = _make_social_snapshot(company_id, latest_post_date="2025-06-01")
         snapshot_id = repo.store_snapshot(data)
@@ -77,7 +77,7 @@ class TestSocialSnapshotRepository:
     def test_accumulates_history(self, db_with_company: DbWithCompany) -> None:
         """Multiple snapshots for the same source URL accumulate (no unique constraint)."""
         db, company_id = db_with_company
-        repo = SocialSnapshotRepository(db)
+        repo = SocialSnapshotRepository(db, "test-user")
 
         snap1 = _make_social_snapshot(company_id, captured_at=_past_iso(2), checksum="aaa")
         snap2 = _make_social_snapshot(company_id, captured_at=_past_iso(1), checksum="bbb")
@@ -96,7 +96,7 @@ class TestSocialSnapshotRepository:
         self, db_with_company: DbWithCompany
     ) -> None:
         db, company_id = db_with_company
-        repo = SocialSnapshotRepository(db)
+        repo = SocialSnapshotRepository(db, "test-user")
 
         repo.store_snapshot(_make_social_snapshot(company_id, source_url="https://medium.com/@co"))
         repo.store_snapshot(
@@ -110,7 +110,7 @@ class TestSocialSnapshotRepository:
 
     def test_get_all_sources_for_company(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SocialSnapshotRepository(db)
+        repo = SocialSnapshotRepository(db, "test-user")
 
         # Two sources, each with 2 snapshots
         repo.store_snapshot(
@@ -157,7 +157,7 @@ class TestSocialSnapshotRepository:
 
     def test_get_companies_with_multiple_snapshots(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SocialSnapshotRepository(db)
+        repo = SocialSnapshotRepository(db, "test-user")
 
         # Only one snapshot -- should NOT appear
         repo.store_snapshot(
@@ -195,7 +195,7 @@ class TestSocialSnapshotRepository:
     def test_error_snapshot(self, db_with_company: DbWithCompany) -> None:
         """Snapshots with errors can be stored."""
         db, company_id = db_with_company
-        repo = SocialSnapshotRepository(db)
+        repo = SocialSnapshotRepository(db, "test-user")
 
         data = _make_social_snapshot(company_id)
         data["status_code"] = 500
@@ -222,7 +222,7 @@ class TestSocialChangeRecordRepository:
 
     def _insert_two_snapshots(self, db: Database, company_id: int) -> tuple[int, int]:
         """Insert two social snapshots and return their IDs."""
-        snap_repo = SocialSnapshotRepository(db)
+        snap_repo = SocialSnapshotRepository(db, "test-user")
         id_old = snap_repo.store_snapshot(
             _make_social_snapshot(company_id, captured_at=_past_iso(1), checksum="old_hash")
         )
@@ -233,7 +233,7 @@ class TestSocialChangeRecordRepository:
 
     def test_store_and_retrieve_change_record(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SocialChangeRecordRepository(db)
+        repo = SocialChangeRecordRepository(db, "test-user")
         snap_old, snap_new = self._insert_two_snapshots(db, company_id)
 
         record_id = repo.store_change_record(
@@ -268,7 +268,7 @@ class TestSocialChangeRecordRepository:
 
     def test_get_significant_changes(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SocialChangeRecordRepository(db)
+        repo = SocialChangeRecordRepository(db, "test-user")
         snap_old, snap_new = self._insert_two_snapshots(db, company_id)
 
         # Significant change
@@ -293,7 +293,7 @@ class TestSocialChangeRecordRepository:
         )
 
         # Insignificant change (should not appear)
-        snap_old2 = SocialSnapshotRepository(db).store_snapshot(
+        snap_old2 = SocialSnapshotRepository(db, "test-user").store_snapshot(
             _make_social_snapshot(
                 company_id,
                 source_url="https://co.com/blog",
@@ -302,7 +302,7 @@ class TestSocialChangeRecordRepository:
                 checksum="aaa",
             )
         )
-        snap_new2 = SocialSnapshotRepository(db).store_snapshot(
+        snap_new2 = SocialSnapshotRepository(db, "test-user").store_snapshot(
             _make_social_snapshot(
                 company_id,
                 source_url="https://co.com/blog",
@@ -336,7 +336,7 @@ class TestSocialChangeRecordRepository:
 
     def test_get_significant_changes_sentiment_filter(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SocialChangeRecordRepository(db)
+        repo = SocialChangeRecordRepository(db, "test-user")
         snap_old, snap_new = self._insert_two_snapshots(db, company_id)
 
         repo.store_change_record(
@@ -365,7 +365,7 @@ class TestSocialChangeRecordRepository:
     def test_json_deserialization(self, db_with_company: DbWithCompany) -> None:
         """JSON fields are properly deserialized from the database."""
         db, company_id = db_with_company
-        repo = SocialChangeRecordRepository(db)
+        repo = SocialChangeRecordRepository(db, "test-user")
         snap_old, snap_new = self._insert_two_snapshots(db, company_id)
 
         repo.store_change_record(
@@ -393,7 +393,7 @@ class TestSocialChangeRecordRepository:
 
     def test_empty_json_fields_default_to_empty_list(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SocialChangeRecordRepository(db)
+        repo = SocialChangeRecordRepository(db, "test-user")
         snap_old, snap_new = self._insert_two_snapshots(db, company_id)
 
         repo.store_change_record(

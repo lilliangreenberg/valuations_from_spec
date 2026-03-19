@@ -29,7 +29,7 @@ def tmp_db(tmp_path: Any) -> Database:
 @pytest.fixture
 def leadership_repo(tmp_db: Database) -> LeadershipRepository:
     """Create a leadership repository with temp database."""
-    return LeadershipRepository(tmp_db)
+    return LeadershipRepository(tmp_db, "test-user")
 
 
 @pytest.fixture
@@ -317,9 +317,9 @@ class TestLeadershipManagerContract:
         )
         from src.repositories.company_repository import CompanyRepository
 
-        leadership_repo = LeadershipRepository(tmp_db)
-        social_repo = SocialMediaLinkRepository(tmp_db)
-        company_repo = CompanyRepository(tmp_db)
+        leadership_repo = LeadershipRepository(tmp_db, "test-user")
+        social_repo = SocialMediaLinkRepository(tmp_db, "test-user")
+        company_repo = CompanyRepository(tmp_db, "test-user")
 
         manager = LeadershipManager(
             linkedin_browser=mock_browser,
@@ -388,9 +388,9 @@ class TestLeadershipManagerContract:
         )
         from src.repositories.company_repository import CompanyRepository
 
-        leadership_repo = LeadershipRepository(tmp_db)
-        social_repo = SocialMediaLinkRepository(tmp_db)
-        company_repo = CompanyRepository(tmp_db)
+        leadership_repo = LeadershipRepository(tmp_db, "test-user")
+        social_repo = SocialMediaLinkRepository(tmp_db, "test-user")
+        company_repo = CompanyRepository(tmp_db, "test-user")
 
         manager = LeadershipManager(
             linkedin_browser=mock_browser,
@@ -431,9 +431,9 @@ class TestLeadershipManagerContract:
         )
         from src.repositories.company_repository import CompanyRepository
 
-        leadership_repo = LeadershipRepository(tmp_db)
-        social_repo = SocialMediaLinkRepository(tmp_db)
-        company_repo = CompanyRepository(tmp_db)
+        leadership_repo = LeadershipRepository(tmp_db, "test-user")
+        social_repo = SocialMediaLinkRepository(tmp_db, "test-user")
+        company_repo = CompanyRepository(tmp_db, "test-user")
 
         manager = LeadershipManager(
             linkedin_browser=mock_browser,

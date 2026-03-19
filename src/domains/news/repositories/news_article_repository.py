@@ -16,8 +16,9 @@ logger = structlog.get_logger(__name__)
 class NewsArticleRepository:
     """Repository for news article data access."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, operator: str) -> None:
         self.db = db
+        self.operator = operator
 
     def store_news_article(self, data: dict[str, Any]) -> int:
         """Store a news article. Returns article ID."""
@@ -29,8 +30,8 @@ class NewsArticleRepository:
                     logo_similarity, company_match_snippet, keyword_match_snippet,
                     significance_classification, significance_sentiment,
                     significance_confidence, matched_keywords, matched_categories,
-                    significance_notes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    significance_notes, performed_by)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     data["company_id"],
                     data["title"],
@@ -49,6 +50,7 @@ class NewsArticleRepository:
                     json.dumps(data.get("matched_keywords", [])),
                     json.dumps(data.get("matched_categories", [])),
                     data.get("significance_notes"),
+                    self.operator,
                 ),
             )
             self.db.connection.commit()
