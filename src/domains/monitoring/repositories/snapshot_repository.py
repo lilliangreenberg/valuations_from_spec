@@ -16,8 +16,9 @@ logger = structlog.get_logger(__name__)
 class SnapshotRepository:
     """Repository for snapshot data access."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, operator: str) -> None:
         self.db = db
+        self.operator = operator
 
     def store_snapshot(self, data: dict[str, Any]) -> int:
         """Store a new snapshot. Returns snapshot ID."""
@@ -25,8 +26,8 @@ class SnapshotRepository:
             """INSERT INTO snapshots
                (company_id, url, content_markdown, content_html, status_code,
                 captured_at, has_paywall, has_auth_required, error_message,
-                content_checksum, http_last_modified, capture_metadata)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                content_checksum, http_last_modified, capture_metadata, performed_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["company_id"],
                 data["url"],
@@ -40,6 +41,7 @@ class SnapshotRepository:
                 data.get("content_checksum"),
                 data.get("http_last_modified"),
                 data.get("capture_metadata"),
+                self.operator,
             ),
         )
         self.db.connection.commit()

@@ -146,7 +146,7 @@ class TestExtractionSnapshotChangeWorkflow:
             "recLINK2": "Beta Inc",
         }
 
-        company_repo = CompanyRepository(db)
+        company_repo = CompanyRepository(db, "test-user")
         extractor = CompanyExtractor(mock_airtable, company_repo)
         extract_summary = extractor.extract_companies()
 
@@ -171,7 +171,7 @@ class TestExtractionSnapshotChangeWorkflow:
 
         mock_firecrawl.capture_snapshot.side_effect = first_round_capture
 
-        snapshot_repo = SnapshotRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
         manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
         snap1_summary = manager.capture_all_snapshots()
 
@@ -196,7 +196,7 @@ class TestExtractionSnapshotChangeWorkflow:
         assert snap2_summary["successful"] == 2
 
         # --- Step 4: Detect changes ---
-        change_repo = ChangeRecordRepository(db)
+        change_repo = ChangeRecordRepository(db, "test-user")
         detector = ChangeDetector(snapshot_repo, change_repo, company_repo)
         change_summary = detector.detect_all_changes()
 
@@ -273,8 +273,8 @@ class TestSocialMediaDiscoveryWorkflow:
             "errors": [],
         }
 
-        social_repo = SocialMediaLinkRepository(db)
-        company_repo = CompanyRepository(db)
+        social_repo = SocialMediaLinkRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         discovery = SocialMediaDiscovery(mock_firecrawl, social_repo, company_repo)
 
         summary = discovery.discover_all(batch_size=50)
@@ -328,9 +328,9 @@ class TestNewsMonitoringWorkflow:
             },
         ]
 
-        news_repo = NewsArticleRepository(db)
-        company_repo = CompanyRepository(db)
-        snapshot_repo = SnapshotRepository(db)
+        news_repo = NewsArticleRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
+        snapshot_repo = SnapshotRepository(db, "test-user")
         manager = NewsMonitorManager(mock_kagi, news_repo, company_repo, snapshot_repo)
 
         result = manager.search_company_news(company_id=cid)
@@ -361,9 +361,9 @@ class TestNewsMonitoringWorkflow:
         mock_kagi = MagicMock()
         mock_kagi.search.return_value = kagi_results
 
-        news_repo = NewsArticleRepository(db)
-        company_repo = CompanyRepository(db)
-        snapshot_repo = SnapshotRepository(db)
+        news_repo = NewsArticleRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
+        snapshot_repo = SnapshotRepository(db, "test-user")
         manager = NewsMonitorManager(mock_kagi, news_repo, company_repo, snapshot_repo)
 
         # First run
@@ -400,9 +400,9 @@ class TestStatusAnalysisWorkflow:
             f"All rights reserved.",
         )
 
-        snapshot_repo = SnapshotRepository(db)
-        status_repo = CompanyStatusRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        status_repo = CompanyStatusRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = StatusAnalyzer(snapshot_repo, status_repo, company_repo)
 
         summary = analyzer.analyze_all_statuses()
@@ -427,9 +427,9 @@ class TestStatusAnalysisWorkflow:
             f"BigTech.\n\nCopyright {current_year} Old Corp.",
         )
 
-        snapshot_repo = SnapshotRepository(db)
-        status_repo = CompanyStatusRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        status_repo = CompanyStatusRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = StatusAnalyzer(snapshot_repo, status_repo, company_repo)
 
         summary = analyzer.analyze_all_statuses()
@@ -462,9 +462,9 @@ class TestStatusAnalysisWorkflow:
         cid3 = _insert_company(db, "No Snap Corp", "https://nosnap.com")
         # No snapshot for cid3
 
-        snapshot_repo = SnapshotRepository(db)
-        status_repo = CompanyStatusRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        status_repo = CompanyStatusRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = StatusAnalyzer(snapshot_repo, status_repo, company_repo)
 
         summary = analyzer.analyze_all_statuses()
@@ -522,9 +522,9 @@ class TestSignificanceBackfillWorkflow:
         )
         db.connection.commit()
 
-        change_repo = ChangeRecordRepository(db)
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        change_repo = ChangeRecordRepository(db, "test-user")
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = SignificanceAnalyzer(change_repo, snapshot_repo, company_repo)
 
         summary = analyzer.backfill_significance()
@@ -568,9 +568,9 @@ class TestSignificanceBackfillWorkflow:
         db.connection.commit()
         record_id = cursor.lastrowid
 
-        change_repo = ChangeRecordRepository(db)
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        change_repo = ChangeRecordRepository(db, "test-user")
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = SignificanceAnalyzer(change_repo, snapshot_repo, company_repo)
 
         summary = analyzer.backfill_significance(dry_run=True)
@@ -615,9 +615,9 @@ class TestSignificanceBackfillWorkflow:
         )
         db.connection.commit()
 
-        change_repo = ChangeRecordRepository(db)
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        change_repo = ChangeRecordRepository(db, "test-user")
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = SignificanceAnalyzer(change_repo, snapshot_repo, company_repo)
 
         summary = analyzer.backfill_significance()
@@ -642,9 +642,9 @@ class TestSignificanceBackfillWorkflow:
             captured_at="2025-02-01T00:00:00+00:00",
         )
 
-        snapshot_repo = SnapshotRepository(db)
-        change_repo = ChangeRecordRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        change_repo = ChangeRecordRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
 
         # Step 1: Detect changes (which also runs significance)
         detector = ChangeDetector(snapshot_repo, change_repo, company_repo)
@@ -653,7 +653,7 @@ class TestSignificanceBackfillWorkflow:
         assert detect_summary["changes_found"] >= 1
 
         # Step 2: Backfill should find nothing to do
-        company_repo = CompanyRepository(db)
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = SignificanceAnalyzer(change_repo, snapshot_repo, company_repo)
         analyzer.backfill_significance()
 
@@ -677,8 +677,8 @@ class TestBaselineSignalWorkflow:
         db = workflow_db
         cid = _insert_company(db, "New Corp", "https://newcorp.com")
 
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
 
         # Mock firecrawl client
         mock_firecrawl = MagicMock()
@@ -713,7 +713,7 @@ class TestBaselineSignalWorkflow:
         snap_id = _insert_snapshot(
             db, cid, "# Old content", captured_at="2025-01-01T00:00:00+00:00"
         )
-        snapshot_repo = SnapshotRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
         snapshot_repo.update_baseline(
             snap_id,
             {
@@ -726,7 +726,7 @@ class TestBaselineSignalWorkflow:
             },
         )
 
-        company_repo = CompanyRepository(db)
+        company_repo = CompanyRepository(db, "test-user")
 
         mock_firecrawl = MagicMock()
         mock_firecrawl.capture_snapshot.return_value = {
@@ -772,10 +772,10 @@ class TestBaselineSignalWorkflow:
             captured_at="2025-01-01T00:00:00+00:00",
         )
 
-        snapshot_repo = SnapshotRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
         from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
 
-        company_repo = CompanyRepository(db)
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = BaselineAnalyzer(snapshot_repo, company_repo)
         summary = analyzer.backfill_baselines()
 
@@ -809,10 +809,10 @@ class TestBaselineSignalWorkflow:
         )
 
         # Run baseline on first snapshot
-        snapshot_repo = SnapshotRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
         from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
 
-        company_repo = CompanyRepository(db)
+        company_repo = CompanyRepository(db, "test-user")
         baseline = BaselineAnalyzer(snapshot_repo, company_repo)
         first_snaps = snapshot_repo.get_snapshots_for_company(cid)
         baseline.analyze_baseline_for_snapshot(first_snaps[0]["id"])
@@ -823,8 +823,8 @@ class TestBaselineSignalWorkflow:
         assert first_snap["baseline_classification"] is not None
 
         # Run change detection -- should NOT flag boilerplate keywords
-        change_repo = ChangeRecordRepository(db)
-        company_repo = CompanyRepository(db)
+        change_repo = ChangeRecordRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         detector = ChangeDetector(snapshot_repo, change_repo, company_repo)
         detector.detect_all_changes()
 

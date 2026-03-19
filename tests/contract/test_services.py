@@ -148,8 +148,8 @@ class TestSnapshotManager:
             "error": None,
         }
 
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
 
         summary = manager.capture_all_snapshots()
@@ -184,8 +184,8 @@ class TestSnapshotManager:
             },
         ]
 
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
 
         summary = manager.capture_all_snapshots()
@@ -211,8 +211,8 @@ class TestSnapshotManager:
             "error": None,
         }
 
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
 
         summary = manager.capture_all_snapshots()
@@ -220,7 +220,6 @@ class TestSnapshotManager:
         # get_companies_with_homepage excludes NULL homepage_url
         assert mock_firecrawl.capture_snapshot.call_count == 1
         assert summary["successful"] == 1
-
 
     def test_captures_single_company_snapshot(self, db: Database) -> None:
         """capture_snapshot_for_company captures a snapshot for one company."""
@@ -239,8 +238,8 @@ class TestSnapshotManager:
             "error": None,
         }
 
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
 
         summary = manager.capture_snapshot_for_company(cid)
@@ -256,8 +255,8 @@ class TestSnapshotManager:
     def test_single_company_not_found_raises(self, db: Database) -> None:
         """capture_snapshot_for_company raises ValueError for missing company."""
         mock_firecrawl = MagicMock()
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
 
         import pytest
@@ -270,8 +269,8 @@ class TestSnapshotManager:
         cid = _insert_company(db, "No URL Corp", None)
 
         mock_firecrawl = MagicMock()
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
 
         import pytest
@@ -286,8 +285,8 @@ class TestSnapshotManager:
         mock_firecrawl = MagicMock()
         mock_firecrawl.capture_snapshot.side_effect = ConnectionError("timeout")
 
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
 
         summary = manager.capture_snapshot_for_company(cid)
@@ -332,8 +331,8 @@ class TestBatchSnapshotManager:
             "errors": [],
         }
 
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         manager = BatchSnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
 
         summary = manager.capture_batch_snapshots(batch_size=10)
@@ -360,8 +359,8 @@ class TestBatchSnapshotManager:
             "errors": ["Batch timeout"],
         }
 
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         manager = BatchSnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
 
         summary = manager.capture_batch_snapshots(batch_size=10)
@@ -390,8 +389,8 @@ class TestBatchSnapshotManager:
             "errors": [],
         }
 
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         manager = BatchSnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
 
         summary = manager.capture_batch_snapshots(batch_size=10)
@@ -434,7 +433,7 @@ class TestCompanyExtractor:
             "recDEF": "Beta Inc",
         }
 
-        company_repo = CompanyRepository(db)
+        company_repo = CompanyRepository(db, "test-user")
         extractor = CompanyExtractor(mock_airtable, company_repo)
 
         summary = extractor.extract_companies()
@@ -461,7 +460,7 @@ class TestCompanyExtractor:
         ]
         mock_airtable.build_company_name_lookup.return_value = {}
 
-        company_repo = CompanyRepository(db)
+        company_repo = CompanyRepository(db, "test-user")
         extractor = CompanyExtractor(mock_airtable, company_repo)
 
         summary = extractor.extract_companies()
@@ -486,7 +485,7 @@ class TestCompanyExtractor:
             "recLINKED123": "Linked Corp",
         }
 
-        company_repo = CompanyRepository(db)
+        company_repo = CompanyRepository(db, "test-user")
         extractor = CompanyExtractor(mock_airtable, company_repo)
 
         summary = extractor.extract_companies()
@@ -512,7 +511,7 @@ class TestCompanyExtractor:
         ]
         mock_airtable.build_company_name_lookup.return_value = {"recABC": "Test Co"}
 
-        company_repo = CompanyRepository(db)
+        company_repo = CompanyRepository(db, "test-user")
         extractor = CompanyExtractor(mock_airtable, company_repo)
 
         summary = extractor.extract_companies()
@@ -545,9 +544,9 @@ class TestChangeDetector:
             captured_at="2025-02-01T00:00:00+00:00",
         )
 
-        snapshot_repo = SnapshotRepository(db)
-        change_repo = ChangeRecordRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        change_repo = ChangeRecordRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         detector = ChangeDetector(snapshot_repo, change_repo, company_repo)
 
         summary = detector.detect_all_changes()
@@ -577,9 +576,9 @@ class TestChangeDetector:
             captured_at="2025-02-01T00:00:00+00:00",
         )
 
-        snapshot_repo = SnapshotRepository(db)
-        change_repo = ChangeRecordRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        change_repo = ChangeRecordRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         detector = ChangeDetector(snapshot_repo, change_repo, company_repo)
 
         summary = detector.detect_all_changes()
@@ -606,9 +605,9 @@ class TestChangeDetector:
             captured_at="2025-02-01T00:00:00+00:00",
         )
 
-        snapshot_repo = SnapshotRepository(db)
-        change_repo = ChangeRecordRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        change_repo = ChangeRecordRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         detector = ChangeDetector(snapshot_repo, change_repo, company_repo)
 
         detector.detect_all_changes()
@@ -654,9 +653,9 @@ class TestSignificanceAnalyzer:
             significance_classification=None,
         )
 
-        change_repo = ChangeRecordRepository(db)
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        change_repo = ChangeRecordRepository(db, "test-user")
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = SignificanceAnalyzer(change_repo, snapshot_repo, company_repo)
 
         summary = analyzer.backfill_significance()
@@ -691,9 +690,9 @@ class TestSignificanceAnalyzer:
             significance_classification=None,
         )
 
-        change_repo = ChangeRecordRepository(db)
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        change_repo = ChangeRecordRepository(db, "test-user")
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = SignificanceAnalyzer(change_repo, snapshot_repo, company_repo)
 
         summary = analyzer.backfill_significance(dry_run=True)
@@ -733,9 +732,9 @@ class TestDiffBasedSignificance:
             captured_at="2025-02-01T00:00:00+00:00",
         )
 
-        snapshot_repo = SnapshotRepository(db)
-        change_repo = ChangeRecordRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        change_repo = ChangeRecordRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         detector = ChangeDetector(snapshot_repo, change_repo, company_repo)
 
         detector.detect_all_changes()
@@ -770,9 +769,9 @@ class TestDiffBasedSignificance:
             captured_at="2025-02-01T00:00:00+00:00",
         )
 
-        snapshot_repo = SnapshotRepository(db)
-        change_repo = ChangeRecordRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        change_repo = ChangeRecordRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         detector = ChangeDetector(snapshot_repo, change_repo, company_repo)
 
         detector.detect_all_changes()
@@ -809,9 +808,9 @@ class TestDiffBasedSignificance:
             significance_classification=None,
         )
 
-        change_repo = ChangeRecordRepository(db)
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        change_repo = ChangeRecordRepository(db, "test-user")
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = SignificanceAnalyzer(change_repo, snapshot_repo, company_repo)
 
         analyzer.backfill_significance()
@@ -840,10 +839,10 @@ class TestBaselineAnalyzer:
             captured_at="2025-01-01T00:00:00+00:00",
         )
 
-        snapshot_repo = SnapshotRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
         from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
 
-        company_repo = CompanyRepository(db)
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = BaselineAnalyzer(snapshot_repo, company_repo)
         result = analyzer.analyze_baseline_for_snapshot(snap_id)
 
@@ -866,10 +865,10 @@ class TestBaselineAnalyzer:
             captured_at="2025-01-01T00:00:00+00:00",
         )
 
-        snapshot_repo = SnapshotRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
         from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
 
-        company_repo = CompanyRepository(db)
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = BaselineAnalyzer(snapshot_repo, company_repo)
 
         # First run -- should compute baseline
@@ -887,10 +886,10 @@ class TestBaselineAnalyzer:
         _insert_snapshot(db, cid1, "# Company A page", captured_at="2025-01-01T00:00:00+00:00")
         _insert_snapshot(db, cid2, "# Company B page", captured_at="2025-01-01T00:00:00+00:00")
 
-        snapshot_repo = SnapshotRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
         from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
 
-        company_repo = CompanyRepository(db)
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = BaselineAnalyzer(snapshot_repo, company_repo)
         summary = analyzer.backfill_baselines()
 
@@ -903,10 +902,10 @@ class TestBaselineAnalyzer:
             db, cid, "# Dry Corp content", captured_at="2025-01-01T00:00:00+00:00"
         )
 
-        snapshot_repo = SnapshotRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
         from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
 
-        company_repo = CompanyRepository(db)
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = BaselineAnalyzer(snapshot_repo, company_repo)
         summary = analyzer.backfill_baselines(dry_run=True)
 
@@ -935,9 +934,9 @@ class TestStatusAnalyzer:
             f"# Active Corp\n\nWelcome.\n\nCopyright {current_year} Active Corp.",
         )
 
-        snapshot_repo = SnapshotRepository(db)
-        status_repo = CompanyStatusRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        status_repo = CompanyStatusRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = StatusAnalyzer(snapshot_repo, status_repo, company_repo)
 
         summary = analyzer.analyze_all_statuses()
@@ -959,9 +958,9 @@ class TestStatusAnalyzer:
             f"Copyright {current_year} Acquired Corp.",
         )
 
-        snapshot_repo = SnapshotRepository(db)
-        status_repo = CompanyStatusRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        status_repo = CompanyStatusRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = StatusAnalyzer(snapshot_repo, status_repo, company_repo)
 
         summary = analyzer.analyze_all_statuses()
@@ -976,9 +975,9 @@ class TestStatusAnalyzer:
         """Companies without any snapshots are skipped."""
         _insert_company(db, "Empty Corp", "https://empty.com")
 
-        snapshot_repo = SnapshotRepository(db)
-        status_repo = CompanyStatusRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        status_repo = CompanyStatusRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         analyzer = StatusAnalyzer(snapshot_repo, status_repo, company_repo)
 
         summary = analyzer.analyze_all_statuses()
@@ -1012,8 +1011,8 @@ class TestSocialMediaDiscovery:
             "error": None,
         }
 
-        social_repo = SocialMediaLinkRepository(db)
-        company_repo = CompanyRepository(db)
+        social_repo = SocialMediaLinkRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         discovery = SocialMediaDiscovery(mock_firecrawl, social_repo, company_repo)
 
         summary = discovery.discover_all(company_id=cid)
@@ -1040,8 +1039,8 @@ class TestSocialMediaDiscovery:
             "error": None,
         }
 
-        social_repo = SocialMediaLinkRepository(db)
-        company_repo = CompanyRepository(db)
+        social_repo = SocialMediaLinkRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         discovery = SocialMediaDiscovery(mock_firecrawl, social_repo, company_repo)
 
         summary = discovery.discover_all(company_id=cid)
@@ -1083,8 +1082,8 @@ class TestSocialMediaDiscovery:
             "errors": [],
         }
 
-        social_repo = SocialMediaLinkRepository(db)
-        company_repo = CompanyRepository(db)
+        social_repo = SocialMediaLinkRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         discovery = SocialMediaDiscovery(mock_firecrawl, social_repo, company_repo)
 
         summary = discovery.discover_all(batch_size=50)
@@ -1468,9 +1467,9 @@ class TestNewsMonitorManager:
             },
         ]
 
-        news_repo = NewsArticleRepository(db)
-        company_repo = CompanyRepository(db)
-        snapshot_repo = SnapshotRepository(db)
+        news_repo = NewsArticleRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
+        snapshot_repo = SnapshotRepository(db, "test-user")
         manager = NewsMonitorManager(mock_kagi, news_repo, company_repo, snapshot_repo)
 
         result = manager.search_company_news(company_id=cid)
@@ -1488,7 +1487,7 @@ class TestNewsMonitorManager:
         cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
 
         now = datetime.now(UTC).isoformat()
-        news_repo = NewsArticleRepository(db)
+        news_repo = NewsArticleRepository(db, "test-user")
         news_repo.store_news_article(
             {
                 "company_id": cid,
@@ -1513,8 +1512,8 @@ class TestNewsMonitorManager:
             },
         ]
 
-        company_repo = CompanyRepository(db)
-        snapshot_repo = SnapshotRepository(db)
+        company_repo = CompanyRepository(db, "test-user")
+        snapshot_repo = SnapshotRepository(db, "test-user")
         manager = NewsMonitorManager(mock_kagi, news_repo, company_repo, snapshot_repo)
 
         result = manager.search_company_news(company_id=cid)
@@ -1540,9 +1539,9 @@ class TestNewsMonitorManager:
         mock_kagi = MagicMock()
         mock_kagi.search.return_value = []
 
-        news_repo = NewsArticleRepository(db)
-        company_repo = CompanyRepository(db)
-        snapshot_repo = SnapshotRepository(db)
+        news_repo = NewsArticleRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
+        snapshot_repo = SnapshotRepository(db, "test-user")
         manager = NewsMonitorManager(mock_kagi, news_repo, company_repo, snapshot_repo)
 
         manager.search_company_news(company_id=cid)
@@ -1558,9 +1557,9 @@ class TestNewsMonitorManager:
         mock_kagi = MagicMock()
         mock_kagi.search.return_value = []
 
-        news_repo = NewsArticleRepository(db)
-        company_repo = CompanyRepository(db)
-        snapshot_repo = SnapshotRepository(db)
+        news_repo = NewsArticleRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
+        snapshot_repo = SnapshotRepository(db, "test-user")
         manager = NewsMonitorManager(mock_kagi, news_repo, company_repo, snapshot_repo)
 
         manager.search_company_news(company_id=cid)
@@ -1707,7 +1706,7 @@ class TestBrandingLogoProcessor:
         )
 
         cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
-        logo_repo = SocialMediaLinkRepository(db)
+        logo_repo = SocialMediaLinkRepository(db, "test-user")
         processor = BrandingLogoProcessor(logo_repo)
 
         # Create a valid small PNG image
@@ -1752,7 +1751,7 @@ class TestBrandingLogoProcessor:
         )
 
         cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
-        logo_repo = SocialMediaLinkRepository(db)
+        logo_repo = SocialMediaLinkRepository(db, "test-user")
         processor = BrandingLogoProcessor(logo_repo)
 
         branding = SimpleNamespace(logo=None, images=None)
@@ -1774,7 +1773,7 @@ class TestBrandingLogoProcessor:
         )
 
         cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
-        logo_repo = SocialMediaLinkRepository(db)
+        logo_repo = SocialMediaLinkRepository(db, "test-user")
         processor = BrandingLogoProcessor(logo_repo)
 
         branding = SimpleNamespace(
@@ -1804,7 +1803,7 @@ class TestBrandingLogoProcessor:
         )
 
         cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
-        logo_repo = SocialMediaLinkRepository(db)
+        logo_repo = SocialMediaLinkRepository(db, "test-user")
         processor = BrandingLogoProcessor(logo_repo)
 
         mock_response = MagicMock()
@@ -1832,7 +1831,7 @@ class TestBrandingLogoProcessor:
         )
 
         cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
-        logo_repo = SocialMediaLinkRepository(db)
+        logo_repo = SocialMediaLinkRepository(db, "test-user")
         processor = BrandingLogoProcessor(logo_repo)
 
         # Insert a logo directly
@@ -1859,7 +1858,7 @@ class TestBrandingLogoProcessor:
         )
 
         cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
-        logo_repo = SocialMediaLinkRepository(db)
+        logo_repo = SocialMediaLinkRepository(db, "test-user")
         processor = BrandingLogoProcessor(logo_repo)
 
         assert processor.company_has_logo(cid) is False
@@ -1889,7 +1888,7 @@ class TestSnapshotManagerBrandingIntegration:
         )
 
         cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
-        logo_repo = SocialMediaLinkRepository(db)
+        logo_repo = SocialMediaLinkRepository(db, "test-user")
         logo_processor = BrandingLogoProcessor(logo_repo)
 
         # Create valid PNG for download mock
@@ -1921,8 +1920,8 @@ class TestSnapshotManagerBrandingIntegration:
             "branding": branding_data,
         }
 
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         manager = SnapshotManager(
             mock_firecrawl,
             snapshot_repo,
@@ -1952,7 +1951,7 @@ class TestSnapshotManagerBrandingIntegration:
         )
 
         cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
-        logo_repo = SocialMediaLinkRepository(db)
+        logo_repo = SocialMediaLinkRepository(db, "test-user")
         logo_processor = BrandingLogoProcessor(logo_repo)
 
         # Pre-insert a logo
@@ -1988,8 +1987,8 @@ class TestSnapshotManagerBrandingIntegration:
             "branding": branding_data,
         }
 
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         manager = SnapshotManager(
             mock_firecrawl,
             snapshot_repo,
@@ -2028,8 +2027,8 @@ class TestSnapshotManagerBrandingIntegration:
             "branding": None,
         }
 
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         # No logo_processor passed (default None)
         manager = SnapshotManager(mock_firecrawl, snapshot_repo, company_repo)
 
@@ -2058,7 +2057,7 @@ class TestBatchSnapshotManagerBrandingIntegration:
         )
 
         cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
-        logo_repo = SocialMediaLinkRepository(db)
+        logo_repo = SocialMediaLinkRepository(db, "test-user")
         logo_processor = BrandingLogoProcessor(logo_repo)
 
         # Create valid PNG
@@ -2095,8 +2094,8 @@ class TestBatchSnapshotManagerBrandingIntegration:
             "errors": [],
         }
 
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         manager = BatchSnapshotManager(
             mock_firecrawl,
             snapshot_repo,
@@ -2125,7 +2124,7 @@ class TestBatchSnapshotManagerBrandingIntegration:
         )
 
         cid = _insert_company(db, "Alpha Inc", "https://alpha.com")
-        logo_repo = SocialMediaLinkRepository(db)
+        logo_repo = SocialMediaLinkRepository(db, "test-user")
         logo_processor = BrandingLogoProcessor(logo_repo)
 
         # Pre-insert a logo
@@ -2166,8 +2165,8 @@ class TestBatchSnapshotManagerBrandingIntegration:
             "errors": [],
         }
 
-        snapshot_repo = SnapshotRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
         manager = BatchSnapshotManager(
             mock_firecrawl,
             snapshot_repo,

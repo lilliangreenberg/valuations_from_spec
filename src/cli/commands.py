@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import getpass
 import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -35,7 +36,12 @@ def _get_db(config: Config) -> Database:
     return db
 
 
-def _get_manually_closed_ids(db: Database) -> set[int]:
+def _get_operator() -> str:
+    """Get the current operator's username for audit attribution."""
+    return getpass.getuser()
+
+
+def _get_manually_closed_ids(db: Database, operator: str) -> set[int]:
     """Get company IDs that have been manually set to likely_closed.
 
     These companies are excluded from batch operations by default.
@@ -44,7 +50,7 @@ def _get_manually_closed_ids(db: Database) -> set[int]:
         CompanyStatusRepository,
     )
 
-    status_repo = CompanyStatusRepository(db)
+    status_repo = CompanyStatusRepository(db, operator)
     closed_ids = status_repo.get_manually_closed_company_ids()
     if closed_ids:
         click.echo(f"[INFO] Excluding {len(closed_ids)} manually-closed companies")
@@ -80,8 +86,9 @@ def extract_companies() -> None:
     from src.services.airtable_client import AirtableClient
     from src.services.extractor import CompanyExtractor
 
+    operator = _get_operator()
     airtable = AirtableClient(config.airtable_api_key, config.airtable_base_id)
-    company_repo = CompanyRepository(db)
+    company_repo = CompanyRepository(db, operator)
     extractor = CompanyExtractor(airtable, company_repo)
 
     click.echo("[INFO] Extracting companies from Airtable...")
@@ -104,9 +111,10 @@ def import_urls() -> None:
     from src.services.airtable_client import AirtableClient
     from src.services.extractor import CompanyExtractor
 
+    operator = _get_operator()
     airtable = AirtableClient(config.airtable_api_key, config.airtable_base_id)
-    company_repo = CompanyRepository(db)
-    social_link_repo = SocialMediaLinkRepository(db)
+    company_repo = CompanyRepository(db, operator)
+    social_link_repo = SocialMediaLinkRepository(db, operator)
     extractor = CompanyExtractor(airtable, company_repo)
 
     click.echo("[INFO] Importing social media and blog URLs from Airtable...")
@@ -153,16 +161,17 @@ def capture_snapshots(
     from src.repositories.company_repository import CompanyRepository
     from src.services.firecrawl_client import FirecrawlClient
 
+    operator = _get_operator()
     firecrawl = FirecrawlClient(config.firecrawl_api_key)
-    snapshot_repo = SnapshotRepository(db)
-    company_repo = CompanyRepository(db)
-    logo_repo = SocialMediaLinkRepository(db)
+    snapshot_repo = SnapshotRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
+    logo_repo = SocialMediaLinkRepository(db, operator)
     logo_processor = BrandingLogoProcessor(logo_repo)
 
     # Build exclusion set from manually-closed companies and --skip-if-snapshot-since
     exclude_ids: set[int] | None = None
     if not include_manually_closed and company_id is None:
-        closed_ids = _get_manually_closed_ids(db)
+        closed_ids = _get_manually_closed_ids(db, operator)
         if closed_ids:
             exclude_ids = closed_ids
 
@@ -273,10 +282,11 @@ def detect_changes(
     from src.domains.monitoring.services.change_detector import ChangeDetector
     from src.repositories.company_repository import CompanyRepository
 
-    snapshot_repo = SnapshotRepository(db)
-    change_repo = ChangeRecordRepository(db)
-    company_repo = CompanyRepository(db)
-    status_repo = CompanyStatusRepository(db)
+    operator = _get_operator()
+    snapshot_repo = SnapshotRepository(db, operator)
+    change_repo = ChangeRecordRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
+    status_repo = CompanyStatusRepository(db, operator)
 
     llm_client = None
     if config.llm_validation_enabled and config.anthropic_api_key:
@@ -290,7 +300,7 @@ def detect_changes(
             SocialSnapshotRepository,
         )
 
-        social_snapshot_repo = SocialSnapshotRepository(db)
+        social_snapshot_repo = SocialSnapshotRepository(db, operator)
 
     detector = ChangeDetector(
         snapshot_repo,
@@ -304,7 +314,7 @@ def detect_changes(
 
     exclude_ids: set[int] | None = None
     if not include_manually_closed and not company_ids:
-        exclude_ids = _get_manually_closed_ids(db) or None
+        exclude_ids = _get_manually_closed_ids(db, operator) or None
 
     click.echo("[INFO] Detecting changes...")
     result = detector.detect_all_changes(
@@ -357,9 +367,10 @@ def analyze_status(
     from src.domains.monitoring.services.status_analyzer import StatusAnalyzer
     from src.repositories.company_repository import CompanyRepository
 
-    snapshot_repo = SnapshotRepository(db)
-    status_repo = CompanyStatusRepository(db)
-    company_repo = CompanyRepository(db)
+    operator = _get_operator()
+    snapshot_repo = SnapshotRepository(db, operator)
+    status_repo = CompanyStatusRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
 
     social_snapshot_repo = None
     if include_social:
@@ -367,7 +378,7 @@ def analyze_status(
             SocialSnapshotRepository,
         )
 
-        social_snapshot_repo = SocialSnapshotRepository(db)
+        social_snapshot_repo = SocialSnapshotRepository(db, operator)
         click.echo("[INFO] Including social media signals in status analysis...")
 
     analyzer = StatusAnalyzer(
@@ -400,9 +411,10 @@ def backfill_significance(batch_size: int, dry_run: bool) -> None:
     from src.domains.monitoring.services.significance_analyzer import SignificanceAnalyzer
     from src.repositories.company_repository import CompanyRepository
 
-    change_repo = ChangeRecordRepository(db)
-    snapshot_repo = SnapshotRepository(db)
-    company_repo = CompanyRepository(db)
+    operator = _get_operator()
+    change_repo = ChangeRecordRepository(db, operator)
+    snapshot_repo = SnapshotRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
 
     llm_client = None
     if config.llm_validation_enabled and config.anthropic_api_key:
@@ -439,7 +451,8 @@ def list_significant_changes(days: int, sentiment: str | None, min_confidence: f
         ChangeRecordRepository,
     )
 
-    change_repo = ChangeRecordRepository(db)
+    operator = _get_operator()
+    change_repo = ChangeRecordRepository(db, operator)
     records = change_repo.get_significant_changes(
         days=days, sentiment=sentiment, min_confidence=min_confidence
     )
@@ -476,7 +489,8 @@ def list_uncertain_changes(limit: int) -> None:
         ChangeRecordRepository,
     )
 
-    change_repo = ChangeRecordRepository(db)
+    operator = _get_operator()
+    change_repo = ChangeRecordRepository(db, operator)
     records = change_repo.get_uncertain_changes(limit=limit)
 
     if not records:
@@ -512,9 +526,10 @@ def show_changes(company_name: str) -> None:
     from src.domains.news.repositories.news_article_repository import NewsArticleRepository
     from src.repositories.company_repository import CompanyRepository
 
-    company_repo = CompanyRepository(db)
-    change_repo = ChangeRecordRepository(db)
-    news_repo = NewsArticleRepository(db)
+    operator = _get_operator()
+    company_repo = CompanyRepository(db, operator)
+    change_repo = ChangeRecordRepository(db, operator)
+    news_repo = NewsArticleRepository(db, operator)
 
     company = company_repo.get_company_by_name(company_name)
     if not company:
@@ -530,7 +545,7 @@ def show_changes(company_name: str) -> None:
     )
 
     records = change_repo.get_changes_for_company(company["id"])
-    social_change_repo = SocialChangeRecordRepository(db)
+    social_change_repo = SocialChangeRecordRepository(db, operator)
     social_changes = social_change_repo.get_changes_for_company(company["id"])
 
     # Build unified list of (detected_at, display_line) for chronological display
@@ -596,7 +611,8 @@ def show_status(company_name: str) -> None:
         CompanyStatusRepository,
     )
 
-    status_repo = CompanyStatusRepository(db)
+    operator = _get_operator()
+    status_repo = CompanyStatusRepository(db, operator)
     status = status_repo.get_status_by_company_name(company_name)
 
     if not status:
@@ -630,7 +646,8 @@ def set_company_notes(company_id: int | None, company_name: str | None, notes: s
 
     from src.repositories.company_repository import CompanyRepository
 
-    repo = CompanyRepository(db)
+    operator = _get_operator()
+    repo = CompanyRepository(db, operator)
     company: dict[str, Any] | None = None
 
     if company_id is not None:
@@ -667,7 +684,8 @@ def get_company_notes(company_id: int | None, company_name: str | None) -> None:
 
     from src.repositories.company_repository import CompanyRepository
 
-    repo = CompanyRepository(db)
+    operator = _get_operator()
+    repo = CompanyRepository(db, operator)
     company: dict[str, Any] | None = None
 
     if company_id is not None:
@@ -771,7 +789,8 @@ def show_social_links(company_id: int | None, company_name: str | None) -> None:
     )
     from src.repositories.company_repository import CompanyRepository
 
-    company_repo = CompanyRepository(db)
+    operator = _get_operator()
+    company_repo = CompanyRepository(db, operator)
 
     if company_name:
         company = company_repo.get_company_by_name(company_name)
@@ -791,7 +810,7 @@ def show_social_links(company_id: int | None, company_name: str | None) -> None:
         resolved_name = company["name"]
         homepage_url = company.get("homepage_url", "")
 
-    link_repo = SocialMediaLinkRepository(db)
+    link_repo = SocialMediaLinkRepository(db, operator)
     links = link_repo.get_links_for_company(company_id)  # type: ignore[arg-type]
     blogs = link_repo.get_blogs_for_company(company_id)  # type: ignore[arg-type]
 
@@ -861,14 +880,15 @@ def discover_social_media(
     from src.repositories.company_repository import CompanyRepository
     from src.services.firecrawl_client import FirecrawlClient
 
+    operator = _get_operator()
     firecrawl = FirecrawlClient(config.firecrawl_api_key)
-    social_repo = SocialMediaLinkRepository(db)
-    company_repo = CompanyRepository(db)
+    social_repo = SocialMediaLinkRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
     discovery = SocialMediaDiscovery(firecrawl, social_repo, company_repo)
 
     exclude_ids: set[int] | None = None
     if not include_manually_closed and company_id is None:
-        exclude_ids = _get_manually_closed_ids(db) or None
+        exclude_ids = _get_manually_closed_ids(db, operator) or None
 
     click.echo("[INFO] Discovering social media links...")
     result = discovery.discover_all(
@@ -882,7 +902,9 @@ def discover_social_media(
     # Chain CEO LinkedIn discovery (opt-out via --skip-ceo-search)
     if not skip_ceo_search and config.kagi_api_key:
         click.echo("\n[INFO] Running CEO LinkedIn discovery...")
-        ceo_discovery = _build_ceo_linkedin_discovery(db, config, social_repo, company_repo)
+        ceo_discovery = _build_ceo_linkedin_discovery(
+            db, config, operator, social_repo, company_repo
+        )
         ceo_result = ceo_discovery.discover_all(limit=limit, exclude_company_ids=exclude_ids)
         _print_summary("CEO LinkedIn discovery complete", ceo_result)
 
@@ -920,9 +942,10 @@ def discover_social_full_site(
     from src.repositories.company_repository import CompanyRepository
     from src.services.firecrawl_client import FirecrawlClient
 
+    operator = _get_operator()
     firecrawl = FirecrawlClient(config.firecrawl_api_key)
-    social_repo = SocialMediaLinkRepository(db)
-    company_repo = CompanyRepository(db)
+    social_repo = SocialMediaLinkRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
     discovery = FullSiteSocialDiscovery(firecrawl, social_repo, company_repo)
 
     click.echo(f"[INFO] Running full-site discovery for company {company_id}...")
@@ -964,9 +987,10 @@ def discover_social_batch(
     from src.repositories.company_repository import CompanyRepository
     from src.services.firecrawl_client import FirecrawlClient
 
+    operator = _get_operator()
     firecrawl = FirecrawlClient(config.firecrawl_api_key)
-    social_repo = SocialMediaLinkRepository(db)
-    company_repo = CompanyRepository(db)
+    social_repo = SocialMediaLinkRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
     full_site = FullSiteSocialDiscovery(firecrawl, social_repo, company_repo)
     batch_discovery = BatchSocialDiscovery(full_site)
 
@@ -1017,9 +1041,10 @@ def refresh_logos(
     from src.services.firecrawl_client import FirecrawlClient
     from src.utils.progress import ProgressTracker
 
+    operator = _get_operator()
     firecrawl = FirecrawlClient(config.firecrawl_api_key)
-    company_repo = CompanyRepository(db)
-    logo_repo = SocialMediaLinkRepository(db)
+    company_repo = CompanyRepository(db, operator)
+    logo_repo = SocialMediaLinkRepository(db, operator)
     logo_processor = BrandingLogoProcessor(logo_repo)
 
     companies = company_repo.get_companies_with_homepage()
@@ -1151,10 +1176,11 @@ def search_news(company_name: str | None, company_id: int | None) -> None:
     from src.domains.news.services.news_monitor_manager import NewsMonitorManager
     from src.repositories.company_repository import CompanyRepository
 
+    operator = _get_operator()
     kagi = KagiClient(config.kagi_api_key)
-    news_repo = NewsArticleRepository(db)
-    company_repo = CompanyRepository(db)
-    snapshot_repo = SnapshotRepository(db)
+    news_repo = NewsArticleRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
+    snapshot_repo = SnapshotRepository(db, operator)
 
     llm_client = None
     if config.llm_validation_enabled and config.anthropic_api_key:
@@ -1200,10 +1226,11 @@ def search_news_all(limit: int | None, max_workers: int, include_manually_closed
     from src.domains.news.services.news_monitor_manager import NewsMonitorManager
     from src.repositories.company_repository import CompanyRepository
 
+    operator = _get_operator()
     kagi = KagiClient(config.kagi_api_key)
-    news_repo = NewsArticleRepository(db)
-    company_repo = CompanyRepository(db)
-    snapshot_repo = SnapshotRepository(db)
+    news_repo = NewsArticleRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
+    snapshot_repo = SnapshotRepository(db, operator)
 
     llm_client = None
     if config.llm_validation_enabled and config.anthropic_api_key:
@@ -1215,7 +1242,7 @@ def search_news_all(limit: int | None, max_workers: int, include_manually_closed
 
     exclude_ids: set[int] | None = None
     if not include_manually_closed:
-        exclude_ids = _get_manually_closed_ids(db) or None
+        exclude_ids = _get_manually_closed_ids(db, operator) or None
 
     click.echo(f"[INFO] Searching news for all companies ({max_workers} workers)...")
     result = manager.search_all_companies(
@@ -1264,13 +1291,14 @@ def extract_leadership(company_id: int, headless: bool, profile_dir: str | None)
     from src.domains.leadership.services.linkedin_browser import LinkedInBrowser
     from src.repositories.company_repository import CompanyRepository
 
+    operator = _get_operator()
     browser_headless = headless or config.linkedin_headless
     browser_profile = profile_dir or config.linkedin_profile_dir
 
     browser = LinkedInBrowser(headless=browser_headless, profile_dir=browser_profile)
-    leadership_repo = LeadershipRepository(db)
-    social_repo = SocialMediaLinkRepository(db)
-    company_repo = CompanyRepository(db)
+    leadership_repo = LeadershipRepository(db, operator)
+    social_repo = SocialMediaLinkRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
 
     # Set up Kagi fallback
     search_service = _build_leadership_search(config)
@@ -1337,13 +1365,14 @@ def extract_leadership_all(
     from src.domains.leadership.services.linkedin_browser import LinkedInBrowser
     from src.repositories.company_repository import CompanyRepository
 
+    operator = _get_operator()
     browser_headless = headless or config.linkedin_headless
     browser_profile = profile_dir or config.linkedin_profile_dir
 
     browser = LinkedInBrowser(headless=browser_headless, profile_dir=browser_profile)
-    leadership_repo = LeadershipRepository(db)
-    social_repo = SocialMediaLinkRepository(db)
-    company_repo = CompanyRepository(db)
+    leadership_repo = LeadershipRepository(db, operator)
+    social_repo = SocialMediaLinkRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
 
     search_service = _build_leadership_search(config)
 
@@ -1357,7 +1386,7 @@ def extract_leadership_all(
 
     exclude_ids: set[int] | None = None
     if not include_manually_closed:
-        exclude_ids = _get_manually_closed_ids(db) or None
+        exclude_ids = _get_manually_closed_ids(db, operator) or None
 
     click.echo(f"[INFO] Extracting leadership for all companies ({max_workers} workers)...")
     result = manager.extract_all_leadership(
@@ -1418,13 +1447,14 @@ def check_leadership_changes(
     from src.domains.leadership.services.linkedin_browser import LinkedInBrowser
     from src.repositories.company_repository import CompanyRepository
 
+    operator = _get_operator()
     browser_headless = headless or config.linkedin_headless
     browser_profile = profile_dir or config.linkedin_profile_dir
 
     browser = LinkedInBrowser(headless=browser_headless, profile_dir=browser_profile)
-    leadership_repo = LeadershipRepository(db)
-    social_repo = SocialMediaLinkRepository(db)
-    company_repo = CompanyRepository(db)
+    leadership_repo = LeadershipRepository(db, operator)
+    social_repo = SocialMediaLinkRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
 
     search_service = _build_leadership_search(config)
 
@@ -1472,8 +1502,9 @@ def analyze_baseline(limit: int | None, dry_run: bool) -> None:
     from src.domains.monitoring.services.baseline_analyzer import BaselineAnalyzer
     from src.repositories.company_repository import CompanyRepository
 
-    snapshot_repo = SnapshotRepository(db)
-    company_repo = CompanyRepository(db)
+    operator = _get_operator()
+    snapshot_repo = SnapshotRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
 
     llm_client = None
     if config.llm_validation_enabled and config.anthropic_api_key:
@@ -1531,16 +1562,17 @@ def capture_social_snapshots(
     from src.repositories.company_repository import CompanyRepository
     from src.services.firecrawl_client import FirecrawlClient
 
-    social_snapshot_repo = SocialSnapshotRepository(db)
-    social_link_repo = SocialMediaLinkRepository(db)
-    company_repo = CompanyRepository(db)
+    operator = _get_operator()
+    social_snapshot_repo = SocialSnapshotRepository(db, operator)
+    social_link_repo = SocialMediaLinkRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
     firecrawl = FirecrawlClient(config.firecrawl_api_key)
 
     manager = SocialSnapshotManager(social_snapshot_repo, social_link_repo, company_repo, firecrawl)
 
     exclude_ids: set[int] | None = None
     if not include_manually_closed and company_id is None:
-        exclude_ids = _get_manually_closed_ids(db) or None
+        exclude_ids = _get_manually_closed_ids(db, operator) or None
 
     click.echo("[INFO] Capturing social media snapshots...")
     result = manager.capture_social_snapshots(
@@ -1588,9 +1620,10 @@ def detect_social_changes(limit: int | None, include_manually_closed: bool) -> N
     )
     from src.repositories.company_repository import CompanyRepository
 
-    social_snapshot_repo = SocialSnapshotRepository(db)
-    social_change_repo = SocialChangeRecordRepository(db)
-    company_repo = CompanyRepository(db)
+    operator = _get_operator()
+    social_snapshot_repo = SocialSnapshotRepository(db, operator)
+    social_change_repo = SocialChangeRecordRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
 
     llm_client = None
     if config.llm_validation_enabled and config.anthropic_api_key:
@@ -1608,7 +1641,7 @@ def detect_social_changes(limit: int | None, include_manually_closed: bool) -> N
 
     exclude_ids: set[int] | None = None
     if not include_manually_closed:
-        exclude_ids = _get_manually_closed_ids(db) or None
+        exclude_ids = _get_manually_closed_ids(db, operator) or None
 
     click.echo("[INFO] Detecting social media changes...")
     result = detector.detect_all_changes(limit=limit, exclude_company_ids=exclude_ids)
@@ -1715,6 +1748,7 @@ def _print_leadership_changes(changes: list[dict[str, Any]]) -> None:
 def _build_ceo_linkedin_discovery(
     db: Database,
     config: Config,
+    operator: str,
     social_repo: Any = None,
     company_repo: Any = None,
 ) -> Any:
@@ -1737,13 +1771,13 @@ def _build_ceo_linkedin_discovery(
     from src.repositories.company_repository import CompanyRepository
 
     search_service = _build_leadership_search(config)
-    leadership_repo = LeadershipRepository(db)
-    mention_repo = LeadershipMentionRepository(db)
-    snapshot_repo = SnapshotRepository(db)
+    leadership_repo = LeadershipRepository(db, operator)
+    mention_repo = LeadershipMentionRepository(db, operator)
+    snapshot_repo = SnapshotRepository(db, operator)
     if social_repo is None:
-        social_repo = SocialMediaLinkRepository(db)
+        social_repo = SocialMediaLinkRepository(db, operator)
     if company_repo is None:
-        company_repo = CompanyRepository(db)
+        company_repo = CompanyRepository(db, operator)
 
     return CeoLinkedinDiscovery(
         leadership_search=search_service,
@@ -1788,7 +1822,8 @@ def discover_ceo_linkedin(
     configure_logging(config.log_level)
     db = _get_db(config)
 
-    ceo_discovery = _build_ceo_linkedin_discovery(db, config)
+    operator = _get_operator()
+    ceo_discovery = _build_ceo_linkedin_discovery(db, config, operator)
 
     mode = "[DRY RUN] " if dry_run else ""
     if company_id is not None:
@@ -1801,7 +1836,7 @@ def discover_ceo_linkedin(
     else:
         exclude_ids: set[int] | None = None
         if not include_manually_closed:
-            exclude_ids = _get_manually_closed_ids(db) or None
+            exclude_ids = _get_manually_closed_ids(db, operator) or None
 
         click.echo(f"{mode}[INFO] Discovering CEO LinkedIn for all companies...")
         result = ceo_discovery.discover_all(

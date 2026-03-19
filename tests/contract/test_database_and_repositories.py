@@ -473,7 +473,7 @@ class TestCompanyRepositoryUpsert:
     """Test upsert_company insert and update behavior."""
 
     def test_upsert_creates_new_company(self, db: Database) -> None:
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         company_id = repo.upsert_company("New Corp", "https://new.com", "Sheet1")
         assert company_id > 0
 
@@ -484,7 +484,7 @@ class TestCompanyRepositoryUpsert:
         assert company["source_sheet"] == "Sheet1"
 
     def test_upsert_updates_existing_company(self, db: Database) -> None:
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         first_id = repo.upsert_company("Existing Corp", "https://existing.com", "Sheet1")
         second_id = repo.upsert_company("Existing Corp", "https://existing.com", "Sheet2")
         assert first_id == second_id
@@ -494,13 +494,13 @@ class TestCompanyRepositoryUpsert:
         assert company["source_sheet"] == "Sheet2"
 
     def test_upsert_different_url_creates_new(self, db: Database) -> None:
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         id_a = repo.upsert_company("Corp", "https://a.com", "Sheet1")
         id_b = repo.upsert_company("Corp", "https://b.com", "Sheet1")
         assert id_a != id_b
 
     def test_upsert_with_null_homepage(self, db: Database) -> None:
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         company_id = repo.upsert_company("No URL Corp", None, "Sheet1")
         assert company_id > 0
 
@@ -509,7 +509,7 @@ class TestCompanyRepositoryUpsert:
         assert company["homepage_url"] is None
 
     def test_upsert_null_url_then_update(self, db: Database) -> None:
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         first_id = repo.upsert_company("Null URL Corp", None, "Sheet1")
         second_id = repo.upsert_company("Null URL Corp", None, "Sheet2")
         assert first_id == second_id
@@ -524,19 +524,19 @@ class TestCompanyRepositoryGet:
 
     def test_get_company_by_id(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         company = repo.get_company_by_id(company_id)
         assert company is not None
         assert company["id"] == company_id
         assert company["name"] == "Test Corp"
 
     def test_get_company_by_id_nonexistent(self, db: Database) -> None:
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         assert repo.get_company_by_id(9999) is None
 
     def test_get_company_by_name_case_insensitive(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
 
         result_lower = repo.get_company_by_name("test corp")
         assert result_lower is not None
@@ -551,24 +551,24 @@ class TestCompanyRepositoryGet:
         assert result_mixed["id"] == company_id
 
     def test_get_company_by_name_nonexistent(self, db: Database) -> None:
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         assert repo.get_company_by_name("Ghost Corp") is None
 
     def test_get_company_by_name_and_url(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         result = repo.get_company_by_name_and_url("Test Corp", "https://testcorp.com")
         assert result is not None
         assert result["id"] == company_id
 
     def test_get_company_by_name_and_url_wrong_url(self, db_with_company: DbWithCompany) -> None:
         db, _ = db_with_company
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         result = repo.get_company_by_name_and_url("Test Corp", "https://wrong.com")
         assert result is None
 
     def test_get_company_by_name_and_url_null_url(self, db: Database) -> None:
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         repo.upsert_company("NullURL Corp", None, "Sheet1")
         result = repo.get_company_by_name_and_url("NullURL Corp", None)
         assert result is not None
@@ -579,7 +579,7 @@ class TestCompanyRepositoryList:
     """Test listing methods."""
 
     def test_get_all_companies_ordered_by_name(self, db: Database) -> None:
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         repo.upsert_company("Zebra Corp", "https://z.com", "Sheet1")
         repo.upsert_company("Alpha Corp", "https://a.com", "Sheet1")
         repo.upsert_company("Middle Corp", "https://m.com", "Sheet1")
@@ -589,11 +589,11 @@ class TestCompanyRepositoryList:
         assert names == sorted(names)
 
     def test_get_all_companies_empty(self, db: Database) -> None:
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         assert repo.get_all_companies() == []
 
     def test_get_companies_with_homepage_excludes_null(self, db: Database) -> None:
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         repo.upsert_company("With URL", "https://has.com", "Sheet1")
         repo.upsert_company("No URL", None, "Sheet1")
 
@@ -603,7 +603,7 @@ class TestCompanyRepositoryList:
         assert "No URL" not in names
 
     def test_get_company_count(self, db: Database) -> None:
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         assert repo.get_company_count() == 0
         repo.upsert_company("A", "https://a.com", "S")
         repo.upsert_company("B", "https://b.com", "S")
@@ -615,7 +615,7 @@ class TestCompanyRepositoryFlagAndError:
 
     def test_flag_company(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         repo.flag_company(company_id, "Suspicious activity")
 
         company = repo.get_company_by_id(company_id)
@@ -624,7 +624,7 @@ class TestCompanyRepositoryFlagAndError:
         assert company["flag_reason"] == "Suspicious activity"
 
     def test_store_processing_error(self, db: Database) -> None:
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         repo.store_processing_error(
             "company",
             42,
@@ -641,7 +641,7 @@ class TestCompanyRepositoryFlagAndError:
         assert row["retry_count"] == 2
 
     def test_store_processing_error_null_entity_id(self, db: Database) -> None:
-        repo = CompanyRepository(db)
+        repo = CompanyRepository(db, "test-user")
         repo.store_processing_error("batch", None, "BatchError", "General failure")
 
         row = db.fetchone("SELECT * FROM processing_errors WHERE entity_type = 'batch'")
@@ -677,7 +677,7 @@ class TestSnapshotRepositoryStore:
 
     def test_store_and_retrieve_by_id(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
         data = self._make_snapshot_data(company_id)
         snapshot_id = repo.store_snapshot(data)
         assert snapshot_id > 0
@@ -693,7 +693,7 @@ class TestSnapshotRepositoryStore:
 
     def test_store_with_paywall_and_auth(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
         data = self._make_snapshot_data(company_id, has_paywall=True, has_auth_required=True)
         snapshot_id = repo.store_snapshot(data)
 
@@ -704,7 +704,7 @@ class TestSnapshotRepositoryStore:
 
     def test_store_with_error_message(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
         data = self._make_snapshot_data(
             company_id,
             status_code=500,
@@ -720,7 +720,7 @@ class TestSnapshotRepositoryStore:
         assert snapshot["status_code"] == 500
 
     def test_get_snapshot_by_id_nonexistent(self, db: Database) -> None:
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
         assert repo.get_snapshot_by_id(9999) is None
 
 
@@ -729,7 +729,7 @@ class TestSnapshotRepositoryLatest:
 
     def test_latest_snapshots_ordered_desc(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
 
         oldest_time = _past_iso(10)
         middle_time = _past_iso(5)
@@ -752,7 +752,7 @@ class TestSnapshotRepositoryLatest:
 
     def test_latest_snapshots_respects_limit(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
 
         for i in range(5):
             repo.store_snapshot(
@@ -769,7 +769,7 @@ class TestSnapshotRepositoryLatest:
 
     def test_get_snapshots_for_company_ordered_asc(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
 
         times = [_past_iso(10), _past_iso(5), _now_iso()]
         for t in times:
@@ -793,7 +793,7 @@ class TestSnapshotRepositoryMultiple:
     """Test multi-snapshot detection and oldest date."""
 
     def test_companies_with_multiple_snapshots(self, db: Database) -> None:
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
         cid_a = _insert_company(db, "A", "https://a.com")
         cid_b = _insert_company(db, "B", "https://b.com")
         cid_c = _insert_company(db, "C", "https://c.com")
@@ -813,7 +813,7 @@ class TestSnapshotRepositoryMultiple:
 
     def test_get_oldest_snapshot_date(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
 
         oldest = _past_iso(30)
         _insert_snapshot(db, company_id, oldest)
@@ -824,7 +824,7 @@ class TestSnapshotRepositoryMultiple:
         assert result == oldest
 
     def test_get_oldest_snapshot_date_no_snapshots(self, db: Database) -> None:
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
         cid = _insert_company(db)
         result = repo.get_oldest_snapshot_date(cid)
         assert result is None
@@ -834,7 +834,7 @@ class TestSnapshotRepositoryBaseline:
     """Test baseline signal CRUD methods."""
 
     def test_count_snapshots_for_company(self, db: Database) -> None:
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
         cid = _insert_company(db, "Count Co", "https://count.com")
         assert repo.count_snapshots_for_company(cid) == 0
 
@@ -846,7 +846,7 @@ class TestSnapshotRepositoryBaseline:
 
     def test_update_baseline(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
         snap_id = _insert_snapshot(db, company_id, _now_iso())
 
         repo.update_baseline(
@@ -868,7 +868,7 @@ class TestSnapshotRepositoryBaseline:
         assert row["baseline_confidence"] == 0.85
 
     def test_has_baseline_for_company(self, db: Database) -> None:
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
         cid = _insert_company(db, "Baseline Co", "https://baseline.com")
         snap_id = _insert_snapshot(db, cid, _now_iso())
 
@@ -889,7 +889,7 @@ class TestSnapshotRepositoryBaseline:
         assert repo.has_baseline_for_company(cid) is True
 
     def test_get_snapshots_without_baseline(self, db: Database) -> None:
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
         cid1 = _insert_company(db, "No Baseline", "https://nobaseline.com")
         cid2 = _insert_company(db, "Has Baseline", "https://hasbaseline.com")
 
@@ -915,7 +915,7 @@ class TestSnapshotRepositoryBaseline:
         assert cid2 not in company_ids
 
     def test_get_snapshots_without_baseline_for_company(self, db: Database) -> None:
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
         cid = _insert_company(db, "Filter Co", "https://filter.com")
         _insert_snapshot(db, cid, _past_iso(5), content="Old content")
         _insert_snapshot(db, cid, _now_iso(), content="New content")
@@ -941,7 +941,7 @@ class TestChangeRecordRepositoryStore:
 
     def test_store_basic_change_record(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = ChangeRecordRepository(db)
+        repo = ChangeRecordRepository(db, "test-user")
         snap_old, snap_new = self._setup_snapshots(db, company_id)
 
         record_id = repo.store_change_record(
@@ -966,7 +966,7 @@ class TestChangeRecordRepositoryStore:
 
     def test_store_with_significance_data(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = ChangeRecordRepository(db)
+        repo = ChangeRecordRepository(db, "test-user")
         snap_old, snap_new = self._setup_snapshots(db, company_id)
 
         keywords = ["funding", "series_b"]
@@ -1007,7 +1007,7 @@ class TestChangeRecordRepositoryStore:
         self, db_with_company: DbWithCompany
     ) -> None:
         db, company_id = db_with_company
-        repo = ChangeRecordRepository(db)
+        repo = ChangeRecordRepository(db, "test-user")
         snap_old, snap_new = self._setup_snapshots(db, company_id)
 
         repo.store_change_record(
@@ -1037,7 +1037,7 @@ class TestChangeRecordRepositoryUpdate:
     def _store_record_without_significance(self, db: Database, company_id: int) -> int:
         snap_old = _insert_snapshot(db, company_id, _past_iso(10))
         snap_new = _insert_snapshot(db, company_id, _now_iso())
-        repo = ChangeRecordRepository(db)
+        repo = ChangeRecordRepository(db, "test-user")
         return repo.store_change_record(
             {
                 "company_id": company_id,
@@ -1053,7 +1053,7 @@ class TestChangeRecordRepositoryUpdate:
 
     def test_get_records_without_significance(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = ChangeRecordRepository(db)
+        repo = ChangeRecordRepository(db, "test-user")
 
         # Record without significance (has_changed=True)
         self._store_record_without_significance(db, company_id)
@@ -1098,7 +1098,7 @@ class TestChangeRecordRepositoryUpdate:
 
     def test_update_significance(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = ChangeRecordRepository(db)
+        repo = ChangeRecordRepository(db, "test-user")
         record_id = self._store_record_without_significance(db, company_id)
 
         keywords = ["layoffs", "restructuring"]
@@ -1129,7 +1129,7 @@ class TestChangeRecordRepositoryUpdate:
 
     def test_json_roundtrip_empty_lists(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = ChangeRecordRepository(db)
+        repo = ChangeRecordRepository(db, "test-user")
         record_id = self._store_record_without_significance(db, company_id)
 
         repo.update_significance(
@@ -1165,7 +1165,7 @@ class TestChangeRecordRepositoryFilters:
     ) -> int:
         snap_old = _insert_snapshot(db, company_id, _past_iso(30))
         snap_new = _insert_snapshot(db, company_id, detected_at or _now_iso())
-        repo = ChangeRecordRepository(db)
+        repo = ChangeRecordRepository(db, "test-user")
         return repo.store_change_record(
             {
                 "company_id": company_id,
@@ -1187,7 +1187,7 @@ class TestChangeRecordRepositoryFilters:
 
     def test_get_significant_changes(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = ChangeRecordRepository(db)
+        repo = ChangeRecordRepository(db, "test-user")
 
         self._insert_change_with_significance(db, company_id, "significant", "positive", 0.85)
         self._insert_change_with_significance(db, company_id, "insignificant", "neutral", 0.75)
@@ -1202,7 +1202,7 @@ class TestChangeRecordRepositoryFilters:
         self, db_with_company: DbWithCompany
     ) -> None:
         db, company_id = db_with_company
-        repo = ChangeRecordRepository(db)
+        repo = ChangeRecordRepository(db, "test-user")
 
         self._insert_change_with_significance(db, company_id, "significant", "positive", 0.85)
         self._insert_change_with_significance(db, company_id, "significant", "negative", 0.90)
@@ -1217,7 +1217,7 @@ class TestChangeRecordRepositoryFilters:
 
     def test_get_significant_changes_min_confidence(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = ChangeRecordRepository(db)
+        repo = ChangeRecordRepository(db, "test-user")
 
         self._insert_change_with_significance(db, company_id, "significant", "positive", 0.45)
         self._insert_change_with_significance(db, company_id, "significant", "positive", 0.85)
@@ -1228,7 +1228,7 @@ class TestChangeRecordRepositoryFilters:
 
     def test_get_uncertain_changes(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = ChangeRecordRepository(db)
+        repo = ChangeRecordRepository(db, "test-user")
 
         self._insert_change_with_significance(db, company_id, "uncertain", "neutral", 0.50)
         self._insert_change_with_significance(db, company_id, "significant", "positive", 0.90)
@@ -1241,7 +1241,7 @@ class TestChangeRecordRepositoryFilters:
 
     def test_get_uncertain_changes_respects_limit(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = ChangeRecordRepository(db)
+        repo = ChangeRecordRepository(db, "test-user")
 
         for _ in range(5):
             self._insert_change_with_significance(db, company_id, "uncertain", "neutral", 0.50)
@@ -1251,7 +1251,7 @@ class TestChangeRecordRepositoryFilters:
 
     def test_get_changes_for_company_ordered_desc(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = ChangeRecordRepository(db)
+        repo = ChangeRecordRepository(db, "test-user")
 
         for days_ago in [20, 10, 5]:
             self._insert_change_with_significance(
@@ -1278,7 +1278,7 @@ class TestCompanyStatusRepositoryStore:
 
     def test_store_and_get_latest_status(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = CompanyStatusRepository(db)
+        repo = CompanyStatusRepository(db, "test-user")
 
         indicators = ["website_active", "content_updated_recently", "ssl_valid"]
         status_id = repo.store_status(
@@ -1302,7 +1302,7 @@ class TestCompanyStatusRepositoryStore:
 
     def test_get_latest_status_returns_most_recent(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = CompanyStatusRepository(db)
+        repo = CompanyStatusRepository(db, "test-user")
 
         repo.store_status(
             {
@@ -1329,7 +1329,7 @@ class TestCompanyStatusRepositoryStore:
         assert latest["indicators"] == ["website_down", "no_content"]
 
     def test_get_latest_status_nonexistent(self, db: Database) -> None:
-        repo = CompanyStatusRepository(db)
+        repo = CompanyStatusRepository(db, "test-user")
         cid = _insert_company(db)
         assert repo.get_latest_status(cid) is None
 
@@ -1339,7 +1339,7 @@ class TestCompanyStatusRepositoryByName:
 
     def test_get_status_by_company_name(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = CompanyStatusRepository(db)
+        repo = CompanyStatusRepository(db, "test-user")
 
         repo.store_status(
             {
@@ -1359,7 +1359,7 @@ class TestCompanyStatusRepositoryByName:
         self, db_with_company: DbWithCompany
     ) -> None:
         db, company_id = db_with_company
-        repo = CompanyStatusRepository(db)
+        repo = CompanyStatusRepository(db, "test-user")
 
         repo.store_status(
             {
@@ -1376,7 +1376,7 @@ class TestCompanyStatusRepositoryByName:
         assert result["status"] == "operational"
 
     def test_get_status_by_company_name_nonexistent(self, db: Database) -> None:
-        repo = CompanyStatusRepository(db)
+        repo = CompanyStatusRepository(db, "test-user")
         assert repo.get_status_by_company_name("Ghost Corp") is None
 
 
@@ -1385,7 +1385,7 @@ class TestCompanyStatusJsonRoundtrip:
 
     def test_empty_indicators_list(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = CompanyStatusRepository(db)
+        repo = CompanyStatusRepository(db, "test-user")
 
         repo.store_status(
             {
@@ -1403,7 +1403,7 @@ class TestCompanyStatusJsonRoundtrip:
 
     def test_complex_indicators(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = CompanyStatusRepository(db)
+        repo = CompanyStatusRepository(db, "test-user")
 
         indicators = [
             "ssl_expired",
@@ -1454,7 +1454,7 @@ class TestSocialMediaLinkStore:
 
     def test_store_and_retrieve_link(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SocialMediaLinkRepository(db)
+        repo = SocialMediaLinkRepository(db, "test-user")
         data = self._make_link_data(company_id)
         link_id = repo.store_social_link(data)
         assert link_id > 0
@@ -1470,7 +1470,7 @@ class TestSocialMediaLinkStore:
         self, db_with_company: DbWithCompany
     ) -> None:
         db, company_id = db_with_company
-        repo = SocialMediaLinkRepository(db)
+        repo = SocialMediaLinkRepository(db, "test-user")
         data = self._make_link_data(company_id)
 
         first_id = repo.store_social_link(data)
@@ -1481,7 +1481,7 @@ class TestSocialMediaLinkStore:
         assert duplicate_id == 0
 
     def test_same_url_different_company_allowed(self, db: Database) -> None:
-        repo = SocialMediaLinkRepository(db)
+        repo = SocialMediaLinkRepository(db, "test-user")
         cid_a = _insert_company(db, "A", "https://a.com")
         cid_b = _insert_company(db, "B", "https://b.com")
 
@@ -1501,7 +1501,7 @@ class TestSocialMediaLinkRetrieval:
         self, db_with_company: DbWithCompany
     ) -> None:
         db, company_id = db_with_company
-        repo = SocialMediaLinkRepository(db)
+        repo = SocialMediaLinkRepository(db, "test-user")
 
         platforms = ["twitter", "github", "linkedin", "youtube"]
         for platform in platforms:
@@ -1522,7 +1522,7 @@ class TestSocialMediaLinkRetrieval:
         assert link_platforms == sorted(link_platforms)
 
     def test_get_links_by_platform(self, db: Database) -> None:
-        repo = SocialMediaLinkRepository(db)
+        repo = SocialMediaLinkRepository(db, "test-user")
         cid_a = _insert_company(db, "A", "https://a.com")
         cid_b = _insert_company(db, "B", "https://b.com")
 
@@ -1566,7 +1566,7 @@ class TestSocialMediaLinkRetrieval:
 
     def test_link_exists(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SocialMediaLinkRepository(db)
+        repo = SocialMediaLinkRepository(db, "test-user")
         url = "https://twitter.com/testcorp"
 
         assert repo.link_exists(company_id, url) is False
@@ -1585,7 +1585,7 @@ class TestSocialMediaLinkRetrieval:
         assert repo.link_exists(company_id, url) is True
 
     def test_link_exists_different_company(self, db: Database) -> None:
-        repo = SocialMediaLinkRepository(db)
+        repo = SocialMediaLinkRepository(db, "test-user")
         cid_a = _insert_company(db, "A", "https://a.com")
         cid_b = _insert_company(db, "B", "https://b.com")
 
@@ -1610,7 +1610,7 @@ class TestSocialMediaLinkBlogAndLogo:
 
     def test_store_blog_link(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SocialMediaLinkRepository(db)
+        repo = SocialMediaLinkRepository(db, "test-user")
 
         blog_id = repo.store_blog_link(
             {
@@ -1632,7 +1632,7 @@ class TestSocialMediaLinkBlogAndLogo:
 
     def test_store_blog_link_duplicate_returns_zero(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SocialMediaLinkRepository(db)
+        repo = SocialMediaLinkRepository(db, "test-user")
         data = {
             "company_id": company_id,
             "blog_type": "company",
@@ -1649,7 +1649,7 @@ class TestSocialMediaLinkBlogAndLogo:
 
     def test_store_and_get_company_logo(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SocialMediaLinkRepository(db)
+        repo = SocialMediaLinkRepository(db, "test-user")
 
         image_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
         logo_id = repo.store_company_logo(
@@ -1677,7 +1677,7 @@ class TestSocialMediaLinkBlogAndLogo:
 
     def test_get_company_logo_returns_latest(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SocialMediaLinkRepository(db)
+        repo = SocialMediaLinkRepository(db, "test-user")
 
         repo.store_company_logo(
             {
@@ -1709,7 +1709,7 @@ class TestSocialMediaLinkBlogAndLogo:
 
     def test_store_logo_duplicate_hash_returns_zero(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = SocialMediaLinkRepository(db)
+        repo = SocialMediaLinkRepository(db, "test-user")
         data = {
             "company_id": company_id,
             "image_data": b"logo_data",
@@ -1726,7 +1726,7 @@ class TestSocialMediaLinkBlogAndLogo:
         assert duplicate_id == 0
 
     def test_get_company_logo_nonexistent(self, db: Database) -> None:
-        repo = SocialMediaLinkRepository(db)
+        repo = SocialMediaLinkRepository(db, "test-user")
         cid = _insert_company(db)
         assert repo.get_company_logo(cid) is None
 
@@ -1764,7 +1764,7 @@ class TestNewsArticleStore:
 
     def test_store_and_retrieve(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = NewsArticleRepository(db)
+        repo = NewsArticleRepository(db, "test-user")
         data = self._make_article_data(company_id)
 
         article_id = repo.store_news_article(data)
@@ -1782,7 +1782,7 @@ class TestNewsArticleStore:
 
     def test_json_roundtrip_for_list_fields(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = NewsArticleRepository(db)
+        repo = NewsArticleRepository(db, "test-user")
         data = self._make_article_data(company_id)
         repo.store_news_article(data)
 
@@ -1794,7 +1794,7 @@ class TestNewsArticleStore:
 
     def test_store_without_significance(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = NewsArticleRepository(db)
+        repo = NewsArticleRepository(db, "test-user")
         data = self._make_article_data(
             company_id,
             content_url="https://example.com/no-sig",
@@ -1816,7 +1816,7 @@ class TestNewsArticleStore:
 
     def test_unique_content_url_returns_zero(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = NewsArticleRepository(db)
+        repo = NewsArticleRepository(db, "test-user")
         data = self._make_article_data(company_id)
 
         first_id = repo.store_news_article(data)
@@ -1830,12 +1830,12 @@ class TestNewsArticleDuplicateCheck:
     """Test check_duplicate_news_url."""
 
     def test_duplicate_check_false_for_new_url(self, db: Database) -> None:
-        repo = NewsArticleRepository(db)
+        repo = NewsArticleRepository(db, "test-user")
         assert repo.check_duplicate_news_url("https://example.com/brand-new") is False
 
     def test_duplicate_check_true_for_existing_url(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = NewsArticleRepository(db)
+        repo = NewsArticleRepository(db, "test-user")
         url = "https://example.com/already-stored"
 
         repo.store_news_article(
@@ -1853,7 +1853,7 @@ class TestNewsArticleDuplicateCheck:
         assert repo.check_duplicate_news_url(url) is True
 
     def test_duplicate_url_is_global_across_companies(self, db: Database) -> None:
-        repo = NewsArticleRepository(db)
+        repo = NewsArticleRepository(db, "test-user")
         cid_a = _insert_company(db, "A", "https://a.com")
         cid_b = _insert_company(db, "B", "https://b.com")
 
@@ -1891,7 +1891,7 @@ class TestNewsArticleDateRange:
 
     def test_date_range_filter(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = NewsArticleRepository(db)
+        repo = NewsArticleRepository(db, "test-user")
 
         dates = [_past_iso(30), _past_iso(15), _past_iso(5), _now_iso()]
         for i, pub_date in enumerate(dates):
@@ -1923,7 +1923,7 @@ class TestNewsArticleSignificant:
 
     def test_get_significant_news(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = NewsArticleRepository(db)
+        repo = NewsArticleRepository(db, "test-user")
 
         repo.store_news_article(
             {
@@ -1962,7 +1962,7 @@ class TestNewsArticleSignificant:
 
     def test_get_significant_news_filter_by_sentiment(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = NewsArticleRepository(db)
+        repo = NewsArticleRepository(db, "test-user")
 
         repo.store_news_article(
             {
@@ -2001,7 +2001,7 @@ class TestNewsArticleSignificant:
 
     def test_get_news_articles_respects_limit(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = NewsArticleRepository(db)
+        repo = NewsArticleRepository(db, "test-user")
 
         for i in range(10):
             repo.store_news_article(
@@ -2021,7 +2021,7 @@ class TestNewsArticleSignificant:
 
     def test_get_news_articles_ordered_desc(self, db_with_company: DbWithCompany) -> None:
         db, company_id = db_with_company
-        repo = NewsArticleRepository(db)
+        repo = NewsArticleRepository(db, "test-user")
 
         for i in range(5):
             repo.store_news_article(
@@ -2050,7 +2050,7 @@ class TestForeignKeyEnforcement:
     """Verify foreign keys reject orphan inserts (not just cascade deletes)."""
 
     def test_snapshot_requires_valid_company_id(self, db: Database) -> None:
-        repo = SnapshotRepository(db)
+        repo = SnapshotRepository(db, "test-user")
         with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
             repo.store_snapshot(
                 {
@@ -2062,7 +2062,7 @@ class TestForeignKeyEnforcement:
             )
 
     def test_social_link_requires_valid_company_id(self, db: Database) -> None:
-        repo = SocialMediaLinkRepository(db)
+        repo = SocialMediaLinkRepository(db, "test-user")
         with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
             repo.store_social_link(
                 {
@@ -2076,7 +2076,7 @@ class TestForeignKeyEnforcement:
             )
 
     def test_news_article_requires_valid_company_id(self, db: Database) -> None:
-        repo = NewsArticleRepository(db)
+        repo = NewsArticleRepository(db, "test-user")
         with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
             repo.store_news_article(
                 {
@@ -2091,7 +2091,7 @@ class TestForeignKeyEnforcement:
             )
 
     def test_change_record_requires_valid_company_id(self, db: Database) -> None:
-        repo = ChangeRecordRepository(db)
+        repo = ChangeRecordRepository(db, "test-user")
         # Need valid snapshot IDs from a real company, but use bogus company_id
         cid = _insert_company(db)
         snap_a = _insert_snapshot(db, cid, _past_iso(5))
@@ -2112,7 +2112,7 @@ class TestForeignKeyEnforcement:
             )
 
     def test_company_status_requires_valid_company_id(self, db: Database) -> None:
-        repo = CompanyStatusRepository(db)
+        repo = CompanyStatusRepository(db, "test-user")
         with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
             repo.store_status(
                 {
@@ -2123,3 +2123,94 @@ class TestForeignKeyEnforcement:
                     "last_checked": _now_iso(),
                 }
             )
+
+
+# ---------------------------------------------------------------------------
+# Operator Attribution Tests
+# ---------------------------------------------------------------------------
+
+
+class TestPerformedByAttribution:
+    """Verify that performed_by is stored on every record."""
+
+    def test_company_insert_stores_operator(self, db: Database) -> None:
+        repo = CompanyRepository(db, "alice")
+        cid = repo.upsert_company("AttrTest Inc", "https://attr.com", "Sheet1")
+        row = db.fetchone("SELECT performed_by FROM companies WHERE id = ?", (cid,))
+        assert row is not None
+        assert row["performed_by"] == "alice"
+
+    def test_company_update_stamps_operator(self, db: Database) -> None:
+        repo_alice = CompanyRepository(db, "alice")
+        cid = repo_alice.upsert_company("AttrTest Inc", "https://attr.com", "Sheet1")
+        repo_bob = CompanyRepository(db, "bob")
+        repo_bob.upsert_company("AttrTest Inc", "https://attr.com", "Sheet2")
+        row = db.fetchone("SELECT performed_by FROM companies WHERE id = ?", (cid,))
+        assert row is not None
+        assert row["performed_by"] == "bob"
+
+    def test_snapshot_stores_operator(self, db: Database) -> None:
+        cid = _insert_company(db)
+        repo = SnapshotRepository(db, "carol")
+        sid = repo.store_snapshot(
+            {
+                "company_id": cid,
+                "url": "https://attr.com",
+                "captured_at": _now_iso(),
+            }
+        )
+        row = db.fetchone("SELECT performed_by FROM snapshots WHERE id = ?", (sid,))
+        assert row is not None
+        assert row["performed_by"] == "carol"
+
+    def test_change_record_stores_operator(self, db: Database) -> None:
+        cid = _insert_company(db)
+        s1 = _insert_snapshot(db, cid)
+        s2 = _insert_snapshot(db, cid)
+        repo = ChangeRecordRepository(db, "dave")
+        rid = repo.store_change_record(
+            {
+                "company_id": cid,
+                "snapshot_id_old": s1,
+                "snapshot_id_new": s2,
+                "checksum_old": "a" * 32,
+                "checksum_new": "b" * 32,
+                "has_changed": True,
+                "change_magnitude": "minor",
+                "detected_at": _now_iso(),
+            }
+        )
+        row = db.fetchone("SELECT performed_by FROM change_records WHERE id = ?", (rid,))
+        assert row is not None
+        assert row["performed_by"] == "dave"
+
+    def test_different_operators_produce_correct_attribution(self, db: Database) -> None:
+        cid = _insert_company(db)
+        repo_a = SnapshotRepository(db, "operator-a")
+        repo_b = SnapshotRepository(db, "operator-b")
+        sid_a = repo_a.store_snapshot(
+            {"company_id": cid, "url": "https://a.com", "captured_at": _now_iso()}
+        )
+        sid_b = repo_b.store_snapshot(
+            {"company_id": cid, "url": "https://b.com", "captured_at": _now_iso()}
+        )
+        row_a = db.fetchone("SELECT performed_by FROM snapshots WHERE id = ?", (sid_a,))
+        row_b = db.fetchone("SELECT performed_by FROM snapshots WHERE id = ?", (sid_b,))
+        assert row_a is not None and row_a["performed_by"] == "operator-a"
+        assert row_b is not None and row_b["performed_by"] == "operator-b"
+
+    def test_historical_rows_have_null_performed_by(self, db: Database) -> None:
+        cid = _insert_company(db)
+        # Insert directly via SQL (simulating pre-migration data)
+        db.execute(
+            """INSERT INTO snapshots
+               (company_id, url, captured_at)
+               VALUES (?, ?, ?)""",
+            (cid, "https://old.com", _now_iso()),
+        )
+        db.connection.commit()
+        row = db.fetchone(
+            "SELECT performed_by FROM snapshots WHERE url = 'https://old.com'"
+        )
+        assert row is not None
+        assert row["performed_by"] is None

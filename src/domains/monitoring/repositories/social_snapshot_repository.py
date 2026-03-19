@@ -15,8 +15,9 @@ logger = structlog.get_logger(__name__)
 class SocialSnapshotRepository:
     """Repository for social media snapshot data access."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, operator: str) -> None:
         self.db = db
+        self.operator = operator
 
     def store_snapshot(self, data: dict[str, Any]) -> int:
         """Store a new social media snapshot. Returns snapshot ID."""
@@ -24,8 +25,8 @@ class SocialSnapshotRepository:
             """INSERT INTO social_media_snapshots
                (company_id, source_url, source_type, content_markdown, content_html,
                 status_code, captured_at, error_message, content_checksum,
-                latest_post_date)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                latest_post_date, performed_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["company_id"],
                 data["source_url"],
@@ -37,6 +38,7 @@ class SocialSnapshotRepository:
                 data.get("error_message"),
                 data.get("content_checksum"),
                 data.get("latest_post_date"),
+                self.operator,
             ),
         )
         self.db.connection.commit()

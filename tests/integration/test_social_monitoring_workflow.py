@@ -130,9 +130,9 @@ class TestSocialMonitoringFullWorkflow:
         _insert_medium_link(db, company_id, "https://medium.com/@alphaco")
         _insert_blog_link(db, company_id, "https://alpha.com/blog")
 
-        social_snapshot_repo = SocialSnapshotRepository(db)
-        social_link_repo = SocialMediaLinkRepository(db)
-        company_repo = CompanyRepository(db)
+        social_snapshot_repo = SocialSnapshotRepository(db, "test-user")
+        social_link_repo = SocialMediaLinkRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
 
         # --- Round 1: Initial capture ---
         mock_fc1 = _mock_firecrawl_batch(
@@ -197,7 +197,7 @@ class TestSocialMonitoringFullWorkflow:
         assert result2["captured"] == 2
 
         # --- Detect changes ---
-        social_change_repo = SocialChangeRecordRepository(db)
+        social_change_repo = SocialChangeRecordRepository(db, "test-user")
         detector = SocialChangeDetector(
             social_snapshot_repo=social_snapshot_repo,
             social_change_record_repo=social_change_repo,
@@ -218,9 +218,9 @@ class TestSocialMonitoringFullWorkflow:
         company_id = _insert_company(db, "StaticCo", "https://static.com")
         _insert_medium_link(db, company_id, "https://medium.com/@staticco")
 
-        social_snapshot_repo = SocialSnapshotRepository(db)
-        social_link_repo = SocialMediaLinkRepository(db)
-        company_repo = CompanyRepository(db)
+        social_snapshot_repo = SocialSnapshotRepository(db, "test-user")
+        social_link_repo = SocialMediaLinkRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
 
         identical_markdown = "# StaticCo\n\nPosted 2025-01-01\n\nNothing new here."
         mock_fc = _mock_firecrawl_batch(
@@ -244,7 +244,7 @@ class TestSocialMonitoringFullWorkflow:
             )
             manager.capture_social_snapshots()
 
-        social_change_repo = SocialChangeRecordRepository(db)
+        social_change_repo = SocialChangeRecordRepository(db, "test-user")
         detector = SocialChangeDetector(
             social_snapshot_repo=social_snapshot_repo,
             social_change_record_repo=social_change_repo,
@@ -260,9 +260,9 @@ class TestSocialMonitoringFullWorkflow:
         company_id = _insert_company(db, "FundedCo", "https://funded.com")
         _insert_medium_link(db, company_id, "https://medium.com/@fundedco")
 
-        social_snapshot_repo = SocialSnapshotRepository(db)
-        social_link_repo = SocialMediaLinkRepository(db)
-        company_repo = CompanyRepository(db)
+        social_snapshot_repo = SocialSnapshotRepository(db, "test-user")
+        social_link_repo = SocialMediaLinkRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
 
         # Round 1: Basic content
         mock_fc1 = _mock_firecrawl_batch(
@@ -306,7 +306,7 @@ class TestSocialMonitoringFullWorkflow:
         ).capture_social_snapshots()
 
         # Detect
-        social_change_repo = SocialChangeRecordRepository(db)
+        social_change_repo = SocialChangeRecordRepository(db, "test-user")
         detector = SocialChangeDetector(
             social_snapshot_repo=social_snapshot_repo,
             social_change_record_repo=social_change_repo,
@@ -340,9 +340,9 @@ class TestMultiCompanySocialWorkflow:
         _insert_medium_link(db, co1, "https://medium.com/@co1")
         _insert_blog_link(db, co2, "https://co2.com/blog")
 
-        social_snapshot_repo = SocialSnapshotRepository(db)
-        social_link_repo = SocialMediaLinkRepository(db)
-        company_repo = CompanyRepository(db)
+        social_snapshot_repo = SocialSnapshotRepository(db, "test-user")
+        social_link_repo = SocialMediaLinkRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
 
         mock_fc = _mock_firecrawl_batch(
             [
@@ -385,9 +385,9 @@ class TestMultiCompanySocialWorkflow:
         _insert_medium_link(db, co1, "https://medium.com/@co1")
         _insert_medium_link(db, co2, "https://medium.com/@co2")
 
-        social_snapshot_repo = SocialSnapshotRepository(db)
-        social_link_repo = SocialMediaLinkRepository(db)
-        company_repo = CompanyRepository(db)
+        social_snapshot_repo = SocialSnapshotRepository(db, "test-user")
+        social_link_repo = SocialMediaLinkRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
 
         mock_fc = _mock_firecrawl_batch(
             [
@@ -426,9 +426,9 @@ class TestSocialMonitoringErrorResilience:
         company_id = _insert_company(db, "FailCo", "https://fail.com")
         _insert_medium_link(db, company_id, "https://medium.com/@failco")
 
-        social_snapshot_repo = SocialSnapshotRepository(db)
-        social_link_repo = SocialMediaLinkRepository(db)
-        company_repo = CompanyRepository(db)
+        social_snapshot_repo = SocialSnapshotRepository(db, "test-user")
+        social_link_repo = SocialMediaLinkRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
 
         mock_fc = MagicMock()
         mock_fc.batch_capture_snapshots.side_effect = ConnectionError("Network down")
@@ -451,9 +451,9 @@ class TestSocialMonitoringErrorResilience:
         company_id = _insert_company(db, "NewCo", "https://new.com")
         _insert_medium_link(db, company_id, "https://medium.com/@newco")
 
-        social_snapshot_repo = SocialSnapshotRepository(db)
-        social_link_repo = SocialMediaLinkRepository(db)
-        company_repo = CompanyRepository(db)
+        social_snapshot_repo = SocialSnapshotRepository(db, "test-user")
+        social_link_repo = SocialMediaLinkRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
 
         mock_fc = _mock_firecrawl_batch(
             [
@@ -474,7 +474,7 @@ class TestSocialMonitoringErrorResilience:
         ).capture_social_snapshots()
 
         # Only 1 snapshot exists -- change detection should skip
-        social_change_repo = SocialChangeRecordRepository(db)
+        social_change_repo = SocialChangeRecordRepository(db, "test-user")
         detector = SocialChangeDetector(
             social_snapshot_repo=social_snapshot_repo,
             social_change_record_repo=social_change_repo,
@@ -500,9 +500,9 @@ class TestPostDateExtraction:
         company_id = _insert_company(db, "DateCo", "https://date.com")
         _insert_medium_link(db, company_id, "https://medium.com/@dateco")
 
-        social_snapshot_repo = SocialSnapshotRepository(db)
-        social_link_repo = SocialMediaLinkRepository(db)
-        company_repo = CompanyRepository(db)
+        social_snapshot_repo = SocialSnapshotRepository(db, "test-user")
+        social_link_repo = SocialMediaLinkRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
 
         mock_fc = _mock_firecrawl_batch(
             [
@@ -612,10 +612,10 @@ class TestIncludeSocialChangeDetectorEnrichment:
             latest_post_date="2025-06-01T00:00:00",
         )
 
-        snapshot_repo = SnapshotRepository(db)
-        change_record_repo = ChangeRecordRepository(db)
-        company_repo = CompanyRepository(db)
-        social_snapshot_repo = SocialSnapshotRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        change_record_repo = ChangeRecordRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
+        social_snapshot_repo = SocialSnapshotRepository(db, "test-user")
 
         mock_llm = MagicMock()
         mock_llm.classify_significance_with_status.return_value = {
@@ -655,9 +655,9 @@ class TestIncludeSocialChangeDetectorEnrichment:
             db, company_id, "# NoSocialCo\n\nVersion 2 with acquisition news."
         )
 
-        snapshot_repo = SnapshotRepository(db)
-        change_record_repo = ChangeRecordRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        change_record_repo = ChangeRecordRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
 
         mock_llm = MagicMock()
         mock_llm.classify_significance_with_status.return_value = {
@@ -710,10 +710,10 @@ class TestIncludeSocialStatusAnalyzerEnrichment:
             latest_post_date="2023-01-01T00:00:00",
         )
 
-        snapshot_repo = SnapshotRepository(db)
-        status_repo = CompanyStatusRepository(db)
-        company_repo = CompanyRepository(db)
-        social_snapshot_repo = SocialSnapshotRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        status_repo = CompanyStatusRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
+        social_snapshot_repo = SocialSnapshotRepository(db, "test-user")
 
         analyzer = StatusAnalyzer(
             snapshot_repo=snapshot_repo,
@@ -744,9 +744,9 @@ class TestIncludeSocialStatusAnalyzerEnrichment:
 
         _insert_homepage_snapshot(db, company_id, "# PlainCo\n\nWelcome. Copyright 2025.")
 
-        snapshot_repo = SnapshotRepository(db)
-        status_repo = CompanyStatusRepository(db)
-        company_repo = CompanyRepository(db)
+        snapshot_repo = SnapshotRepository(db, "test-user")
+        status_repo = CompanyStatusRepository(db, "test-user")
+        company_repo = CompanyRepository(db, "test-user")
 
         analyzer = StatusAnalyzer(
             snapshot_repo=snapshot_repo,

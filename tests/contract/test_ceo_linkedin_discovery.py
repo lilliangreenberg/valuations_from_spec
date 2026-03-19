@@ -34,12 +34,12 @@ def tmp_db() -> Database:
 
 @pytest.fixture
 def mention_repo(tmp_db: Database) -> LeadershipMentionRepository:
-    return LeadershipMentionRepository(tmp_db)
+    return LeadershipMentionRepository(tmp_db, "test-user")
 
 
 @pytest.fixture
 def leadership_repo(tmp_db: Database) -> LeadershipRepository:
-    return LeadershipRepository(tmp_db)
+    return LeadershipRepository(tmp_db, "test-user")
 
 
 @pytest.fixture

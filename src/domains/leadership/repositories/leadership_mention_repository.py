@@ -15,8 +15,9 @@ logger = structlog.get_logger(__name__)
 class LeadershipMentionRepository:
     """Repository for leadership name mentions extracted from website content."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, operator: str) -> None:
         self.db = db
+        self.operator = operator
 
     def store_mention(self, data: dict[str, Any]) -> int:
         """Store a leadership mention.
@@ -40,8 +41,8 @@ class LeadershipMentionRepository:
         cursor = self.db.execute(
             """INSERT INTO leadership_mentions
                (company_id, person_name, title_context, source, source_url,
-                confidence, priority, extracted_at, snapshot_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                confidence, priority, extracted_at, snapshot_id, performed_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 company_id,
                 person_name,
@@ -52,6 +53,7 @@ class LeadershipMentionRepository:
                 data.get("priority", 4),
                 data["extracted_at"],
                 data.get("snapshot_id"),
+                self.operator,
             ),
         )
         self.db.connection.commit()

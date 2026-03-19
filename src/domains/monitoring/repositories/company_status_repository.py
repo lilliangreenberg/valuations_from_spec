@@ -16,16 +16,17 @@ logger = structlog.get_logger(__name__)
 class CompanyStatusRepository:
     """Repository for company status data access."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, operator: str) -> None:
         self.db = db
+        self.operator = operator
 
     def store_status(self, data: dict[str, Any]) -> int:
         """Store a new company status record. Returns record ID."""
         cursor = self.db.execute(
             """INSERT INTO company_statuses
                (company_id, status, confidence, indicators, last_checked,
-                http_last_modified, is_manual_override, status_reason)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                http_last_modified, is_manual_override, status_reason, performed_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["company_id"],
                 data["status"],
@@ -35,6 +36,7 @@ class CompanyStatusRepository:
                 data.get("http_last_modified"),
                 int(data.get("is_manual_override", False)),
                 data.get("status_reason"),
+                self.operator,
             ),
         )
         self.db.connection.commit()

@@ -38,7 +38,7 @@ def db(tmp_path: object) -> Database:
 
 @pytest.fixture()
 def repo(db: Database) -> CompanyStatusRepository:
-    return CompanyStatusRepository(db)
+    return CompanyStatusRepository(db, "test-user")
 
 
 def _store_status(

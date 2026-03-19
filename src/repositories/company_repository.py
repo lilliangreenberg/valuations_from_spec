@@ -16,8 +16,9 @@ logger = structlog.get_logger(__name__)
 class CompanyRepository:
     """Repository for company data access."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, operator: str) -> None:
         self.db = db
+        self.operator = operator
 
     def upsert_company(
         self,
@@ -35,8 +36,9 @@ class CompanyRepository:
         existing = self.get_company_by_name_and_url(name, homepage_url)
         if existing:
             self.db.execute(
-                "UPDATE companies SET source_sheet = ?, updated_at = ? WHERE id = ?",
-                (source_sheet, now, existing["id"]),
+                "UPDATE companies SET source_sheet = ?, updated_at = ?,"
+                " performed_by = ? WHERE id = ?",
+                (source_sheet, now, self.operator, existing["id"]),
             )
             self.db.connection.commit()
             return existing["id"]
@@ -44,9 +46,9 @@ class CompanyRepository:
         cursor = self.db.execute(
             """INSERT INTO companies
                (name, homepage_url, source_sheet, flagged_for_review,
-                flag_reason, created_at, updated_at)
-               VALUES (?, ?, ?, 0, NULL, ?, ?)""",
-            (name, homepage_url, source_sheet, now, now),
+                flag_reason, created_at, updated_at, performed_by)
+               VALUES (?, ?, ?, 0, NULL, ?, ?, ?)""",
+            (name, homepage_url, source_sheet, now, now, self.operator),
         )
         self.db.connection.commit()
         return cursor.lastrowid or 0
@@ -126,8 +128,8 @@ class CompanyRepository:
         self.db.execute(
             """INSERT INTO processing_errors
                (entity_type, entity_id, error_type, error_message,
-                retry_count, occurred_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (entity_type, entity_id, error_type, error_message, retry_count, now),
+                retry_count, occurred_at, performed_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (entity_type, entity_id, error_type, error_message, retry_count, now, self.operator),
         )
         self.db.connection.commit()

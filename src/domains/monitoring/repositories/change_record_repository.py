@@ -16,8 +16,9 @@ logger = structlog.get_logger(__name__)
 class ChangeRecordRepository:
     """Repository for change record data access."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, operator: str) -> None:
         self.db = db
+        self.operator = operator
 
     def store_change_record(self, data: dict[str, Any]) -> int:
         """Store a new change record. Returns record ID."""
@@ -27,8 +28,8 @@ class ChangeRecordRepository:
                 has_changed, change_magnitude, detected_at,
                 significance_classification, significance_sentiment,
                 significance_confidence, matched_keywords, matched_categories,
-                significance_notes, evidence_snippets)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                significance_notes, evidence_snippets, performed_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["company_id"],
                 data["snapshot_id_old"],
@@ -45,6 +46,7 @@ class ChangeRecordRepository:
                 json.dumps(data.get("matched_categories", [])),
                 data.get("significance_notes"),
                 json.dumps(data.get("evidence_snippets", [])),
+                self.operator,
             ),
         )
         self.db.connection.commit()
@@ -78,7 +80,8 @@ class ChangeRecordRepository:
                matched_keywords = ?,
                matched_categories = ?,
                significance_notes = ?,
-               evidence_snippets = ?
+               evidence_snippets = ?,
+               performed_by = ?
                WHERE id = ?""",
             (
                 data.get("significance_classification"),
@@ -88,6 +91,7 @@ class ChangeRecordRepository:
                 json.dumps(data.get("matched_categories", [])),
                 data.get("significance_notes"),
                 json.dumps(data.get("evidence_snippets", [])),
+                self.operator,
                 record_id,
             ),
         )

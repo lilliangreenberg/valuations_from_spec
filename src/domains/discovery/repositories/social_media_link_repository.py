@@ -15,8 +15,9 @@ logger = structlog.get_logger(__name__)
 class SocialMediaLinkRepository:
     """Repository for social media link data access."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, operator: str) -> None:
         self.db = db
+        self.operator = operator
 
     def store_social_link(self, data: dict[str, Any]) -> int:
         """Store a social media link. Handles UNIQUE constraint via upsert."""
@@ -26,8 +27,8 @@ class SocialMediaLinkRepository:
                    (company_id, platform, profile_url, discovery_method,
                     verification_status, similarity_score, discovered_at,
                     last_verified_at, html_location, account_type,
-                    account_confidence, rejection_reason)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    account_confidence, rejection_reason, performed_by)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     data["company_id"],
                     data["platform"],
@@ -41,6 +42,7 @@ class SocialMediaLinkRepository:
                     data.get("account_type"),
                     data.get("account_confidence"),
                     data.get("rejection_reason"),
+                    self.operator,
                 ),
             )
             self.db.connection.commit()
@@ -81,8 +83,8 @@ class SocialMediaLinkRepository:
             cursor = self.db.execute(
                 """INSERT INTO blog_links
                    (company_id, blog_type, blog_url, discovery_method,
-                    is_active, discovered_at, last_checked_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    is_active, discovered_at, last_checked_at, performed_by)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     data["company_id"],
                     data["blog_type"],
@@ -91,6 +93,7 @@ class SocialMediaLinkRepository:
                     1 if data.get("is_active", True) else 0,
                     data["discovered_at"],
                     data.get("last_checked_at"),
+                    self.operator,
                 ),
             )
             self.db.connection.commit()
@@ -107,8 +110,9 @@ class SocialMediaLinkRepository:
             cursor = self.db.execute(
                 """INSERT INTO company_logos
                    (company_id, image_data, image_format, perceptual_hash,
-                    source_url, extraction_location, width, height, extracted_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    source_url, extraction_location, width, height, extracted_at,
+                    performed_by)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     data["company_id"],
                     data["image_data"],
@@ -119,6 +123,7 @@ class SocialMediaLinkRepository:
                     data.get("width"),
                     data.get("height"),
                     data["extracted_at"],
+                    self.operator,
                 ),
             )
             self.db.connection.commit()
