@@ -35,6 +35,9 @@ Thumbs.db
 # Reports (generated at runtime)
 docs/reports/
 
+# LinkedIn screenshots (testing only)
+docs/screenshots/
+
 # Testing
 .coverage
 htmlcov/

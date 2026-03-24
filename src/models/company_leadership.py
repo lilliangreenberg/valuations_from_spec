@@ -14,9 +14,11 @@ if TYPE_CHECKING:
 class LeadershipDiscoveryMethod(StrEnum):
     """How leadership data was discovered."""
 
-    PLAYWRIGHT_SCRAPE = "playwright_scrape"
+    CDP_SCRAPE = "cdp_scrape"
     KAGI_SEARCH = "kagi_search"
     KAGI_CEO_SEARCH = "kagi_ceo_search"
+    # Legacy value kept for backward compatibility with existing DB records
+    PLAYWRIGHT_SCRAPE = "playwright_scrape"
 
 
 class CompanyLeadership(BaseModel):

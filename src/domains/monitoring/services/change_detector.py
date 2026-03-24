@@ -52,6 +52,8 @@ class ChangeDetector:
         llm_enabled: bool = False,
         social_snapshot_repo: SocialSnapshotRepository | None = None,
         status_repo: CompanyStatusRepository | None = None,
+        linkedin_snapshot_repo: Any | None = None,
+        leadership_repo: Any | None = None,
     ) -> None:
         self.snapshot_repo = snapshot_repo
         self.change_record_repo = change_record_repo
@@ -60,6 +62,8 @@ class ChangeDetector:
         self.llm_enabled = llm_enabled
         self.social_snapshot_repo = social_snapshot_repo
         self.status_repo = status_repo
+        self.linkedin_snapshot_repo = linkedin_snapshot_repo
+        self.leadership_repo = leadership_repo
 
     def _build_social_context(self, company_id: int) -> str:
         """Build social media context string for a company.
@@ -88,6 +92,51 @@ class ChangeDetector:
             inactivity_results.append((snap.get("source_url", ""), is_inactive, days))
 
         return prepare_social_context(snapshots, inactivity_results)
+
+    def _build_linkedin_context(self, company_id: int) -> str:
+        """Build LinkedIn verification context string for a company.
+
+        Pulls latest leadership records and LinkedIn snapshot data
+        to provide employment verification signals to the LLM.
+        """
+        if not self.leadership_repo:
+            return ""
+
+        from src.domains.leadership.core.change_detection import (
+            build_linkedin_verification_context,
+        )
+
+        leadership_records = self.leadership_repo.get_current_leadership(company_id)
+        if not leadership_records:
+            return ""
+
+        # Check latest LinkedIn snapshots for verification data
+        verification_results: list[dict[str, str]] = []
+        if self.linkedin_snapshot_repo:
+            snapshots = self.linkedin_snapshot_repo.get_snapshots_for_company(company_id)
+            for snap in snapshots:
+                if snap.get("url_type") == "person" and snap.get("vision_data_json"):
+                    try:
+                        import json
+
+                        vision_data = json.loads(snap["vision_data_json"])
+                        verification_results.append({
+                            "person_name": snap.get("person_name", ""),
+                            "status": "departed" if not vision_data.get(
+                                "is_employed", True
+                            ) else "employed",
+                            "confidence": str(vision_data.get("confidence", 0.0)),
+                            "evidence": vision_data.get("evidence", ""),
+                            "change_detected": str(not vision_data.get(
+                                "is_employed", True
+                            )),
+                        })
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+        return build_linkedin_verification_context(
+            verification_results, leadership_records
+        )
 
     def detect_all_changes(
         self,
@@ -244,6 +293,15 @@ class ChangeDetector:
                         social_context = ""
                         if self.social_snapshot_repo is not None:
                             social_context = self._build_social_context(company_id)
+
+                        # Append LinkedIn verification context
+                        linkedin_context = self._build_linkedin_context(company_id)
+                        if linkedin_context:
+                            social_context = (
+                                f"{social_context}\n\n{linkedin_context}"
+                                if social_context
+                                else linkedin_context
+                            )
 
                         # LLM as primary classifier -- keywords passed as hints
                         if self.llm_enabled and self.llm_client:

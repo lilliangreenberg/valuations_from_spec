@@ -899,14 +899,13 @@ def discover_social_media(
     )
     _print_summary("Social media discovery complete", result)
 
-    # Chain CEO LinkedIn discovery (opt-out via --skip-ceo-search)
-    if not skip_ceo_search and config.kagi_api_key:
-        click.echo("\n[INFO] Running CEO LinkedIn discovery...")
-        ceo_discovery = _build_ceo_linkedin_discovery(
-            db, config, operator, social_repo, company_repo
+    # CEO LinkedIn discovery via Kagi is disabled.
+    # Use extract-leadership (CDP + Chrome Extension) instead.
+    if not skip_ceo_search:
+        click.echo(
+            "\n[INFO] CEO LinkedIn discovery is now handled by extract-leadership "
+            "(CDP + Chrome Extension). Skipping Kagi-based CEO search."
         )
-        ceo_result = ceo_discovery.discover_all(limit=limit, exclude_company_ids=exclude_ids)
-        _print_summary("CEO LinkedIn discovery complete", ceo_result)
 
     report_config: dict[str, Any] = {
         "batch_size": batch_size,
@@ -1268,74 +1267,48 @@ def search_news_all(limit: int | None, max_workers: int, include_manually_closed
 
 @click.command()
 @click.option("--company-id", required=True, type=int, help="Company ID")
-@click.option("--headless", is_flag=True, help="Run browser in headless mode")
 @click.option(
     "--profile-dir",
     default=None,
     type=str,
-    help="Playwright browser profile directory",
+    help="Chrome user data directory for persistent login session",
 )
-def extract_leadership(company_id: int, headless: bool, profile_dir: str | None) -> None:
+def extract_leadership(company_id: int, profile_dir: str | None) -> None:
     """Extract leadership profiles from LinkedIn for a single company."""
     config = _get_config()
     configure_logging(config.log_level)
     db = _get_db(config)
 
-    from src.domains.discovery.repositories.social_media_link_repository import (
-        SocialMediaLinkRepository,
-    )
-    from src.domains.leadership.repositories.leadership_repository import (
-        LeadershipRepository,
-    )
-    from src.domains.leadership.services.leadership_manager import LeadershipManager
-    from src.domains.leadership.services.linkedin_browser import LinkedInBrowser
-    from src.repositories.company_repository import CompanyRepository
+    manager, browser = _build_leadership_manager(config, db, profile_dir)
 
-    operator = _get_operator()
-    browser_headless = headless or config.linkedin_headless
-    browser_profile = profile_dir or config.linkedin_profile_dir
+    try:
+        browser.launch()
+        click.echo(f"[INFO] Extracting leadership for company {company_id}...")
+        result = manager.extract_company_leadership(company_id)
 
-    browser = LinkedInBrowser(headless=browser_headless, profile_dir=browser_profile)
-    leadership_repo = LeadershipRepository(db, operator)
-    social_repo = SocialMediaLinkRepository(db, operator)
-    company_repo = CompanyRepository(db, operator)
-
-    # Set up Kagi fallback
-    search_service = _build_leadership_search(config)
-
-    manager = LeadershipManager(
-        linkedin_browser=browser,
-        leadership_search=search_service,
-        leadership_repo=leadership_repo,
-        social_link_repo=social_repo,
-        company_repo=company_repo,
-    )
-
-    click.echo(f"[INFO] Extracting leadership for company {company_id}...")
-    result = manager.extract_company_leadership(company_id)
-
-    if result.get("error"):
-        click.echo(f"[ERROR] {result['error']}")
-    else:
-        _print_summary("Leadership extraction complete", result)
-        _print_leadership_changes(result.get("leadership_changes", []))
-    db.close()
+        if result.get("error"):
+            click.echo(f"[ERROR] {result['error']}")
+        else:
+            _print_summary("Leadership extraction complete", result)
+            _print_leadership_changes(result.get("leadership_changes", []))
+    finally:
+        browser.close()
+        db.close()
 
 
 @click.command()
 @click.option("--limit", default=None, type=int, help="Process first N companies")
-@click.option("--headless", is_flag=True, help="Run browser in headless mode")
 @click.option(
     "--profile-dir",
     default=None,
     type=str,
-    help="Playwright browser profile directory",
+    help="Chrome user data directory for persistent login session",
 )
 @click.option(
     "--max-workers",
     default=1,
     type=int,
-    help="Parallel workers (default 1 for Playwright safety; increase for Kagi-only mode)",
+    help="Parallel workers (default 1 for CDP browser; increase for Kagi-only mode)",
 )
 @click.option(
     "--include-manually-closed",
@@ -1345,7 +1318,6 @@ def extract_leadership(company_id: int, headless: bool, profile_dir: str | None)
 )
 def extract_leadership_all(
     limit: int | None,
-    headless: bool,
     profile_dir: str | None,
     max_workers: int,
     include_manually_closed: bool,
@@ -1355,134 +1327,85 @@ def extract_leadership_all(
     configure_logging(config.log_level)
     db = _get_db(config)
 
-    from src.domains.discovery.repositories.social_media_link_repository import (
-        SocialMediaLinkRepository,
-    )
-    from src.domains.leadership.repositories.leadership_repository import (
-        LeadershipRepository,
-    )
-    from src.domains.leadership.services.leadership_manager import LeadershipManager
-    from src.domains.leadership.services.linkedin_browser import LinkedInBrowser
-    from src.repositories.company_repository import CompanyRepository
-
+    manager, browser = _build_leadership_manager(config, db, profile_dir)
     operator = _get_operator()
-    browser_headless = headless or config.linkedin_headless
-    browser_profile = profile_dir or config.linkedin_profile_dir
-
-    browser = LinkedInBrowser(headless=browser_headless, profile_dir=browser_profile)
-    leadership_repo = LeadershipRepository(db, operator)
-    social_repo = SocialMediaLinkRepository(db, operator)
-    company_repo = CompanyRepository(db, operator)
-
-    search_service = _build_leadership_search(config)
-
-    manager = LeadershipManager(
-        linkedin_browser=browser,
-        leadership_search=search_service,
-        leadership_repo=leadership_repo,
-        social_link_repo=social_repo,
-        company_repo=company_repo,
-    )
 
     exclude_ids: set[int] | None = None
     if not include_manually_closed:
         exclude_ids = _get_manually_closed_ids(db, operator) or None
 
-    click.echo(f"[INFO] Extracting leadership for all companies ({max_workers} workers)...")
-    result = manager.extract_all_leadership(
-        limit=limit,
-        max_workers=max_workers,
-        exclude_company_ids=exclude_ids,
-    )
-    _print_summary("Leadership extraction complete", result)
+    try:
+        browser.launch()
+        click.echo(f"[INFO] Extracting leadership for all companies ({max_workers} workers)...")
+        result = manager.extract_all_leadership(
+            limit=limit,
+            max_workers=max_workers,
+            exclude_company_ids=exclude_ids,
+        )
+        _print_summary("Leadership extraction complete", result)
 
-    critical = result.get("critical_changes", [])
-    if critical:
-        click.echo(f"\n[CRITICAL] {len(critical)} critical leadership change(s):")
-        for change in critical:
-            click.echo(
-                f"  {change.get('company_name', 'Unknown')} | "
-                f"{change.get('change_type', '')} | "
-                f"{change.get('person_name', '')} ({change.get('title', '')})"
-            )
+        critical = result.get("critical_changes", [])
+        if critical:
+            click.echo(f"\n[CRITICAL] {len(critical)} critical leadership change(s):")
+            for change in critical:
+                click.echo(
+                    f"  {change.get('company_name', 'Unknown')} | "
+                    f"{change.get('change_type', '')} | "
+                    f"{change.get('person_name', '')} ({change.get('title', '')})"
+                )
 
-    report_config: dict[str, Any] = {
-        "limit": limit,
-        "max_workers": max_workers,
-        "headless": headless,
-    }
-    report = build_extract_leadership_report(result, report_config)
-    report_path = write_report(report)
-    click.echo(f"  Report written to: {report_path}")
-
-    db.close()
+        report_config: dict[str, Any] = {
+            "limit": limit,
+            "max_workers": max_workers,
+        }
+        report = build_extract_leadership_report(result, report_config)
+        report_path = write_report(report)
+        click.echo(f"  Report written to: {report_path}")
+    finally:
+        browser.close()
+        db.close()
 
 
 @click.command()
 @click.option("--limit", default=None, type=int, help="Process first N companies")
-@click.option("--headless", is_flag=True, help="Run browser in headless mode")
 @click.option(
     "--profile-dir",
     default=None,
     type=str,
-    help="Playwright browser profile directory",
+    help="Chrome user data directory for persistent login session",
 )
 def check_leadership_changes(
     limit: int | None,
-    headless: bool,
     profile_dir: str | None,
 ) -> None:
-    """Re-extract leadership and report changes only."""
+    """Re-extract leadership, verify employment, and report changes."""
     config = _get_config()
     configure_logging(config.log_level)
     db = _get_db(config)
 
-    from src.domains.discovery.repositories.social_media_link_repository import (
-        SocialMediaLinkRepository,
-    )
-    from src.domains.leadership.repositories.leadership_repository import (
-        LeadershipRepository,
-    )
-    from src.domains.leadership.services.leadership_manager import LeadershipManager
-    from src.domains.leadership.services.linkedin_browser import LinkedInBrowser
-    from src.repositories.company_repository import CompanyRepository
+    manager, browser = _build_leadership_manager(config, db, profile_dir)
 
-    operator = _get_operator()
-    browser_headless = headless or config.linkedin_headless
-    browser_profile = profile_dir or config.linkedin_profile_dir
+    try:
+        browser.launch()
+        click.echo("[INFO] Checking for leadership changes...")
+        result = manager.extract_all_leadership(limit=limit)
 
-    browser = LinkedInBrowser(headless=browser_headless, profile_dir=browser_profile)
-    leadership_repo = LeadershipRepository(db, operator)
-    social_repo = SocialMediaLinkRepository(db, operator)
-    company_repo = CompanyRepository(db, operator)
+        critical = result.get("critical_changes", [])
+        if critical:
+            click.echo(f"\n[CRITICAL] {len(critical)} critical leadership change(s):")
+            for change in critical:
+                click.echo(
+                    f"  {change.get('company_name', 'Unknown')} | "
+                    f"{change.get('change_type', '')} | "
+                    f"{change.get('person_name', '')} ({change.get('title', '')})"
+                )
+        else:
+            click.echo("[INFO] No critical leadership changes detected.")
 
-    search_service = _build_leadership_search(config)
-
-    manager = LeadershipManager(
-        linkedin_browser=browser,
-        leadership_search=search_service,
-        leadership_repo=leadership_repo,
-        social_link_repo=social_repo,
-        company_repo=company_repo,
-    )
-
-    click.echo("[INFO] Checking for leadership changes...")
-    result = manager.extract_all_leadership(limit=limit)
-
-    critical = result.get("critical_changes", [])
-    if critical:
-        click.echo(f"\n[CRITICAL] {len(critical)} critical leadership change(s):")
-        for change in critical:
-            click.echo(
-                f"  {change.get('company_name', 'Unknown')} | "
-                f"{change.get('change_type', '')} | "
-                f"{change.get('person_name', '')} ({change.get('title', '')})"
-            )
-    else:
-        click.echo("[INFO] No critical leadership changes detected.")
-
-    _print_summary("Leadership change check complete", result)
-    db.close()
+        _print_summary("Leadership change check complete", result)
+    finally:
+        browser.close()
+        db.close()
 
 
 @click.command()
@@ -1657,6 +1580,73 @@ def detect_social_changes(limit: int | None, include_manually_closed: bool) -> N
     db.close()
 
 
+def _build_leadership_manager(
+    config: Config,
+    db: Database,
+    profile_dir: str | None = None,
+) -> tuple[Any, Any]:
+    """Build the LeadershipManager with CDP browser and all dependencies.
+
+    Returns (manager, cdp_browser) tuple. Caller is responsible for
+    calling browser.launch() before use and browser.close() after.
+    """
+    from src.domains.discovery.repositories.social_media_link_repository import (
+        SocialMediaLinkRepository,
+    )
+    from src.domains.leadership.repositories.leadership_repository import (
+        LeadershipRepository,
+    )
+    from src.domains.leadership.repositories.linkedin_snapshot_repository import (
+        LinkedInSnapshotRepository,
+    )
+    from src.domains.leadership.services.cdp_browser import CDPBrowser
+    from src.domains.leadership.services.employment_verifier import EmploymentVerifier
+    from src.domains.leadership.services.leadership_manager import LeadershipManager
+    from src.repositories.company_repository import CompanyRepository
+    from src.services.llm_client import LLMClient
+
+    operator = _get_operator()
+    browser_profile = profile_dir or config.linkedin_profile_dir
+
+    browser = CDPBrowser(profile_dir=browser_profile)
+    leadership_repo = LeadershipRepository(db, operator)
+    social_repo = SocialMediaLinkRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
+    snapshot_repo = LinkedInSnapshotRepository(db, operator)
+    search_service = _build_leadership_search(config)
+
+    # Set up LLM client for Vision analysis
+    llm_client = None
+    if config.anthropic_api_key:
+        llm_client = LLMClient(
+            api_key=config.anthropic_api_key,
+            model=config.llm_model,
+        )
+
+    # Set up employment verifier
+    verifier = None
+    if llm_client:
+        verifier = EmploymentVerifier(
+            cdp_browser=browser,
+            llm_client=llm_client,
+            leadership_repo=leadership_repo,
+            snapshot_repo=snapshot_repo,
+        )
+
+    manager = LeadershipManager(
+        cdp_browser=browser,
+        leadership_search=search_service,
+        leadership_repo=leadership_repo,
+        social_link_repo=social_repo,
+        company_repo=company_repo,
+        llm_client=llm_client,
+        snapshot_repo=snapshot_repo,
+        employment_verifier=verifier,
+    )
+
+    return manager, browser
+
+
 def _build_leadership_search(config: Config) -> Any:
     """Build the LeadershipSearch service with Kagi client."""
     from src.domains.leadership.services.leadership_search import LeadershipSearch
@@ -1809,15 +1799,24 @@ def discover_ceo_linkedin(
     dry_run: bool,
     include_manually_closed: bool,
 ) -> None:
-    """Discover CEO/founder LinkedIn profiles via Kagi search.
+    """[DISABLED] Discover CEO/founder LinkedIn profiles via Kagi search.
 
-    Extracts CEO/founder names from website snapshots, then searches Kagi
-    for their LinkedIn profiles. Results are stored in company_leadership
-    and social_media_links tables.
+    This command is disabled. Use extract-leadership instead, which uses CDP +
+    Chrome Extension for direct LinkedIn scraping with Claude Vision analysis.
 
-    Can be run standalone or is automatically chained after discover-social-media
-    (opt-out via --skip-ceo-search on that command).
+    Previously extracted CEO/founder names from website snapshots, then searched
+    Kagi for their LinkedIn profiles.
     """
+    click.echo(
+        "[WARNING] discover-ceo-linkedin is disabled. "
+        "Use extract-leadership instead (CDP + Chrome Extension)."
+    )
+    click.echo(
+        "[INFO] The extract-leadership command now handles CEO/founder discovery "
+        "directly from LinkedIn company People tab."
+    )
+    return
+    # --- Original implementation below (kept for reference) ---
     config = _get_config()
     configure_logging(config.log_level)
     db = _get_db(config)

@@ -17,8 +17,8 @@ from src.domains.discovery.repositories.social_media_link_repository import (
 from src.domains.leadership.repositories.leadership_repository import (
     LeadershipRepository,
 )
+from src.domains.leadership.services.cdp_browser import CDPBlockedError
 from src.domains.leadership.services.leadership_manager import LeadershipManager
-from src.domains.leadership.services.linkedin_browser import LinkedInBlockedError
 from src.repositories.company_repository import CompanyRepository
 from src.services.database import Database
 
@@ -72,18 +72,22 @@ def _build_manager(
     browser_error: Exception | None = None,
     kagi_results: list[dict[str, str]] | None = None,
 ) -> LeadershipManager:
-    """Build a LeadershipManager with mocked browser and search."""
+    """Build a LeadershipManager with mocked CDP browser and search."""
     mock_browser = MagicMock()
     if browser_error:
         mock_browser.extract_people.side_effect = browser_error
     else:
         mock_browser.extract_people.return_value = browser_people or []
 
+    mock_browser.get_page_html.return_value = "<html>mock page</html>"
+    mock_browser.capture_people_screenshots.return_value = []
+    mock_browser.delay_between_pages.return_value = None
+
     mock_search = MagicMock()
     mock_search.search_leadership.return_value = kagi_results or []
 
     return LeadershipManager(
-        linkedin_browser=mock_browser,
+        cdp_browser=mock_browser,
         leadership_search=mock_search,
         leadership_repo=LeadershipRepository(tmp_db, "test-user"),
         social_link_repo=SocialMediaLinkRepository(tmp_db, "test-user"),
@@ -92,8 +96,8 @@ def _build_manager(
 
 
 class TestLeadershipExtractionWorkflow:
-    def test_full_playwright_extraction(self, tmp_db: Database, company_with_linkedin: int) -> None:
-        """Full workflow: company -> LinkedIn URL -> Playwright -> stored."""
+    def test_full_cdp_extraction(self, tmp_db: Database, company_with_linkedin: int) -> None:
+        """Full workflow: company -> LinkedIn URL -> CDP -> stored."""
         manager = _build_manager(
             tmp_db,
             browser_people=[
@@ -116,7 +120,7 @@ class TestLeadershipExtractionWorkflow:
         )
 
         result = manager.extract_company_leadership(company_with_linkedin)
-        assert result["method_used"] == "playwright_scrape"
+        assert result["method_used"] == "cdp_scrape"
         # Only leadership titles stored (CEO, CTO), not engineer
         assert result["leaders_found"] == 2
 
@@ -126,10 +130,10 @@ class TestLeadershipExtractionWorkflow:
         assert len(leaders) == 2
 
     def test_fallback_to_kagi_workflow(self, tmp_db: Database, company_with_linkedin: int) -> None:
-        """Playwright blocked -> fallback to Kagi -> stored."""
+        """CDP blocked -> fallback to Kagi -> stored."""
         manager = _build_manager(
             tmp_db,
-            browser_error=LinkedInBlockedError("CAPTCHA"),
+            browser_error=CDPBlockedError("CAPTCHA"),
             kagi_results=[
                 {
                     "name": "Carol Founder",
@@ -142,7 +146,7 @@ class TestLeadershipExtractionWorkflow:
         result = manager.extract_company_leadership(company_with_linkedin)
         assert result["method_used"] == "kagi_search"
         assert result["leaders_found"] == 1
-        assert len(result["errors"]) >= 1  # Playwright error logged
+        assert len(result["errors"]) >= 1  # CDP error logged
 
     def test_no_linkedin_url_uses_kagi(self, tmp_db: Database, company_id: int) -> None:
         """Company without LinkedIn URL goes straight to Kagi."""
@@ -301,7 +305,7 @@ class TestCompanyLeadershipTable:
                 "Test Person",
                 "CEO",
                 "https://linkedin.com/in/test",
-                "playwright_scrape",
+                "cdp_scrape",
                 0.8,
                 1,
                 now,

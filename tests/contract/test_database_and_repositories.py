@@ -105,6 +105,7 @@ class TestDatabaseInitialization:
         "leadership_mentions",
         "social_media_snapshots",
         "social_media_change_records",
+        "linkedin_snapshots",
     ]
 
     EXPECTED_INDEXES = [
@@ -125,6 +126,8 @@ class TestDatabaseInitialization:
         "idx_social_snapshots_company_id",
         "idx_social_snapshots_source_type",
         "idx_sm_change_records_company_id",
+        "idx_linkedin_snapshots_company_id",
+        "idx_linkedin_snapshots_linkedin_url",
     ]
 
     def test_all_tables_created(self, db: Database) -> None:
@@ -135,11 +138,11 @@ class TestDatabaseInitialization:
         for expected in self.EXPECTED_TABLES:
             assert expected in table_names, f"Table '{expected}' missing from schema"
 
-    def test_exactly_ten_tables(self, db: Database) -> None:
+    def test_exactly_fourteen_tables(self, db: Database) -> None:
         rows = db.fetchall(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
-        assert len(rows) == 13
+        assert len(rows) == 14
 
     def test_all_indexes_created(self, db: Database) -> None:
         rows = db.fetchall(
@@ -171,7 +174,7 @@ class TestDatabaseInitialization:
         rows = database.fetchall(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
-        assert len(rows) == 13
+        assert len(rows) == 14
 
 
 class TestDatabaseTransaction:
