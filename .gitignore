@@ -13,10 +13,14 @@ wheels/
 .env
 .env.*
 
+.claude/worktrees/
+presentations/
+
 # Database
 data/*.db
 data/*.db-wal
 data/*.db-shm
+data/
 
 # LinkedIn browser profile (session cookies)
 data/linkedin_profile/
