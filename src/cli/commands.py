@@ -1307,6 +1307,144 @@ def linkedin_login(profile_dir: str | None) -> None:
 
 
 @click.command()
+@click.argument("url")
+@click.option(
+    "--profile-dir",
+    default=None,
+    type=str,
+    help="Chrome user data directory for persistent login session",
+)
+@click.option(
+    "--output-dir",
+    default="docs/screenshots",
+    type=str,
+    help="Directory to save screenshots and JSON output",
+)
+def scrape_linkedin_profile(url: str, profile_dir: str | None, output_dir: str) -> None:
+    """Scrape a personal LinkedIn profile URL.
+
+    Opens a headed Chrome window, navigates to the profile, extracts data
+    via DOM + Claude Vision, and saves the results as JSON.
+
+    Usage: airtable-extractor scrape-linkedin-profile https://linkedin.com/in/someone
+    """
+    import base64
+    import json
+    import time
+    from pathlib import Path
+
+    from src.domains.leadership.services.cdp_browser import CDPBrowser
+
+    config = _get_config()
+    browser_profile = profile_dir or config.linkedin_profile_dir
+    browser = CDPBrowser(profile_dir=browser_profile, screenshot_dir=output_dir)
+
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    click.echo(f"[INFO] Scraping LinkedIn profile: {url}")
+
+    try:
+        browser.launch()
+
+        # Extract profile data via DOM
+        dom_data = browser.extract_person_profile(url)
+
+        if not dom_data.get("name"):
+            # Check for blocking
+            blocking = browser.detect_blocking()
+            if blocking == "auth_wall":
+                click.echo("[WARNING] LinkedIn requires login.")
+                click.echo("[INFO] Run 'airtable-extractor linkedin-login' first.")
+                return
+            if blocking:
+                click.echo(f"[ERROR] LinkedIn blocked access: {blocking}")
+                return
+
+        # Take screenshot
+        screenshot_bytes = browser.capture_screenshot()
+        safe_name = url.rstrip("/").split("/")[-1][:50]
+        timestamp = int(time.time())
+        screenshot_path = str(Path(output_dir) / f"profile_{safe_name}_{timestamp}.png")
+        with open(screenshot_path, "wb") as f:
+            f.write(screenshot_bytes)
+        click.echo(f"  Screenshot saved: {screenshot_path}")
+
+        # Run Claude Vision analysis if API key is available
+        vision_data: dict[str, Any] = {}
+        if config.anthropic_api_key:
+            from src.services.llm_client import LLMClient
+
+            click.echo("  Analyzing screenshot with Claude Vision...")
+            llm = LLMClient(api_key=config.anthropic_api_key, model=config.llm_model)
+            screenshot_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+
+            # Use a generic prompt (no specific company to check against)
+            prompt = (
+                "You are analyzing a screenshot of a LinkedIn personal profile page.\n\n"
+                "Extract the following information:\n"
+                "- person_name: The person's full name\n"
+                "- current_title: Their current job title\n"
+                "- current_employer: The company they currently work at\n"
+                "- location: Their location\n"
+                "- headline: Their full headline text\n"
+                "- about: Summary/about section if visible\n"
+                "- experience: List of experience entries visible "
+                "(each with title, company, dates)\n\n"
+                "Return the results as a JSON object. "
+                "If a field is not visible, set it to null.\n"
+                "Return ONLY the JSON object, no other text."
+            )
+            raw_vision = llm.analyze_screenshot(screenshot_b64, prompt)
+            if not raw_vision.get("error"):
+                vision_data = raw_vision
+                click.echo("  Vision analysis complete.")
+            else:
+                click.echo(f"  [WARNING] Vision analysis failed: {raw_vision.get('error')}")
+        else:
+            click.echo("  [INFO] Set ANTHROPIC_API_KEY for Claude Vision analysis.")
+
+        # Merge and display results
+        result = {
+            "url": url,
+            "dom_extraction": dom_data,
+            "vision_extraction": vision_data,
+            "screenshot_path": screenshot_path,
+        }
+
+        # Save JSON output
+        json_path = str(Path(output_dir) / f"profile_{safe_name}_{timestamp}.json")
+        with open(json_path, "w") as f:
+            json.dump(result, f, indent=2)
+        click.echo(f"  JSON saved: {json_path}")
+
+        # Print summary
+        name = vision_data.get("person_name") or dom_data.get("name", "Unknown")
+        title = vision_data.get("current_title") or dom_data.get("headline", "")
+        employer = vision_data.get("current_employer", "")
+        location = vision_data.get("location") or dom_data.get("location", "")
+
+        click.echo(f"\n[RESULT] {name}")
+        if title:
+            click.echo(f"  Title: {title}")
+        if employer:
+            click.echo(f"  Employer: {employer}")
+        if location:
+            click.echo(f"  Location: {location}")
+
+        experience = dom_data.get("experience", [])
+        if experience:
+            click.echo(f"  Experience entries: {len(experience)}")
+            for exp in experience[:5]:
+                click.echo(
+                    f"    - {exp.get('title', '')} at {exp.get('company', '')} "
+                    f"({exp.get('dates', '')})"
+                )
+
+    finally:
+        browser.close()
+
+
+@click.command()
 @click.option("--company-id", required=True, type=int, help="Company ID")
 @click.option(
     "--profile-dir",
