@@ -490,9 +490,20 @@ class QueryService:
         offset = (page - 1) * per_page
 
         rows = self.db.fetchall(
-            f"""SELECT cl.*, c.name as company_name
+            f"""SELECT cl.*, c.name as company_name,
+                    ls.captured_at as last_snapshot_at,
+                    ls.vision_data_json as latest_vision_data
                 FROM company_leadership cl
                 JOIN companies c ON cl.company_id = c.id
+                LEFT JOIN (
+                    SELECT linkedin_url, company_id, captured_at, vision_data_json,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY linkedin_url ORDER BY captured_at DESC
+                        ) as rn
+                    FROM linkedin_snapshots
+                    WHERE url_type = 'person'
+                ) ls ON ls.linkedin_url = cl.linkedin_profile_url
+                    AND ls.company_id = cl.company_id AND ls.rn = 1
                 WHERE 1=1 {current_filter}
                 ORDER BY c.name, cl.title
                 LIMIT ? OFFSET ?""",

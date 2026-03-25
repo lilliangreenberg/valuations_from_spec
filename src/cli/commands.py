@@ -302,6 +302,17 @@ def detect_changes(
 
         social_snapshot_repo = SocialSnapshotRepository(db, operator)
 
+    # Always wire in LinkedIn data for leadership-aware status classification
+    from src.domains.leadership.repositories.leadership_repository import (
+        LeadershipRepository,
+    )
+    from src.domains.leadership.repositories.linkedin_snapshot_repository import (
+        LinkedInSnapshotRepository,
+    )
+
+    leadership_repo = LeadershipRepository(db, operator)
+    linkedin_snapshot_repo = LinkedInSnapshotRepository(db, operator)
+
     detector = ChangeDetector(
         snapshot_repo,
         change_repo,
@@ -310,6 +321,8 @@ def detect_changes(
         llm_enabled=bool(llm_client),
         social_snapshot_repo=social_snapshot_repo,
         status_repo=status_repo,
+        linkedin_snapshot_repo=linkedin_snapshot_repo,
+        leadership_repo=leadership_repo,
     )
 
     exclude_ids: set[int] | None = None

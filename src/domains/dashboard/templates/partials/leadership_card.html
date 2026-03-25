@@ -52,7 +52,19 @@
         Confidence: {{ "%.0f" | format(leader.confidence * 100) }}%
       </span>
       {% endif %}
+
+      {% if leader.last_verified_at %}
+      <span class="text-gray-500 dark:text-gray-400">
+        Verified: {{ leader.last_verified_at[:10] }}
+      </span>
+      {% endif %}
     </div>
+
+    {% if leader.last_snapshot_at %}
+    <div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
+      Last LinkedIn snapshot: {{ leader.last_snapshot_at[:10] }}
+    </div>
+    {% endif %}
   </div>
   {% endfor %}
 </div>
