@@ -231,6 +231,7 @@ class CDPBrowser:
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-blink-features=AutomationControlled",
+            "--remote-allow-origins=*",
             # Always headed -- no --headless flag
         ]
 
