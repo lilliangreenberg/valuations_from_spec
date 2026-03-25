@@ -21,6 +21,7 @@ from src.cli.commands import (
     extract_companies,
     extract_leadership,
     extract_leadership_all,
+    linkedin_login,
     get_company_notes,
     import_urls,
     list_active,
@@ -60,6 +61,7 @@ cli.add_command(show_social_links)
 cli.add_command(show_status)
 cli.add_command(list_active)
 cli.add_command(list_inactive)
+cli.add_command(linkedin_login)
 cli.add_command(extract_leadership)
 cli.add_command(extract_leadership_all)
 cli.add_command(check_leadership_changes)

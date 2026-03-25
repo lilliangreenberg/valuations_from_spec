@@ -1266,6 +1266,47 @@ def search_news_all(limit: int | None, max_workers: int, include_manually_closed
 
 
 @click.command()
+@click.option(
+    "--profile-dir",
+    default=None,
+    type=str,
+    help="Chrome user data directory for persistent login session",
+)
+def linkedin_login(profile_dir: str | None) -> None:
+    """Open Chrome for manual LinkedIn login.
+
+    Launches a headed Chrome window and navigates to the LinkedIn login page.
+    Log in manually, then press Enter in the terminal to save the session.
+    Cookies are persisted so subsequent extract-leadership runs stay logged in.
+    """
+    from src.domains.leadership.services.cdp_browser import CDPBrowser
+
+    config = _get_config()
+    browser_profile = profile_dir or config.linkedin_profile_dir
+    browser = CDPBrowser(profile_dir=browser_profile)
+
+    click.echo("[INFO] Opening Chrome for LinkedIn login...")
+    click.echo("[INFO] Log in manually, then press Enter in this terminal.")
+
+    try:
+        browser.launch()
+        browser.navigate("https://www.linkedin.com/login")
+
+        try:
+            input("\nPress Enter after logging in (or Ctrl+C to cancel)...")
+        except (EOFError, KeyboardInterrupt):
+            click.echo("\n[INFO] Waiting 60 seconds for login...")
+            import time
+
+            time.sleep(60)
+    finally:
+        browser.close()
+
+    click.echo("[SUCCESS] Login complete! Cookies saved to Chrome profile.")
+    click.echo("[INFO] You can now run extract-leadership commands.")
+
+
+@click.command()
 @click.option("--company-id", required=True, type=int, help="Company ID")
 @click.option(
     "--profile-dir",
