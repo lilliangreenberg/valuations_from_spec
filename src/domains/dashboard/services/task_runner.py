@@ -34,6 +34,7 @@ ALLOWED_COMMANDS: dict[str, dict[str, Any]] = {
                 "label": "Use batch API (8x faster)",
             },
             {"name": "--batch-size", "type": "int", "default": 20, "label": "Batch size"},
+            {"name": "--company-id", "type": "int", "default": "", "label": "Company ID (single)"},
         ],
     },
     "detect-changes": {
@@ -41,6 +42,7 @@ ALLOWED_COMMANDS: dict[str, dict[str, Any]] = {
         "group": "Change Detection",
         "args": [
             {"name": "--limit", "type": "int", "default": "", "label": "Limit (companies)"},
+            {"name": "--company-id", "type": "int", "default": "", "label": "Company ID (single)"},
         ],
     },
     "analyze-status": {
@@ -153,6 +155,69 @@ ALLOWED_COMMANDS: dict[str, dict[str, Any]] = {
         "args": [
             {"name": "--limit", "type": "int", "default": "", "label": "Limit (companies)"},
         ],
+    },
+    "discover-social-full-site": {
+        "description": "Full-site social media discovery for one company",
+        "group": "Social Media Discovery",
+        "args": [
+            {"name": "--company-id", "type": "int", "default": "", "label": "Company ID"},
+        ],
+    },
+    "discover-social-batch": {
+        "description": "Batch full-site social media discovery",
+        "group": "Social Media Discovery",
+        "args": [
+            {"name": "--limit", "type": "int", "default": 50, "label": "Limit (companies)"},
+            {"name": "--max-workers", "type": "int", "default": 10, "label": "Parallel workers"},
+        ],
+    },
+    "show-changes": {
+        "description": "Show change history for a company",
+        "group": "Reporting",
+        "args": [
+            {"name": "company", "type": "str", "default": "", "label": "Company name"},
+        ],
+    },
+    "show-status": {
+        "description": "Show status details for a company",
+        "group": "Reporting",
+        "args": [
+            {"name": "company", "type": "str", "default": "", "label": "Company name"},
+        ],
+    },
+    "show-social-links": {
+        "description": "Show social media links for a company",
+        "group": "Reporting",
+        "args": [
+            {"name": "company", "type": "str", "default": "", "label": "Company name"},
+        ],
+    },
+    "list-active": {
+        "description": "List companies with recent changes",
+        "group": "Reporting",
+        "args": [
+            {"name": "--days", "type": "int", "default": 180, "label": "Days to look back"},
+        ],
+    },
+    "list-inactive": {
+        "description": "List companies without recent changes",
+        "group": "Reporting",
+        "args": [
+            {"name": "--days", "type": "int", "default": 180, "label": "Days to look back"},
+        ],
+    },
+    "list-significant-changes": {
+        "description": "List significant changes",
+        "group": "Reporting",
+        "args": [
+            {"name": "--days", "type": "int", "default": 180, "label": "Days to look back"},
+            {"name": "--sentiment", "type": "str", "default": "", "label": "Sentiment filter"},
+        ],
+    },
+    "list-uncertain-changes": {
+        "description": "List changes requiring manual review",
+        "group": "Reporting",
+        "args": [],
     },
 }
 

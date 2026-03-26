@@ -54,9 +54,11 @@
               <span class="ml-2 text-sm text-gray-600 dark:text-gray-400">Enable</span>
             </label>
             {% else %}
+            {% set form_name = arg.name | replace('--', '') | replace('-', '_') %}
+            {% set prefill_val = prefill_company_id if (prefill_company_id and form_name == 'company_id') else arg.default %}
             <input type="text"
-                   name="{{ arg.name | replace('--', '') | replace('-', '_') }}"
-                   value="{{ arg.default }}"
+                   name="{{ form_name }}"
+                   value="{{ prefill_val }}"
                    placeholder="{{ arg.label }}"
                    class="form-input w-full rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200">
             {% endif %}
