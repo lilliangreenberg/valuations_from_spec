@@ -113,8 +113,43 @@ ALLOWED_COMMANDS: dict[str, dict[str, Any]] = {
         ],
     },
     "check-leadership-changes": {
-        "description": "Re-extract leadership and report changes",
+        "description": "Re-extract leadership and report changes (opens Chrome)",
         "group": "Leadership Extraction",
+        "args": [
+            {"name": "--limit", "type": "int", "default": "", "label": "Limit (companies)"},
+        ],
+    },
+    "linkedin-login": {
+        "description": "Open Chrome for manual LinkedIn login",
+        "group": "Leadership Extraction",
+        "args": [],
+    },
+    "scrape-linkedin-profile": {
+        "description": "Scrape a personal LinkedIn profile (opens Chrome)",
+        "group": "Leadership Extraction",
+        "args": [
+            {"name": "url", "type": "str", "default": "", "label": "LinkedIn profile URL"},
+        ],
+    },
+    "capture-social-snapshots": {
+        "description": "Capture social media snapshots (Medium + blog)",
+        "group": "Social Media Monitoring",
+        "args": [
+            {"name": "--batch-size", "type": "int", "default": 50, "label": "Batch size"},
+            {"name": "--limit", "type": "int", "default": "", "label": "Limit (companies)"},
+            {"name": "--company-id", "type": "int", "default": "", "label": "Company ID (single)"},
+        ],
+    },
+    "detect-social-changes": {
+        "description": "Detect changes in social media content",
+        "group": "Social Media Monitoring",
+        "args": [
+            {"name": "--limit", "type": "int", "default": "", "label": "Limit (companies)"},
+        ],
+    },
+    "refresh-logos": {
+        "description": "Refresh company logos from latest snapshots",
+        "group": "Data Extraction",
         "args": [
             {"name": "--limit", "type": "int", "default": "", "label": "Limit (companies)"},
         ],

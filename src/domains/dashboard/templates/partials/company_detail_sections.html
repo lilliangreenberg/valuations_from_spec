@@ -164,11 +164,17 @@
                   title="Delete entry">&times;</button>
         </div>
       </div>
-      {% if leader.confidence is not none %}
-      <p class="text-xs mt-1" style="color: var(--text-secondary)">
-        Confidence: {{ leader.confidence | confidence }}
-      </p>
-      {% endif %}
+      <div class="flex flex-wrap items-center gap-3 text-xs mt-1" style="color: var(--text-secondary)">
+        {% if leader.confidence is not none %}
+        <span>Confidence: {{ leader.confidence | confidence }}</span>
+        {% endif %}
+        {% if leader.discovery_method %}
+        <span>via {{ leader.discovery_method | replace("_", " ") | title }}</span>
+        {% endif %}
+        {% if leader.last_verified_at %}
+        <span>Verified: {{ leader.last_verified_at | date_short }}</span>
+        {% endif %}
+      </div>
     </div>
     {% endfor %}
   </div>
