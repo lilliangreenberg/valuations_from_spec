@@ -99,19 +99,17 @@ ALLOWED_COMMANDS: dict[str, dict[str, Any]] = {
         ],
     },
     "extract-leadership": {
-        "description": "Extract leadership for a single company",
+        "description": "Extract leadership for a single company (opens Chrome)",
         "group": "Leadership Extraction",
         "args": [
             {"name": "--company-id", "type": "int", "default": "", "label": "Company ID"},
-            {"name": "--headless", "type": "flag", "default": False, "label": "Headless browser"},
         ],
     },
     "extract-leadership-all": {
-        "description": "Extract leadership for all companies",
+        "description": "Extract leadership for all companies (opens Chrome)",
         "group": "Leadership Extraction",
         "args": [
             {"name": "--limit", "type": "int", "default": "", "label": "Limit (companies)"},
-            {"name": "--headless", "type": "flag", "default": False, "label": "Headless browser"},
         ],
     },
     "check-leadership-changes": {
