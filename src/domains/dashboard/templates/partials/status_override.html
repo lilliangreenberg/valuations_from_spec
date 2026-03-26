@@ -1,6 +1,10 @@
 {% if status_data %}
   {% set status_str = status_data.status if status_data is mapping else status_data %}
+  {% if status_str == 'no_homepage_url' %}
+  <span class="badge {{ status_str | status_badge }}">NO HOMEPAGE URL</span>
+  {% else %}
   <span class="badge {{ status_str | status_badge }}">{{ status_str }}</span>
+  {% endif %}
   {% if status_data.is_manual_override %}
   <span class="text-xs font-medium px-1.5 py-0.5 rounded"
         style="background: var(--accent-blue); color: white; opacity: 0.85;">MANUAL</span>
