@@ -14,7 +14,7 @@
         </span>
         <a href="/companies/{{ item.company_id }}"
            class="ml-2 font-medium hover:underline" style="color: var(--accent-blue)">
-          {{ item.company_name }}
+          {{ item.company_name }} (ID: {{ item.company_id }})
         </a>
         <span class="text-sm" style="color: var(--text-secondary)">
           {{ item.event_date | relative_time }}

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ company.name }} - Portfolio Monitor{% endblock %}
+{% block title %}{{ company.name }} (ID: {{ company.id }}) - Portfolio Monitor{% endblock %}
 
 {% block content %}
 <!-- Back link -->
@@ -22,7 +22,7 @@
 <div class="card p-6 mb-6">
   <div class="flex flex-wrap items-start justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-bold" style="color: var(--text-primary)">{{ company.name }}</h1>
+      <h1 class="text-2xl font-bold" style="color: var(--text-primary)">{{ company.name }} (ID: {{ company.id }})</h1>
       {% if company.homepage_url %}
       <a href="{{ company.homepage_url }}" target="_blank" rel="noopener"
          class="text-sm hover:underline" style="color: var(--accent-blue)">

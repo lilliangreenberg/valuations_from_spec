@@ -8,7 +8,7 @@
       <div>
         <a href="/companies/{{ change.company_id }}"
            class="text-blue-600 dark:text-blue-400 font-semibold hover:underline">
-          {{ change.company_name }}
+          {{ change.company_name }} (ID: {{ change.company_id }})
         </a>
         <span class="ml-2 text-sm text-gray-500 dark:text-gray-400">
           {{ change.detected_at | date_short }}

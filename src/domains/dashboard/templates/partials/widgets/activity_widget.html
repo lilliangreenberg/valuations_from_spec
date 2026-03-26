@@ -12,7 +12,7 @@
           {{ item.event_type | title }}
         </span>
         <a href="/companies/{{ item.company_id }}" class="widget-company-link">
-          {{ item.company_name }}
+          {{ item.company_name }} (ID: {{ item.company_id }})
         </a>
         <span class="widget-activity-time">{{ item.event_date | relative_time }}</span>
         {% if item.title %}

@@ -31,7 +31,7 @@
     <div class="flex flex-wrap items-center gap-3 text-sm">
       <a href="/companies/{{ leader.company_id }}"
          class="text-blue-600 dark:text-blue-400 hover:underline">
-        {{ leader.company_name }}
+        {{ leader.company_name }} (ID: {{ leader.company_id }})
       </a>
 
       {% if leader.linkedin_profile_url %}

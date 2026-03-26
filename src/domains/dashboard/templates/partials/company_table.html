@@ -19,7 +19,7 @@
         <td>
           <a href="/companies/{{ company.id }}" onclick="event.preventDefault();this.closest('tr').click()"
              class="font-medium hover:underline"
-             style="color: var(--accent-blue)">{{ company.name }}</a>
+             style="color: var(--accent-blue)">{{ company.name }} (ID: {{ company.id }})</a>
           {% if company.homepage_url %}
           <br><span class="text-xs" style="color: var(--text-secondary)">{{ company.homepage_url | truncate_url }}</span>
           {% endif %}

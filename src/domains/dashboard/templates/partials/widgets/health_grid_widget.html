@@ -11,7 +11,7 @@
       <a href="/companies/{{ company.id }}"
          class="health-cell {{ company.status | health_grid_color(company.is_manual_override) }}">
         <span class="health-tooltip">
-          <strong>{{ company.name }}</strong>
+          <strong>{{ company.name }} (ID: {{ company.id }})</strong>
           <span class="tooltip-status">
             {{ company.status | replace('_', ' ') | title }}{% if company.is_manual_override %} (Manual){% endif %}{% if company.confidence %} &middot; {{ (company.confidence * 100) | int }}%{% endif %}
           </span>
