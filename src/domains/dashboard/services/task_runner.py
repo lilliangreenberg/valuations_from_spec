@@ -35,6 +35,12 @@ ALLOWED_COMMANDS: dict[str, dict[str, Any]] = {
             },
             {"name": "--batch-size", "type": "int", "default": 20, "label": "Batch size"},
             {"name": "--company-id", "type": "int", "default": "", "label": "Company ID (single)"},
+            {
+                "name": "--skip-if-snapshot-since",
+                "type": "str",
+                "default": "",
+                "label": "Skip if snapshot since (YYYY-MM-DD)",
+            },
         ],
     },
     "detect-changes": {
