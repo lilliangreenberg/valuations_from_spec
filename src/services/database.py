@@ -504,4 +504,11 @@ class Database:
             with contextlib.suppress(sqlite3.OperationalError):
                 self.execute(f"ALTER TABLE {table} ADD COLUMN performed_by TEXT")
 
+        # Migration: backfill empty performed_by with "Lily" for traceability
+        for table in [*performed_by_tables, "linkedin_snapshots"]:
+            with contextlib.suppress(sqlite3.OperationalError):
+                self.execute(
+                    f"UPDATE {table} SET performed_by = 'Lily' WHERE performed_by IS NULL"
+                )
+
         logger.info("database_initialized", path=self.db_path)

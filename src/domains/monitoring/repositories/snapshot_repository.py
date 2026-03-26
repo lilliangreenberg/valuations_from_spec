@@ -105,7 +105,8 @@ class SnapshotRepository:
                baseline_confidence = ?,
                baseline_keywords = ?,
                baseline_categories = ?,
-               baseline_notes = ?
+               baseline_notes = ?,
+               performed_by = ?
                WHERE id = ?""",
             (
                 data.get("baseline_classification"),
@@ -114,6 +115,7 @@ class SnapshotRepository:
                 json.dumps(data.get("baseline_keywords", [])),
                 json.dumps(data.get("baseline_categories", [])),
                 data.get("baseline_notes"),
+                self.operator,
                 snapshot_id,
             ),
         )

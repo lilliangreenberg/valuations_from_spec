@@ -88,9 +88,9 @@ class LeadershipRepository:
         """Mark a leadership record as no longer current (departed)."""
         self.db.execute(
             """UPDATE company_leadership
-               SET is_current = 0
+               SET is_current = 0, performed_by = ?
                WHERE company_id = ? AND linkedin_profile_url = ?""",
-            (company_id, linkedin_profile_url),
+            (self.operator, company_id, linkedin_profile_url),
         )
         self.db.connection.commit()
         logger.info(
@@ -104,9 +104,9 @@ class LeadershipRepository:
     ) -> None:
         """Update last_verified_at for an existing leadership record."""
         self.db.execute(
-            "UPDATE company_leadership SET last_verified_at = ? "
+            "UPDATE company_leadership SET last_verified_at = ?, performed_by = ? "
             "WHERE company_id = ? AND linkedin_profile_url = ?",
-            (last_verified_at, company_id, linkedin_profile_url),
+            (last_verified_at, self.operator, company_id, linkedin_profile_url),
         )
         self.db.connection.commit()
         logger.info(
