@@ -103,15 +103,21 @@
 
 <script>
 function showCommandArgs(commandName) {
-  // Hide all argument sections
+  // Hide all argument sections and disable their inputs so they don't submit
   document.querySelectorAll('.command-args').forEach(function(el) {
     el.style.display = 'none';
+    el.querySelectorAll('input, select').forEach(function(input) {
+      input.disabled = true;
+    });
   });
-  // Show the selected command's arguments
+  // Show and enable the selected command's arguments
   if (commandName) {
     var argsEl = document.getElementById('args-' + commandName);
     if (argsEl) {
       argsEl.style.display = 'block';
+      argsEl.querySelectorAll('input, select').forEach(function(input) {
+        input.disabled = false;
+      });
     }
   }
 }
