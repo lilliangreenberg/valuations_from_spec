@@ -103,6 +103,15 @@ class BrandingLogoProcessor:
             )
             return False
 
+        # SVG files cannot be processed by PIL (raster-only)
+        if "svg" in content_type or logo_url.lower().endswith(".svg"):
+            logger.debug(
+                "branding_logo_svg_skipped",
+                company_id=company_id,
+                url=logo_url,
+            )
+            return False
+
         try:
             image = image_from_bytes(response.content)
 
