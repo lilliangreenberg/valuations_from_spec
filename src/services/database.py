@@ -504,11 +504,41 @@ class Database:
             with contextlib.suppress(sqlite3.OperationalError):
                 self.execute(f"ALTER TABLE {table} ADD COLUMN performed_by TEXT")
 
-        # Migration: backfill empty performed_by with "Lily" for traceability
-        for table in [*performed_by_tables, "linkedin_snapshots"]:
-            with contextlib.suppress(sqlite3.OperationalError):
-                self.execute(
-                    f"UPDATE {table} SET performed_by = 'Lily' WHERE performed_by IS NULL"
-                )
-
         logger.info("database_initialized", path=self.db_path)
+
+    def backfill_performed_by(self, default_operator: str = "Lily") -> int:
+        """One-time backfill: set performed_by on all rows where it is NULL.
+
+        Returns total number of rows updated.
+        """
+        tables = [
+            "companies",
+            "snapshots",
+            "change_records",
+            "company_statuses",
+            "social_media_links",
+            "blog_links",
+            "company_logos",
+            "news_articles",
+            "processing_errors",
+            "company_leadership",
+            "social_media_snapshots",
+            "social_media_change_records",
+            "leadership_mentions",
+            "linkedin_snapshots",
+        ]
+        total = 0
+        for table in tables:
+            with contextlib.suppress(sqlite3.OperationalError):
+                cursor = self.execute(
+                    f"UPDATE {table} SET performed_by = ? WHERE performed_by IS NULL",
+                    (default_operator,),
+                )
+                total += cursor.rowcount
+        self.connection.commit()
+        logger.info(
+            "performed_by_backfill_complete",
+            operator=default_operator,
+            rows_updated=total,
+        )
+        return total

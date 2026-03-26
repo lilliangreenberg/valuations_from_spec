@@ -7,6 +7,7 @@ import click
 from src.cli.commands import (
     analyze_baseline,
     analyze_status,
+    backfill_performed_by,
     backfill_significance,
     capture_snapshots,
     capture_social_snapshots,
@@ -69,6 +70,7 @@ cli.add_command(extract_leadership_all)
 cli.add_command(check_leadership_changes)
 cli.add_command(discover_ceo_linkedin)
 cli.add_command(analyze_baseline)
+cli.add_command(backfill_performed_by)
 cli.add_command(refresh_logos)
 cli.add_command(set_company_notes)
 cli.add_command(get_company_notes)

@@ -1024,6 +1024,29 @@ def discover_social_batch(
 
 
 @click.command()
+@click.option(
+    "--operator",
+    default="Lily",
+    type=str,
+    help="Operator name to backfill (default: Lily)",
+)
+def backfill_performed_by(operator: str) -> None:
+    """One-time backfill: set performed_by on all rows where it is NULL.
+
+    Sets the performed_by column to the given operator name for every row
+    across all 14 tables where it is currently NULL. Run once after upgrade.
+    """
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    click.echo(f"[INFO] Backfilling NULL performed_by with '{operator}'...")
+    total = db.backfill_performed_by(default_operator=operator)
+    click.echo(f"[SUCCESS] Updated {total} rows across all tables.")
+    db.close()
+
+
+@click.command()
 @click.option("--force", is_flag=True, help="Refresh all logos regardless of staleness")
 @click.option("--staleness-days", default=90, type=int, help="Refresh logos older than N days")
 @click.option("--limit", default=None, type=int, help="Process first N companies")
