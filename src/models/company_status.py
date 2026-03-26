@@ -17,6 +17,7 @@ class CompanyStatusType(StrEnum):
     OPERATIONAL = "operational"
     LIKELY_CLOSED = "likely_closed"
     UNCERTAIN = "uncertain"
+    NO_HOMEPAGE_URL = "no_homepage_url"
 
 
 class SignalType(StrEnum):

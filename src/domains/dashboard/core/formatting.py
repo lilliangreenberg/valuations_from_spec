@@ -123,6 +123,7 @@ def status_badge_class(status: str | None) -> str:
         "operational": "status-operational",
         "likely_closed": "status-closed",
         "uncertain": "status-uncertain",
+        "no_homepage_url": "status-no-url",
     }
     return mapping.get(status or "", "status-unknown")
 
@@ -205,6 +206,7 @@ def health_grid_color(status: str | None, is_manual_override: bool = False) -> s
         "operational": "health-green",
         "likely_closed": "health-red",
         "uncertain": "health-yellow",
+        "no_homepage_url": "health-no-url",
     }
     return mapping.get(status or "", "health-gray")
 

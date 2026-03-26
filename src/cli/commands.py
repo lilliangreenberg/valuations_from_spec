@@ -42,19 +42,21 @@ def _get_operator() -> str:
 
 
 def _get_manually_closed_ids(db: Database, operator: str) -> set[int]:
-    """Get company IDs that have been manually set to likely_closed.
+    """Get company IDs that should be skipped in batch operations.
 
-    These companies are excluded from batch operations by default.
+    Skips companies that are manually set to likely_closed OR have
+    no_homepage_url status (cannot be scraped).
     """
     from src.domains.monitoring.repositories.company_status_repository import (
         CompanyStatusRepository,
     )
 
     status_repo = CompanyStatusRepository(db, operator)
-    closed_ids = status_repo.get_manually_closed_company_ids()
-    if closed_ids:
-        click.echo(f"[INFO] Excluding {len(closed_ids)} manually-closed companies")
-    return closed_ids
+    skip_ids = status_repo.get_skippable_company_ids()
+    if skip_ids:
+        click.echo(f"[INFO] Excluding {len(skip_ids)} skippable companies "
+                    "(manually-closed + no homepage URL)")
+    return skip_ids
 
 
 def _print_summary(title: str, stats: dict[str, Any]) -> None:
