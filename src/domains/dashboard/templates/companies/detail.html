@@ -38,11 +38,11 @@
         {% if company.source_sheet %}
         <span class="badge bg-gray-100 text-gray-700">{{ company.source_sheet }}</span>
         {% endif %}
+        <span class="text-sm font-semibold" style="color: var(--text-primary)">ID: {{ company.id }}</span>
       </div>
     </div>
-    <div class="flex flex-col items-end justify-between">
-      <div class="flex flex-wrap gap-2">
-        <a href="/operations?command=search-news&company_id={{ company.id }}"
+    <div class="flex flex-wrap gap-2">
+      <a href="/operations?command=search-news&company_id={{ company.id }}"
          class="btn btn-primary text-sm">Search News</a>
       <a href="/operations?command=discover-social-media&company_id={{ company.id }}"
          class="btn btn-primary text-sm">Discover Social</a>
@@ -75,11 +75,9 @@
         </button>
       </form>
 
-        <span id="action-loading-indicator"
-              class="htmx-indicator text-sm"
-              style="color: var(--text-secondary)">Starting...</span>
-      </div>
-      <span class="text-2xl font-bold" style="color: var(--text-primary)">ID: {{ company.id }}</span>
+      <span id="action-loading-indicator"
+            class="htmx-indicator text-sm"
+            style="color: var(--text-secondary)">Starting...</span>
     </div>
   </div>
 </div>
