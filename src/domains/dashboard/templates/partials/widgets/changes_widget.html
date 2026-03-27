@@ -7,14 +7,36 @@
     <div class="widget-big-number">{{ widget.total_changes }}</div>
     <div class="widget-label">
       {% if widget.scan_date %}
-        changes detected on {{ widget.scan_date | date_short }}
+        companies changed since {{ widget.scan_date | date_short }}
       {% else %}
         No scans recorded yet
       {% endif %}
     </div>
 
+    {% if widget.by_significance is defined %}
+    <div class="widget-breakdown mt-3">
+      <div class="widget-breakdown-rows">
+        <div class="widget-breakdown-row">
+          <span class="widget-dot dot-red"></span>
+          <span class="widget-breakdown-label">Significant</span>
+          <span class="widget-breakdown-value">{{ widget.by_significance.get("significant", 0) }}</span>
+        </div>
+        <div class="widget-breakdown-row">
+          <span class="widget-dot dot-yellow"></span>
+          <span class="widget-breakdown-label">Uncertain</span>
+          <span class="widget-breakdown-value">{{ widget.by_significance.get("uncertain", 0) }}</span>
+        </div>
+        <div class="widget-breakdown-row">
+          <span class="widget-dot dot-green"></span>
+          <span class="widget-breakdown-label">Insignificant</span>
+          <span class="widget-breakdown-value">{{ widget.by_significance.get("insignificant", 0) }}</span>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     {% if widget.size == "large" and widget.by_magnitude is defined %}
-    <div class="widget-breakdown mt-4">
+    <div class="widget-breakdown mt-3">
       <div class="widget-breakdown-title">By Magnitude</div>
       <div class="widget-breakdown-rows">
         <div class="widget-breakdown-row">
@@ -31,27 +53,6 @@
           <span class="widget-dot dot-blue"></span>
           <span class="widget-breakdown-label">Minor</span>
           <span class="widget-breakdown-value">{{ widget.by_magnitude.get("minor", 0) }}</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="widget-breakdown mt-3">
-      <div class="widget-breakdown-title">By Significance</div>
-      <div class="widget-breakdown-rows">
-        <div class="widget-breakdown-row">
-          <span class="widget-dot dot-red"></span>
-          <span class="widget-breakdown-label">Significant</span>
-          <span class="widget-breakdown-value">{{ widget.by_significance.get("significant", 0) }}</span>
-        </div>
-        <div class="widget-breakdown-row">
-          <span class="widget-dot dot-yellow"></span>
-          <span class="widget-breakdown-label">Uncertain</span>
-          <span class="widget-breakdown-value">{{ widget.by_significance.get("uncertain", 0) }}</span>
-        </div>
-        <div class="widget-breakdown-row">
-          <span class="widget-dot dot-green"></span>
-          <span class="widget-breakdown-label">Insignificant</span>
-          <span class="widget-breakdown-value">{{ widget.by_significance.get("insignificant", 0) }}</span>
         </div>
       </div>
     </div>
