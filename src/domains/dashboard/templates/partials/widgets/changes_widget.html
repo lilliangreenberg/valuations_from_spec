@@ -13,7 +13,7 @@
       {% endif %}
     </div>
 
-    {% if widget.by_significance is defined %}
+    {% if widget.by_significance %}
     <div class="widget-breakdown mt-3">
       <div class="widget-breakdown-rows">
         <div class="widget-breakdown-row">
@@ -35,7 +35,7 @@
     </div>
     {% endif %}
 
-    {% if widget.size == "large" and widget.by_magnitude is defined %}
+    {% if widget.size == "large" and widget.by_magnitude %}
     <div class="widget-breakdown mt-3">
       <div class="widget-breakdown-title">By Magnitude</div>
       <div class="widget-breakdown-rows">
