@@ -51,11 +51,6 @@ ALLOWED_COMMANDS: dict[str, dict[str, Any]] = {
             {"name": "--company-id", "type": "int", "default": "", "label": "Company ID (single)"},
         ],
     },
-    "analyze-status": {
-        "description": "Analyze company operational status",
-        "group": "Change Detection",
-        "args": [],
-    },
     "backfill-significance": {
         "description": "Backfill significance analysis for existing records",
         "group": "Change Detection",

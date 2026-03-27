@@ -6,7 +6,6 @@ import click
 
 from src.cli.commands import (
     analyze_baseline,
-    analyze_status,
     backfill_performed_by,
     backfill_significance,
     capture_snapshots,
@@ -49,7 +48,6 @@ cli.add_command(extract_companies)
 cli.add_command(import_urls)
 cli.add_command(capture_snapshots)
 cli.add_command(detect_changes)
-cli.add_command(analyze_status)
 cli.add_command(discover_social_media)
 cli.add_command(discover_social_full_site)
 cli.add_command(discover_social_batch)

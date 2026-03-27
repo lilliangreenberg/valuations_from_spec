@@ -358,59 +358,6 @@ def detect_changes(
 
 
 @click.command()
-@click.option("--batch-size", default=50, type=int, help="Companies per batch")
-@click.option("--confidence-threshold", default=0.7, type=float, help="Min confidence 0.0-1.0")
-@click.option(
-    "--output-format",
-    default="summary",
-    type=click.Choice(["summary", "detailed", "json"]),
-    help="Output format",
-)
-@click.option("--include-social", is_flag=True, help="Include social media signals in analysis")
-def analyze_status(
-    batch_size: int, confidence_threshold: float, output_format: str, include_social: bool
-) -> None:
-    """Analyze company operational status from snapshots."""
-    config = _get_config()
-    configure_logging(config.log_level)
-    db = _get_db(config)
-
-    from src.domains.monitoring.repositories.company_status_repository import (
-        CompanyStatusRepository,
-    )
-    from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
-    from src.domains.monitoring.services.status_analyzer import StatusAnalyzer
-    from src.repositories.company_repository import CompanyRepository
-
-    operator = _get_operator()
-    snapshot_repo = SnapshotRepository(db, operator)
-    status_repo = CompanyStatusRepository(db, operator)
-    company_repo = CompanyRepository(db, operator)
-
-    social_snapshot_repo = None
-    if include_social:
-        from src.domains.monitoring.repositories.social_snapshot_repository import (
-            SocialSnapshotRepository,
-        )
-
-        social_snapshot_repo = SocialSnapshotRepository(db, operator)
-        click.echo("[INFO] Including social media signals in status analysis...")
-
-    analyzer = StatusAnalyzer(
-        snapshot_repo, status_repo, company_repo, social_snapshot_repo=social_snapshot_repo
-    )
-
-    click.echo("[INFO] Analyzing company statuses...")
-    result = analyzer.analyze_all_statuses()
-
-    if output_format == "json":
-        click.echo(json.dumps(result, indent=2))
-    else:
-        _print_summary("Status analysis complete", result)
-    db.close()
-
-
-@click.command()
 @click.option("--batch-size", default=100, type=int, help="Records per batch")
 @click.option("--dry-run", is_flag=True, help="Preview without updating")
 def backfill_significance(batch_size: int, dry_run: bool) -> None:

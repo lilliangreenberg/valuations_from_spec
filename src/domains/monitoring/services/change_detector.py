@@ -303,6 +303,34 @@ class ChangeDetector:
                                 else linkedin_context
                             )
 
+                        # Append current status context so LLM can factor it in
+                        if self.status_repo is not None:
+                            current_status = self.status_repo.get_latest_status(
+                                company_id
+                            )
+                            if current_status:
+                                status_str = current_status.get("status", "unknown")
+                                status_conf = current_status.get("confidence", 0.0)
+                                status_reason = current_status.get(
+                                    "status_reason", ""
+                                ) or ""
+                                is_manual = current_status.get(
+                                    "is_manual_override", False
+                                )
+                                manual_note = " (manually set)" if is_manual else ""
+                                status_context = (
+                                    f"\nCurrent company status: "
+                                    f"{status_str}{manual_note} "
+                                    f"(confidence: {status_conf:.0%})"
+                                )
+                                if status_reason:
+                                    status_context += f"\nStatus reason: {status_reason}"
+                                social_context = (
+                                    f"{social_context}\n{status_context}"
+                                    if social_context
+                                    else status_context
+                                )
+
                         # LLM as primary classifier -- keywords passed as hints
                         if self.llm_enabled and self.llm_client:
                             try:
