@@ -42,6 +42,13 @@
                 </a>
             </nav>
             <div class="flex items-center gap-2 shrink-0">
+                {% if request.session and request.session.get("user") %}
+                <span class="text-xs text-slate-400">{{ request.session.get("user", {}).get("name", "") }}</span>
+                <a href="/auth/logout"
+                   class="px-2.5 py-1 text-xs font-medium rounded-md border border-slate-600 text-slate-400 hover:text-slate-100 hover:bg-white/[0.08] transition-colors no-underline">
+                    Sign out
+                </a>
+                {% endif %}
                 <button onclick="toggleTheme()" id="theme-toggle"
                         class="px-2.5 py-1 text-xs font-medium rounded-md border border-slate-600 text-slate-400 hover:text-slate-100 hover:bg-white/[0.08] transition-colors cursor-pointer"
                         title="Toggle theme">

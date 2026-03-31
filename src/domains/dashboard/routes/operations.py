@@ -87,7 +87,8 @@ async def run_command(
     form_data = await request.form()
     args = _build_args_from_form(command, dict(form_data))
 
-    task_id = await tr.start_task(command, args)
+    operator = getattr(request.state, "operator", None)
+    task_id = await tr.start_task(command, args, operator=operator)
     task = tr.get_task(task_id)
 
     return tmpl.TemplateResponse(

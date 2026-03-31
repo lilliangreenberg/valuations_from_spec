@@ -24,6 +24,9 @@ dependencies = [
     "jinja2>=3.1.5",
     "sse-starlette>=2.2.0",
     "python-multipart>=0.0.18",
+    "google-auth>=2.29.0",
+    "google-auth-oauthlib>=1.2.0",
+    "itsdangerous>=2.2.0",
 ]
 
 [project.scripts]

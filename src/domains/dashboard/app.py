@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import getpass
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -10,10 +10,13 @@ from typing import TYPE_CHECKING
 import structlog
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.templating import Jinja2Templates
 
 from src.domains.dashboard.core import formatting
+from src.domains.dashboard.middleware import AuthMiddleware
 from src.domains.dashboard.routes import (
+    auth,
     changes,
     companies,
     leadership,
@@ -24,14 +27,6 @@ from src.domains.dashboard.routes import (
 )
 from src.domains.dashboard.services.query_service import QueryService
 from src.domains.dashboard.services.task_runner import TaskRunner
-from src.domains.leadership.repositories.leadership_repository import LeadershipRepository
-from src.domains.monitoring.repositories.change_record_repository import ChangeRecordRepository
-from src.domains.monitoring.repositories.company_status_repository import (
-    CompanyStatusRepository,
-)
-from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
-from src.domains.news.repositories.news_article_repository import NewsArticleRepository
-from src.repositories.company_repository import CompanyRepository
 from src.services.database import Database
 
 if TYPE_CHECKING:
@@ -84,12 +79,18 @@ def _register_template_filters(templates: Jinja2Templates) -> None:
 def create_app(
     database_path: str = "data/companies.db",
     database: Database | None = None,
+    google_oauth_client_id: str | None = None,
+    google_oauth_client_secret: str | None = None,
+    session_secret_key: str | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI dashboard application.
 
     Args:
         database_path: Path to the SQLite database file.
         database: Optional pre-configured Database instance (used in testing).
+        google_oauth_client_id: Google OAuth client ID (enables OAuth when set).
+        google_oauth_client_secret: Google OAuth client secret.
+        session_secret_key: Secret key for session cookie signing.
     """
 
     @asynccontextmanager
@@ -109,6 +110,24 @@ def create_app(
         lifespan=lifespan,
     )
 
+    # OAuth setup
+    oauth_enabled = bool(google_oauth_client_id and google_oauth_client_secret)
+    if oauth_enabled:
+        from src.services.auth import AuthService
+
+        app.state.auth_service = AuthService(
+            client_id=google_oauth_client_id,  # type: ignore[arg-type]
+            client_secret=google_oauth_client_secret,  # type: ignore[arg-type]
+        )
+    else:
+        app.state.auth_service = None
+
+    # Middleware order matters: Starlette wraps in LIFO order.
+    # AuthMiddleware added first (innermost) so it runs AFTER SessionMiddleware.
+    app.add_middleware(AuthMiddleware, oauth_enabled=oauth_enabled)
+    secret_key = session_secret_key or secrets.token_urlsafe(32)
+    app.add_middleware(SessionMiddleware, secret_key=secret_key)
+
     # Static files
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
@@ -117,26 +136,20 @@ def create_app(
     _register_template_filters(templates)
     app.state.templates = templates
 
-    # Database and repositories
+    # Database (repositories are created per-request in dependencies.py)
     if database is not None:
         db = database
     else:
         db = Database(db_path=database_path, check_same_thread=False)
         db.init_db()
     app.state.db = db
-    operator = getpass.getuser()
-    app.state.company_repo = CompanyRepository(db, operator)
-    app.state.snapshot_repo = SnapshotRepository(db, operator)
-    app.state.change_repo = ChangeRecordRepository(db, operator)
-    app.state.status_repo = CompanyStatusRepository(db, operator)
-    app.state.news_repo = NewsArticleRepository(db, operator)
-    app.state.leadership_repo = LeadershipRepository(db, operator)
 
     # Dashboard services
     app.state.query_service = QueryService(db)
     app.state.task_runner = TaskRunner(max_concurrent=2)
 
     # Routes
+    app.include_router(auth.router)
     app.include_router(overview.router)
     app.include_router(companies.router)
     app.include_router(changes.router)
@@ -152,5 +165,16 @@ def main() -> None:
     """Entry point for running the dashboard directly."""
     import uvicorn
 
-    app = create_app()
+    from src.models.config import Config
+
+    try:
+        config = Config()  # type: ignore[call-arg]
+    except Exception:
+        config = None
+
+    app = create_app(
+        google_oauth_client_id=getattr(config, "google_oauth_client_id", None),
+        google_oauth_client_secret=getattr(config, "google_oauth_client_secret", None),
+        session_secret_key=getattr(config, "session_secret_key", None),
+    )
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
