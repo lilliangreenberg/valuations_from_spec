@@ -41,7 +41,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             user_data = request.session.get("user")
             if user_data is None:
                 return RedirectResponse(url="/auth/login-page", status_code=302)
-            request.state.operator = user_data["email"]
+            request.state.operator = user_data.get("name", user_data["email"])
         else:
             request.state.operator = getpass.getuser()
 

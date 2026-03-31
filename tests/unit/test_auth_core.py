@@ -40,8 +40,12 @@ class TestIsTokenExpired:
 
 
 class TestGetOperatorFromUserInfo:
-    def test_returns_email(self) -> None:
+    def test_returns_name(self) -> None:
         user = GoogleUserInfo(email="alice@example.com", name="Alice Smith")
+        assert get_operator_from_user_info(user) == "Alice Smith"
+
+    def test_falls_back_to_email_when_no_name(self) -> None:
+        user = GoogleUserInfo(email="alice@example.com", name="")
         assert get_operator_from_user_info(user) == "alice@example.com"
 
 

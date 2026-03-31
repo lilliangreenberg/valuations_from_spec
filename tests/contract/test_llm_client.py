@@ -18,47 +18,73 @@ def llm_client() -> LLMClient:
     return LLMClient(api_key="test-key", model="claude-haiku-4-5-20251001")
 
 
-def _mock_response(text: str) -> MagicMock:
-    """Create a mock Anthropic API response with given text."""
+def _mock_tool_use_response(tool_input: dict[str, object]) -> MagicMock:
+    """Create a mock Anthropic API response with a tool_use content block."""
+    block = MagicMock()
+    block.type = "tool_use"
+    block.input = tool_input
+    block.name = "submit_classification"
+    block.id = "toolu_test123"
+
     mock = MagicMock()
-    mock.content = [MagicMock(text=text)]
+    mock.content = [block]
+    mock.stop_reason = "tool_use"
     return mock
 
 
-def _valid_json_response() -> str:
-    """Return a valid JSON classification response."""
-    return (
-        '{"classification": "insignificant", "sentiment": "neutral",'
-        ' "confidence": 0.85, "reasoning": "test"}'
-    )
+def _mock_text_response(text: str) -> MagicMock:
+    """Create a mock Anthropic API response with text (for screenshot analysis)."""
+    block = MagicMock()
+    block.type = "text"
+    block.text = text
+
+    mock = MagicMock()
+    mock.content = [block]
+    mock.stop_reason = "end_turn"
+    return mock
+
+
+def _valid_classification_result() -> dict[str, object]:
+    """Return a valid classification tool input dict."""
+    return {
+        "classification": "insignificant",
+        "sentiment": "neutral",
+        "confidence": 0.9,
+        "reasoning": "Routine website update.",
+        "validated_keywords": [],
+        "false_positives": [],
+    }
+
+
+def _valid_verification_result() -> dict[str, object]:
+    """Return a valid verification tool input dict."""
+    return {
+        "is_match": True,
+        "confidence": 0.9,
+        "reasoning": "Article describes the same product.",
+    }
 
 
 class TestLLMClientRetryConfig:
     """Verify retry configuration on LLM methods."""
 
     def test_classify_significance_has_four_max_attempts(self, llm_client: LLMClient) -> None:
-        """classify_significance should retry up to 4 attempts."""
         retry_obj = llm_client.classify_significance.retry  # type: ignore[attr-defined]
-        # stop_after_attempt stores the max as stop.max_attempt_number
         assert retry_obj.stop.max_attempt_number == 4
 
     def test_classify_baseline_has_four_max_attempts(self, llm_client: LLMClient) -> None:
-        """classify_baseline should retry up to 4 attempts."""
         retry_obj = llm_client.classify_baseline.retry  # type: ignore[attr-defined]
         assert retry_obj.stop.max_attempt_number == 4
 
     def test_classify_news_has_four_max_attempts(self, llm_client: LLMClient) -> None:
-        """classify_news_significance should retry up to 4 attempts."""
         retry_obj = llm_client.classify_news_significance.retry  # type: ignore[attr-defined]
         assert retry_obj.stop.max_attempt_number == 4
 
     def test_verify_company_identity_has_four_max_attempts(self, llm_client: LLMClient) -> None:
-        """verify_company_identity should retry up to 4 attempts."""
         retry_obj = llm_client.verify_company_identity.retry  # type: ignore[attr-defined]
         assert retry_obj.stop.max_attempt_number == 4
 
     def test_max_backoff_is_sixty_seconds(self, llm_client: LLMClient) -> None:
-        """All LLM methods should use 60s max backoff for 529 resilience."""
         for method_name in [
             "classify_significance",
             "classify_baseline",
@@ -74,21 +100,24 @@ class TestLLMClientThrottle:
     """Verify inter-request delay behavior."""
 
     def test_inter_request_delay_constant_is_positive(self) -> None:
-        """The throttle delay should be a positive value."""
         assert _INTER_REQUEST_DELAY_SECONDS > 0
-        assert _INTER_REQUEST_DELAY_SECONDS <= 1.0  # sanity: not too slow
+        assert _INTER_REQUEST_DELAY_SECONDS <= 1.0
 
     @patch("src.services.llm_client.time.sleep")
-    def test_call_llm_sleeps_after_successful_response(
+    def test_call_llm_with_tool_sleeps_after_success(
         self, mock_sleep: MagicMock, llm_client: LLMClient
     ) -> None:
-        """_call_llm should throttle after a successful API response."""
+        """_call_llm_with_tool should throttle after a successful API response."""
+        from src.services.llm_client import _CLASSIFICATION_TOOL
+
         with patch.object(
             llm_client.client.messages,
             "create",
-            return_value=_mock_response(_valid_json_response()),
+            return_value=_mock_tool_use_response(_valid_classification_result()),
         ):
-            result = llm_client._call_llm("sys", "user", "test_op")
+            result = llm_client._call_llm_with_tool(
+                "sys", "user", _CLASSIFICATION_TOOL, "test_op"
+            )
 
         assert "error" not in result
         mock_sleep.assert_called_once_with(_INTER_REQUEST_DELAY_SECONDS)
@@ -97,13 +126,17 @@ class TestLLMClientThrottle:
     def test_no_sleep_on_non_retryable_failure(
         self, mock_sleep: MagicMock, llm_client: LLMClient
     ) -> None:
-        """_call_llm should NOT throttle when a non-retryable exception occurs."""
+        """_call_llm_with_tool should NOT throttle on non-retryable exception."""
+        from src.services.llm_client import _CLASSIFICATION_TOOL
+
         with patch.object(
             llm_client.client.messages,
             "create",
             side_effect=ValueError("bad input"),
         ):
-            result = llm_client._call_llm("sys", "user", "test_op")
+            result = llm_client._call_llm_with_tool(
+                "sys", "user", _CLASSIFICATION_TOOL, "test_op"
+            )
 
         assert "error" in result
         mock_sleep.assert_not_called()
@@ -112,12 +145,10 @@ class TestLLMClientThrottle:
     def test_verify_company_identity_sleeps_on_success(
         self, mock_sleep: MagicMock, llm_client: LLMClient
     ) -> None:
-        """verify_company_identity should throttle after success."""
-        response_text = '{"is_match": true, "reasoning": "test match"}'
         with patch.object(
             llm_client.client.messages,
             "create",
-            return_value=_mock_response(response_text),
+            return_value=_mock_tool_use_response(_valid_verification_result()),
         ):
             is_match, reasoning = llm_client.verify_company_identity(
                 company_name="Test Co",
@@ -134,47 +165,45 @@ class TestLLMClientThrottle:
 class TestLLMClientFallback:
     """Verify graceful fallback when API calls fail."""
 
-    def test_call_llm_returns_error_dict_on_non_retryable_exception(
+    def test_call_llm_with_tool_returns_error_on_exception(
         self, llm_client: LLMClient
     ) -> None:
-        """Non-retryable exceptions should return a dict with 'error' key."""
+        from src.services.llm_client import _CLASSIFICATION_TOOL
+
         with patch.object(
             llm_client.client.messages,
             "create",
             side_effect=ValueError("unexpected"),
         ):
-            result = llm_client._call_llm("sys", "user", "test_op")
+            result = llm_client._call_llm_with_tool(
+                "sys", "user", _CLASSIFICATION_TOOL, "test_op"
+            )
 
         assert "error" in result
         assert result["classification"] == "uncertain"
         assert result["confidence"] == 0.5
 
-    def test_call_llm_returns_error_on_json_parse_failure(self, llm_client: LLMClient) -> None:
-        """Unparseable LLM response should return error dict."""
+    def test_call_llm_with_tool_success_returns_tool_input(
+        self, llm_client: LLMClient
+    ) -> None:
+        from src.services.llm_client import _CLASSIFICATION_TOOL
+
         with patch.object(
             llm_client.client.messages,
             "create",
-            return_value=_mock_response("not valid json at all"),
+            return_value=_mock_tool_use_response(_valid_classification_result()),
         ):
-            result = llm_client._call_llm("sys", "user", "test_op")
-
-        assert "error" in result
-
-    def test_call_llm_success_returns_parsed_json(self, llm_client: LLMClient) -> None:
-        """Successful API call should return parsed JSON dict without error."""
-        with patch.object(
-            llm_client.client.messages,
-            "create",
-            return_value=_mock_response(_valid_json_response()),
-        ):
-            result = llm_client._call_llm("sys", "user", "test_op")
+            result = llm_client._call_llm_with_tool(
+                "sys", "user", _CLASSIFICATION_TOOL, "test_op"
+            )
 
         assert "error" not in result
         assert result["classification"] == "insignificant"
-        assert result["confidence"] == 0.85
+        assert result["confidence"] == 0.9
 
-    def test_verify_company_identity_returns_false_on_failure(self, llm_client: LLMClient) -> None:
-        """verify_company_identity returns (False, reason) on non-retryable error."""
+    def test_verify_company_identity_returns_false_on_failure(
+        self, llm_client: LLMClient
+    ) -> None:
         with patch.object(
             llm_client.client.messages,
             "create",
@@ -189,4 +218,18 @@ class TestLLMClientFallback:
             )
 
         assert is_match is False
-        assert "Verification failed" in reasoning
+        assert "failed" in reasoning.lower()
+
+    def test_screenshot_analysis_still_uses_text_parsing(
+        self, llm_client: LLMClient
+    ) -> None:
+        """analyze_screenshot should still use text-based JSON parsing."""
+        json_text = '{"company_name": "Test", "industry": "Tech"}'
+        with patch.object(
+            llm_client.client.messages,
+            "create",
+            return_value=_mock_text_response(json_text),
+        ):
+            result = llm_client.analyze_screenshot("base64data", "analyze this")
+
+        assert result["company_name"] == "Test"

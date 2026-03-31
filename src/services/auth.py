@@ -88,14 +88,15 @@ class AuthService:
         logger.info("cli_login_success", user=user_info.email)
         return user_info
 
-    def get_authorization_url(self, redirect_uri: str) -> tuple[str, str]:
+    def get_authorization_url(self, redirect_uri: str) -> tuple[str, str, str | None]:
         """Generate the Google OAuth authorization URL for dashboard login.
 
         Args:
             redirect_uri: The callback URL (e.g., http://localhost:8000/auth/callback).
 
         Returns:
-            Tuple of (authorization_url, state).
+            Tuple of (authorization_url, state, code_verifier).
+            code_verifier must be stored in session and passed to exchange_code().
         """
         client_config = build_web_oauth_client_config(
             self.config.client_id, self.config.client_secret
@@ -112,14 +113,19 @@ class AuthService:
             prompt="consent",
             state=state,
         )
-        return authorization_url, state
+        # Extract the PKCE code verifier so we can pass it to exchange_code
+        code_verifier = flow.code_verifier
+        return authorization_url, state, code_verifier
 
-    def exchange_code(self, code: str, redirect_uri: str) -> StoredCredentials:
+    def exchange_code(
+        self, code: str, redirect_uri: str, code_verifier: str | None = None
+    ) -> StoredCredentials:
         """Exchange an authorization code for credentials (dashboard callback).
 
         Args:
             code: The authorization code from Google's callback.
             redirect_uri: Must match the redirect_uri used in get_authorization_url.
+            code_verifier: The PKCE code verifier from get_authorization_url().
 
         Returns:
             Complete stored credentials with user info.
@@ -132,6 +138,7 @@ class AuthService:
             scopes=self.config.scopes,
             redirect_uri=redirect_uri,
         )
+        flow.code_verifier = code_verifier
         flow.fetch_token(code=code)
         google_creds = flow.credentials
 

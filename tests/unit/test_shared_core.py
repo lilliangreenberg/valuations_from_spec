@@ -1026,7 +1026,7 @@ class TestBuildSignificanceClassificationPrompt:
             company_name="X",
             homepage_url="https://x.com",
         )
-        assert "venture capital" in system.lower()
+        assert "vc portfolio" in system.lower()
 
     def test_system_prompt_mentions_false_positives(self) -> None:
         system, _ = build_significance_classification_prompt(

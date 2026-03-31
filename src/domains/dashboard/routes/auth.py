@@ -30,8 +30,9 @@ async def login(request: Request) -> RedirectResponse:
     auth_service = request.app.state.auth_service
     base_url = str(request.base_url).rstrip("/")
     redirect_uri = f"{base_url}/auth/callback"
-    authorization_url, state = auth_service.get_authorization_url(redirect_uri)
+    authorization_url, state, code_verifier = auth_service.get_authorization_url(redirect_uri)
     request.session["oauth_state"] = state
+    request.session["oauth_code_verifier"] = code_verifier
     return RedirectResponse(url=authorization_url, status_code=302)
 
 
@@ -48,7 +49,8 @@ async def oauth_callback(request: Request) -> RedirectResponse:
     redirect_uri = f"{base_url}/auth/callback"
 
     try:
-        stored_creds = auth_service.exchange_code(code, redirect_uri)
+        code_verifier = request.session.get("oauth_code_verifier")
+        stored_creds = auth_service.exchange_code(code, redirect_uri, code_verifier=code_verifier)
         request.session["user"] = {
             "email": stored_creds.user_info.email,
             "name": stored_creds.user_info.name,

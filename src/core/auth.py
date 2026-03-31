@@ -30,9 +30,10 @@ def is_token_expired(expiry: datetime | None, buffer_minutes: int = 5) -> bool:
 def get_operator_from_user_info(user_info: GoogleUserInfo) -> str:
     """Extract the operator identifier from Google user info.
 
-    Returns the email address as the globally unique operator identifier.
+    Returns the user's full name for human-readable audit trails.
+    Falls back to email if name is not available.
     """
-    return user_info.email
+    return user_info.name if user_info.name else user_info.email
 
 
 def build_oauth_client_config(client_id: str, client_secret: str) -> dict[str, Any]:

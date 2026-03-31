@@ -64,7 +64,7 @@ def _get_operator() -> str:
     if auth_service is not None:
         user = auth_service.get_current_user()
         if user is not None:
-            return user.email
+            return user.name
         click.echo("Error: Google OAuth is configured but you are not logged in.", err=True)
         click.echo("Run 'airtable-extractor login' to authenticate.", err=True)
         sys.exit(1)
