@@ -31,7 +31,7 @@
     <div class="flex flex-wrap items-center gap-3 text-sm">
       <a href="/companies/{{ leader.company_id }}"
          class="text-blue-600 dark:text-blue-400 hover:underline">
-        {{ leader.company_name }}
+        {{ leader.company_name }} (ID: {{ leader.company_id }})
       </a>
 
       {% if leader.linkedin_profile_url %}
@@ -52,7 +52,19 @@
         Confidence: {{ "%.0f" | format(leader.confidence * 100) }}%
       </span>
       {% endif %}
+
+      {% if leader.last_verified_at %}
+      <span class="text-gray-500 dark:text-gray-400">
+        Verified: {{ leader.last_verified_at[:10] }}
+      </span>
+      {% endif %}
     </div>
+
+    {% if leader.last_snapshot_at %}
+    <div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
+      Last LinkedIn snapshot: {{ leader.last_snapshot_at[:10] }}
+    </div>
+    {% endif %}
   </div>
   {% endfor %}
 </div>

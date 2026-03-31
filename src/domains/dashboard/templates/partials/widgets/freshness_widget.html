@@ -36,7 +36,7 @@
           <div class="widget-breakdown-rows">
             {% for company in companies[:5] %}
             <div class="widget-breakdown-row">
-              <a href="/companies/{{ company.id }}" class="widget-company-link">{{ company.name }}</a>
+              <a href="/companies/{{ company.id }}" class="widget-company-link">{{ company.name }} (ID: {{ company.id }})</a>
               {% if company.last_snapshot %}
               <span class="widget-breakdown-meta">{{ company.last_snapshot | relative_time }}</span>
               {% endif %}

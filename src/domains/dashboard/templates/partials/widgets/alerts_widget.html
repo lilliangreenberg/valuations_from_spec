@@ -27,7 +27,7 @@
       <div class="widget-breakdown-rows">
         {% for company in widget.flagged_companies %}
         <div class="widget-breakdown-row">
-          <a href="/companies/{{ company.id }}" class="widget-company-link">{{ company.name }}</a>
+          <a href="/companies/{{ company.id }}" class="widget-company-link">{{ company.name }} (ID: {{ company.id }})</a>
         </div>
         {% endfor %}
       </div>

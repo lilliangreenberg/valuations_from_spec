@@ -456,10 +456,31 @@ async def delete_entry(
     if not table:
         return HTMLResponse(status_code=404, content="Unknown entry type")
 
+    import getpass
+    from datetime import UTC, datetime
+
+    operator = getpass.getuser()
+    now = datetime.now(UTC).isoformat()
+
     db = request.app.state.db
     db.execute(
         f"DELETE FROM {table} WHERE id = ? AND company_id = ?",  # noqa: S608
         (entry_id, company_id),
+    )
+    # Log deletion for traceability
+    db.execute(
+        """INSERT INTO processing_errors
+           (entity_type, entity_id, error_type, error_message,
+            retry_count, created_at, performed_by)
+           VALUES (?, ?, ?, ?, 0, ?, ?)""",
+        (
+            table,
+            entry_id,
+            "manual_deletion",
+            f"Deleted {entry_type} entry {entry_id} for company {company_id}",
+            now,
+            operator,
+        ),
     )
     db.connection.commit()
     return HTMLResponse(status_code=200, content="")

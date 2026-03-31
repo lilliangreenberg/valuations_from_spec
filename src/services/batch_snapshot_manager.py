@@ -99,6 +99,8 @@ class BatchSnapshotManager:
                 result = self.firecrawl.batch_capture_snapshots(batch_urls, timeout=timeout)
 
                 if result["success"]:
+                    returned_urls: set[str] = set()
+
                     for doc in result.get("documents", []):
                         doc_url = doc.get("url", "")
                         company_id = url_to_company.get(doc_url)
@@ -108,9 +110,11 @@ class BatchSnapshotManager:
                             for orig_url, cid in url_to_company.items():
                                 if doc_url and orig_url in doc_url:
                                     company_id = cid
+                                    returned_urls.add(orig_url)
                                     break
 
                         if company_id is not None:
+                            returned_urls.add(doc_url)
                             snapshot_data = prepare_snapshot_data(company_id, doc_url, doc)
                             snapshot_id = self.snapshot_repo.store_snapshot(snapshot_data)
 
@@ -141,6 +145,39 @@ class BatchSnapshotManager:
                                     "homepage_url": doc_url,
                                     "error": error_msg,
                                 }
+                            )
+
+                    # Record failures for URLs that Firecrawl silently dropped
+                    for batch_url in batch_urls:
+                        if batch_url not in returned_urls:
+                            company_info = url_to_company_info.get(batch_url, {})
+                            company_id = url_to_company.get(batch_url)
+                            error_msg = (
+                                "Firecrawl batch returned no data for this URL "
+                                "(DNS error, timeout, or scrape failure)"
+                            )
+                            tracker.record_failure(error_msg)
+                            failed_details.append(
+                                {
+                                    "company_id": company_info.get("id"),
+                                    "name": company_info.get("name", ""),
+                                    "homepage_url": batch_url,
+                                    "error": error_msg,
+                                }
+                            )
+                            # Log to processing_errors for traceability
+                            if company_id is not None:
+                                self.company_repo.store_processing_error(
+                                    entity_type="snapshot",
+                                    entity_id=company_id,
+                                    error_type="BatchSilentFailure",
+                                    error_message=error_msg,
+                                )
+                            logger.warning(
+                                "batch_url_missing_from_results",
+                                url=batch_url,
+                                company_id=company_id,
+                                company_name=company_info.get("name", ""),
                             )
                 else:
                     batch_error = f"Batch failed: {result.get('errors', [])}"

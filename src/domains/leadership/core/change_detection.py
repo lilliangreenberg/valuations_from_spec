@@ -37,6 +37,8 @@ class LeadershipChangeType(StrEnum):
     EXECUTIVE_DEPARTURE = "executive_departure"
     NEW_CEO = "new_ceo"
     NEW_LEADERSHIP = "new_leadership"
+    WRONG_PERSON = "wrong_person"
+    VERIFIED_CURRENT = "verified_current"
     NO_CHANGE = "no_change"
 
 
@@ -215,3 +217,52 @@ def build_leadership_change_summary(
         confidence=0.75,
         notes="No significant leadership changes",
     )
+
+
+def build_linkedin_verification_context(
+    verification_results: list[dict[str, str]],
+    leadership_records: list[dict[str, str]],
+) -> str:
+    """Build a text context string from LinkedIn verification data.
+
+    Used to enrich LLM prompts for status analysis with LinkedIn signals.
+
+    Args:
+        verification_results: Results from employment verification.
+        leadership_records: Current leadership records from DB.
+
+    Returns:
+        Formatted text context string (empty if no data).
+    """
+    lines: list[str] = []
+
+    if leadership_records:
+        current = [r for r in leadership_records if r.get("is_current")]
+        lines.append(f"Known leadership ({len(current)} current):")
+        for record in current[:5]:
+            verified = record.get("last_verified_at", "never")
+            method = record.get("discovery_method", "unknown")
+            lines.append(
+                f"  - {record.get('person_name', 'Unknown')} "
+                f"({record.get('title', '')}) "
+                f"[verified: {verified}, method: {method}]"
+            )
+
+    if verification_results:
+        changes = [v for v in verification_results if v.get("change_detected")]
+        if changes:
+            lines.append(f"\nLinkedIn employment verification ({len(changes)} change(s)):")
+            for v in changes:
+                lines.append(
+                    f"  - {v.get('person_name', 'Unknown')} ({v.get('title', '')}): "
+                    f"{v.get('status', 'unknown')} "
+                    f"[confidence: {float(v.get('confidence', 0)):.2f}] "
+                    f"{v.get('evidence', '')}"
+                )
+        else:
+            lines.append(
+                f"\nLinkedIn employment verification: "
+                f"All {len(verification_results)} leaders confirmed current."
+            )
+
+    return "\n".join(lines)

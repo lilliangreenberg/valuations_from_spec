@@ -425,6 +425,37 @@ class Database:
                 " ON leadership_mentions(company_id)"
             )
 
+            # linkedin_snapshots table (LinkedIn page captures for change detection)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS linkedin_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    company_id INTEGER NOT NULL,
+                    linkedin_url TEXT NOT NULL,
+                    url_type TEXT NOT NULL,
+                    person_name TEXT,
+                    content_html TEXT,
+                    content_json TEXT,
+                    vision_data_json TEXT,
+                    screenshot_path TEXT,
+                    content_checksum TEXT,
+                    captured_at TEXT NOT NULL,
+                    FOREIGN KEY (company_id)
+                        REFERENCES companies(id) ON DELETE CASCADE
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_linkedin_snapshots_company_id"
+                " ON linkedin_snapshots(company_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_linkedin_snapshots_linkedin_url"
+                " ON linkedin_snapshots(linkedin_url)"
+            )
+
+        # Migration: add performed_by to linkedin_snapshots
+        with contextlib.suppress(sqlite3.OperationalError):
+            self.execute("ALTER TABLE linkedin_snapshots ADD COLUMN performed_by TEXT")
+
         # Migration: add is_manual_override to company_statuses
         with contextlib.suppress(sqlite3.OperationalError):
             self.execute(
@@ -474,3 +505,40 @@ class Database:
                 self.execute(f"ALTER TABLE {table} ADD COLUMN performed_by TEXT")
 
         logger.info("database_initialized", path=self.db_path)
+
+    def backfill_performed_by(self, default_operator: str = "Lily") -> int:
+        """One-time backfill: set performed_by on all rows where it is NULL.
+
+        Returns total number of rows updated.
+        """
+        tables = [
+            "companies",
+            "snapshots",
+            "change_records",
+            "company_statuses",
+            "social_media_links",
+            "blog_links",
+            "company_logos",
+            "news_articles",
+            "processing_errors",
+            "company_leadership",
+            "social_media_snapshots",
+            "social_media_change_records",
+            "leadership_mentions",
+            "linkedin_snapshots",
+        ]
+        total = 0
+        for table in tables:
+            with contextlib.suppress(sqlite3.OperationalError):
+                cursor = self.execute(
+                    f"UPDATE {table} SET performed_by = ? WHERE performed_by IS NULL",
+                    (default_operator,),
+                )
+                total += cursor.rowcount
+        self.connection.commit()
+        logger.info(
+            "performed_by_backfill_complete",
+            operator=default_operator,
+            rows_updated=total,
+        )
+        return total

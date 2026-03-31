@@ -100,8 +100,8 @@ class CompanyRepository:
         """Update the analyst notes for a company."""
         now = datetime.now(UTC).isoformat()
         self.db.execute(
-            "UPDATE companies SET notes = ?, updated_at = ? WHERE id = ?",
-            (notes, now, company_id),
+            "UPDATE companies SET notes = ?, updated_at = ?, performed_by = ? WHERE id = ?",
+            (notes, now, self.operator, company_id),
         )
         self.db.connection.commit()
 
@@ -110,8 +110,8 @@ class CompanyRepository:
         now = datetime.now(UTC).isoformat()
         self.db.execute(
             """UPDATE companies SET flagged_for_review = 1,
-               flag_reason = ?, updated_at = ? WHERE id = ?""",
-            (reason, now, company_id),
+               flag_reason = ?, updated_at = ?, performed_by = ? WHERE id = ?""",
+            (reason, now, self.operator, company_id),
         )
         self.db.connection.commit()
 

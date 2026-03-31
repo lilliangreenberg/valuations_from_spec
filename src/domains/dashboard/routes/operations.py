@@ -228,6 +228,9 @@ def _build_args_from_form(command: str, form_data: dict[str, Any]) -> list[str]:
         if arg_def["type"] == "flag":
             if str(value).lower() in ("true", "on", "1", "yes"):
                 args.append(name)
+        elif not name.startswith("-"):
+            # Positional argument (no -- prefix)
+            args.append(str(value))
         else:
             args.extend([name, str(value)])
 

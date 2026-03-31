@@ -39,9 +39,26 @@ class SearchClientProtocol(Protocol):
 
 
 class LinkedInBrowserProtocol(Protocol):
-    """Protocol for LinkedIn browser scraping service."""
+    """Protocol for LinkedIn browser scraping service (CDP-based)."""
 
     def extract_people(
         self,
         company_linkedin_url: str,
     ) -> list[dict[str, str]]: ...
+
+    def extract_person_profile(
+        self,
+        profile_url: str,
+    ) -> dict[str, Any]: ...
+
+    def capture_screenshot(self) -> bytes: ...
+
+    def get_page_html(self) -> str: ...
+
+    def detect_blocking(self) -> str | None: ...
+
+    def navigate(self, url: str) -> None: ...
+
+    def close_popups(self) -> int: ...
+
+    def delay_between_pages(self) -> None: ...

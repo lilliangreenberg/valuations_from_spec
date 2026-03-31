@@ -38,16 +38,6 @@
     {% endwith %}
   </div>
 
-  <!-- Trending Widget (always large) -->
-  <div class="widget-container widget-large" data-widget-id="trending" data-size="large"
-       hx-get="/widgets/trending?size=large"
-       hx-trigger="every {{ widget_registry.trending.refresh_seconds }}s"
-       hx-swap="innerHTML">
-    {% with widget=widget_data.trending %}
-      {% include "partials/widgets/trending_widget.html" %}
-    {% endwith %}
-  </div>
-
   <!-- Freshness Widget -->
   <div class="widget-container" data-widget-id="freshness" data-size="{{ widget_data.freshness.size }}"
        hx-get="/widgets/freshness?size={{ widget_data.freshness.size }}"

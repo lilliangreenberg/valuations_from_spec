@@ -17,10 +17,10 @@ def format_changes_widget(raw: dict[str, Any], size: str) -> dict[str, Any]:
         "total_changes": raw.get("total_changes", 0),
         "scan_date": raw.get("scan_date"),
         "size": size,
+        "by_significance": raw.get("by_significance", {}),
     }
     if size == "large":
         result["by_magnitude"] = raw.get("by_magnitude", {})
-        result["by_significance"] = raw.get("by_significance", {})
     return result
 
 

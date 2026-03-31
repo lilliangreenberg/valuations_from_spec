@@ -26,7 +26,7 @@
     <div class="flex flex-wrap items-center gap-3 text-sm">
       <a href="/companies/{{ article.company_id }}"
          class="text-blue-600 dark:text-blue-400 hover:underline">
-        {{ article.company_name }}
+        {{ article.company_name }} (ID: {{ article.company_id }})
       </a>
 
       {% if article.significance_classification %}

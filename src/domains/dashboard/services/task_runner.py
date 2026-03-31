@@ -34,6 +34,13 @@ ALLOWED_COMMANDS: dict[str, dict[str, Any]] = {
                 "label": "Use batch API (8x faster)",
             },
             {"name": "--batch-size", "type": "int", "default": 20, "label": "Batch size"},
+            {"name": "--company-id", "type": "int", "default": "", "label": "Company ID (single)"},
+            {
+                "name": "--skip-if-snapshot-since",
+                "type": "str",
+                "default": "",
+                "label": "Skip if snapshot since (YYYY-MM-DD)",
+            },
         ],
     },
     "detect-changes": {
@@ -41,12 +48,8 @@ ALLOWED_COMMANDS: dict[str, dict[str, Any]] = {
         "group": "Change Detection",
         "args": [
             {"name": "--limit", "type": "int", "default": "", "label": "Limit (companies)"},
+            {"name": "--company-id", "type": "int", "default": "", "label": "Company ID (single)"},
         ],
-    },
-    "analyze-status": {
-        "description": "Analyze company operational status",
-        "group": "Change Detection",
-        "args": [],
     },
     "backfill-significance": {
         "description": "Backfill significance analysis for existing records",
@@ -99,27 +102,123 @@ ALLOWED_COMMANDS: dict[str, dict[str, Any]] = {
         ],
     },
     "extract-leadership": {
-        "description": "Extract leadership for a single company",
+        "description": "Extract leadership for a single company (opens Chrome)",
         "group": "Leadership Extraction",
         "args": [
             {"name": "--company-id", "type": "int", "default": "", "label": "Company ID"},
-            {"name": "--headless", "type": "flag", "default": False, "label": "Headless browser"},
         ],
     },
     "extract-leadership-all": {
-        "description": "Extract leadership for all companies",
+        "description": "Extract leadership for all companies (opens Chrome)",
         "group": "Leadership Extraction",
         "args": [
             {"name": "--limit", "type": "int", "default": "", "label": "Limit (companies)"},
-            {"name": "--headless", "type": "flag", "default": False, "label": "Headless browser"},
         ],
     },
     "check-leadership-changes": {
-        "description": "Re-extract leadership and report changes",
+        "description": "Re-extract leadership and report changes (opens Chrome)",
         "group": "Leadership Extraction",
         "args": [
             {"name": "--limit", "type": "int", "default": "", "label": "Limit (companies)"},
         ],
+    },
+    "linkedin-login": {
+        "description": "Open Chrome for manual LinkedIn login",
+        "group": "Leadership Extraction",
+        "args": [],
+    },
+    "scrape-linkedin-profile": {
+        "description": "Scrape a personal LinkedIn profile (opens Chrome)",
+        "group": "Leadership Extraction",
+        "args": [
+            {"name": "url", "type": "str", "default": "", "label": "LinkedIn profile URL"},
+        ],
+    },
+    "capture-social-snapshots": {
+        "description": "Capture social media snapshots (Medium + blog)",
+        "group": "Social Media Monitoring",
+        "args": [
+            {"name": "--batch-size", "type": "int", "default": 50, "label": "Batch size"},
+            {"name": "--limit", "type": "int", "default": "", "label": "Limit (companies)"},
+            {"name": "--company-id", "type": "int", "default": "", "label": "Company ID (single)"},
+        ],
+    },
+    "detect-social-changes": {
+        "description": "Detect changes in social media content",
+        "group": "Social Media Monitoring",
+        "args": [
+            {"name": "--limit", "type": "int", "default": "", "label": "Limit (companies)"},
+        ],
+    },
+    "refresh-logos": {
+        "description": "Refresh company logos from latest snapshots",
+        "group": "Data Extraction",
+        "args": [
+            {"name": "--limit", "type": "int", "default": "", "label": "Limit (companies)"},
+        ],
+    },
+    "discover-social-full-site": {
+        "description": "Full-site social media discovery for one company",
+        "group": "Social Media Discovery",
+        "args": [
+            {"name": "--company-id", "type": "int", "default": "", "label": "Company ID"},
+        ],
+    },
+    "discover-social-batch": {
+        "description": "Batch full-site social media discovery",
+        "group": "Social Media Discovery",
+        "args": [
+            {"name": "--limit", "type": "int", "default": 50, "label": "Limit (companies)"},
+            {"name": "--max-workers", "type": "int", "default": 10, "label": "Parallel workers"},
+        ],
+    },
+    "show-changes": {
+        "description": "Show change history for a company",
+        "group": "Reporting",
+        "args": [
+            {"name": "company", "type": "str", "default": "", "label": "Company name"},
+        ],
+    },
+    "show-status": {
+        "description": "Show status details for a company",
+        "group": "Reporting",
+        "args": [
+            {"name": "company", "type": "str", "default": "", "label": "Company name"},
+        ],
+    },
+    "show-social-links": {
+        "description": "Show social media links for a company",
+        "group": "Reporting",
+        "args": [
+            {"name": "company", "type": "str", "default": "", "label": "Company name"},
+        ],
+    },
+    "list-active": {
+        "description": "List companies with recent changes",
+        "group": "Reporting",
+        "args": [
+            {"name": "--days", "type": "int", "default": 180, "label": "Days to look back"},
+        ],
+    },
+    "list-inactive": {
+        "description": "List companies without recent changes",
+        "group": "Reporting",
+        "args": [
+            {"name": "--days", "type": "int", "default": 180, "label": "Days to look back"},
+        ],
+    },
+    "list-significant-changes": {
+        "description": "List significant changes",
+        "group": "Reporting",
+        "args": [
+            {"name": "--days", "type": "int", "default": 180, "label": "Days to look back"},
+            {"name": "--sentiment", "type": "str", "default": "", "label": "Sentiment filter"},
+        ],
+    },
+    "list-uncertain-changes": {
+        "description": "List changes requiring manual review",
+        "group": "Reporting",
+        "args": [],
     },
 }
 
@@ -184,6 +283,7 @@ class TaskRunner:
             *full_cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
+            limit=1024 * 1024,  # 1MB line buffer (default 64KB too small for SVG data)
         )
         self._processes[task_id] = process
 

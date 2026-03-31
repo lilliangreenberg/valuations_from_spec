@@ -1,6 +1,10 @@
 {% if status_data %}
   {% set status_str = status_data.status if status_data is mapping else status_data %}
+  {% if status_str == 'no_homepage_url' %}
+  <span class="badge {{ status_str | status_badge }}">NO HOMEPAGE URL</span>
+  {% else %}
   <span class="badge {{ status_str | status_badge }}">{{ status_str }}</span>
+  {% endif %}
   {% if status_data.is_manual_override %}
   <span class="text-xs font-medium px-1.5 py-0.5 rounded"
         style="background: var(--accent-blue); color: white; opacity: 0.85;">MANUAL</span>
@@ -24,6 +28,7 @@
     <option value="operational" {% if status_data and status_data.status == 'operational' %}selected{% endif %}>Operational</option>
     <option value="likely_closed" {% if status_data and status_data.status == 'likely_closed' %}selected{% endif %}>Likely Closed</option>
     <option value="uncertain" {% if status_data and status_data.status == 'uncertain' %}selected{% endif %}>Uncertain</option>
+    <option value="no_homepage_url" {% if status_data and status_data.status == 'no_homepage_url' %}selected{% endif %}>No Homepage URL</option>
   </select>
   <button type="submit"
           class="text-xs font-medium px-2 py-1 rounded cursor-pointer"

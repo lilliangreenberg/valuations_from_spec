@@ -54,9 +54,11 @@
               <span class="ml-2 text-sm text-gray-600 dark:text-gray-400">Enable</span>
             </label>
             {% else %}
+            {% set form_name = arg.name | replace('--', '') | replace('-', '_') %}
+            {% set prefill_val = prefill_company_id if (prefill_company_id and form_name == 'company_id') else arg.default %}
             <input type="text"
-                   name="{{ arg.name | replace('--', '') | replace('-', '_') }}"
-                   value="{{ arg.default }}"
+                   name="{{ form_name }}"
+                   value="{{ prefill_val }}"
                    placeholder="{{ arg.label }}"
                    class="form-input w-full rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200">
             {% endif %}
@@ -101,15 +103,21 @@
 
 <script>
 function showCommandArgs(commandName) {
-  // Hide all argument sections
+  // Hide all argument sections and disable their inputs so they don't submit
   document.querySelectorAll('.command-args').forEach(function(el) {
     el.style.display = 'none';
+    el.querySelectorAll('input, select').forEach(function(input) {
+      input.disabled = true;
+    });
   });
-  // Show the selected command's arguments
+  // Show and enable the selected command's arguments
   if (commandName) {
     var argsEl = document.getElementById('args-' + commandName);
     if (argsEl) {
       argsEl.style.display = 'block';
+      argsEl.querySelectorAll('input, select').forEach(function(input) {
+        input.disabled = false;
+      });
     }
   }
 }

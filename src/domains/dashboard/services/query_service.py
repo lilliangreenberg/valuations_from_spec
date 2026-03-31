@@ -490,9 +490,20 @@ class QueryService:
         offset = (page - 1) * per_page
 
         rows = self.db.fetchall(
-            f"""SELECT cl.*, c.name as company_name
+            f"""SELECT cl.*, c.name as company_name,
+                    ls.captured_at as last_snapshot_at,
+                    ls.vision_data_json as latest_vision_data
                 FROM company_leadership cl
                 JOIN companies c ON cl.company_id = c.id
+                LEFT JOIN (
+                    SELECT linkedin_url, company_id, captured_at, vision_data_json,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY linkedin_url ORDER BY captured_at DESC
+                        ) as rn
+                    FROM linkedin_snapshots
+                    WHERE url_type = 'person'
+                ) ls ON ls.linkedin_url = cl.linkedin_profile_url
+                    AND ls.company_id = cl.company_id AND ls.rn = 1
                 WHERE 1=1 {current_filter}
                 ORDER BY c.name, cl.title
                 LIMIT ? OFFSET ?""",
@@ -534,20 +545,31 @@ class QueryService:
         current_scan = date_rows[0]["scan_date"]
         previous_scan = date_rows[1]["scan_date"]
 
-        # Count changes since previous scan
+        # Count distinct COMPANIES with changes (not individual records)
         total_row = self.db.fetchone(
-            """SELECT COUNT(*) as cnt FROM change_records
+            """SELECT COUNT(DISTINCT company_id) as cnt FROM change_records
                WHERE has_changed = 1 AND DATE(detected_at) >= ?""",
             (previous_scan,),
         )
-        total_changes = total_row["cnt"] if total_row else 0
+        total_companies_changed = total_row["cnt"] if total_row else 0
 
-        # Breakdown by magnitude
+        # Breakdown by magnitude (distinct companies per magnitude)
+        # Use the highest magnitude per company (major > moderate > minor)
         mag_rows = self.db.fetchall(
-            """SELECT LOWER(change_magnitude) as mag, COUNT(*) as cnt
-               FROM change_records
-               WHERE has_changed = 1 AND DATE(detected_at) >= ?
-               GROUP BY LOWER(change_magnitude)""",
+            """SELECT mag, COUNT(*) as cnt FROM (
+                   SELECT company_id,
+                       CASE
+                           WHEN SUM(CASE WHEN LOWER(change_magnitude) = 'major' THEN 1 ELSE 0 END) > 0
+                               THEN 'major'
+                           WHEN SUM(CASE WHEN LOWER(change_magnitude) = 'moderate' THEN 1 ELSE 0 END) > 0
+                               THEN 'moderate'
+                           ELSE 'minor'
+                       END as mag
+                   FROM change_records
+                   WHERE has_changed = 1 AND DATE(detected_at) >= ?
+                   GROUP BY company_id
+               )
+               GROUP BY mag""",
             (previous_scan,),
         )
         by_magnitude = {"minor": 0, "moderate": 0, "major": 0}
@@ -555,12 +577,24 @@ class QueryService:
             if row["mag"] in by_magnitude:
                 by_magnitude[row["mag"]] = row["cnt"]
 
-        # Breakdown by significance
+        # Breakdown by significance (distinct companies, highest severity wins)
         sig_rows = self.db.fetchall(
-            """SELECT LOWER(significance_classification) as sig, COUNT(*) as cnt
-               FROM change_records
-               WHERE has_changed = 1 AND DATE(detected_at) >= ?
-               GROUP BY LOWER(significance_classification)""",
+            """SELECT sig, COUNT(*) as cnt FROM (
+                   SELECT company_id,
+                       CASE
+                           WHEN SUM(CASE WHEN LOWER(significance_classification) = 'significant'
+                                    THEN 1 ELSE 0 END) > 0
+                               THEN 'significant'
+                           WHEN SUM(CASE WHEN LOWER(significance_classification) = 'uncertain'
+                                    THEN 1 ELSE 0 END) > 0
+                               THEN 'uncertain'
+                           ELSE 'insignificant'
+                       END as sig
+                   FROM change_records
+                   WHERE has_changed = 1 AND DATE(detected_at) >= ?
+                   GROUP BY company_id
+               )
+               GROUP BY sig""",
             (previous_scan,),
         )
         by_significance = {"significant": 0, "insignificant": 0, "uncertain": 0}
@@ -569,7 +603,7 @@ class QueryService:
                 by_significance[row["sig"]] = row["cnt"]
 
         return {
-            "total_changes": total_changes,
+            "total_changes": total_companies_changed,
             "scan_date": current_scan,
             "by_magnitude": by_magnitude,
             "by_significance": by_significance,

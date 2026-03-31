@@ -177,7 +177,7 @@ class TestFormatChangesWidget:
         assert result["scan_date"] == "2026-02-25"
         assert result["size"] == "small"
 
-    def test_small_excludes_breakdowns(self) -> None:
+    def test_small_excludes_magnitude_but_keeps_significance(self) -> None:
         raw = {
             "total_changes": 5,
             "by_magnitude": {"minor": 3},
@@ -185,7 +185,7 @@ class TestFormatChangesWidget:
         }
         result = format_changes_widget(raw, "small")
         assert "by_magnitude" not in result
-        assert "by_significance" not in result
+        assert "by_significance" in result
 
     def test_large_includes_breakdowns(self) -> None:
         raw = {

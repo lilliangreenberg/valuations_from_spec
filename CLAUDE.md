@@ -21,6 +21,28 @@ This is hardcoded in `src/services/firecrawl_client.py:51` and must NEVER be cha
 
 **Never modify this setting. It must remain `only_main_content=False` permanently.**
 
+### [CRITICAL] Traceability: `performed_by` on EVERY Database Write
+
+**Every INSERT and UPDATE operation MUST include the `performed_by` column.**
+
+This is a non-negotiable requirement for complete audit traceability. Every single database write must record who performed the action.
+
+**Rules:**
+- All repository methods that INSERT or UPDATE must set `performed_by = self.operator`
+- The `operator` value comes from `getpass.getuser()` and is passed to every repository constructor
+- DELETE operations must log a record in `processing_errors` table with the operator before deleting
+- When adding new tables, always include `performed_by TEXT` column
+- When adding new repository methods that write data, always include `performed_by`
+- NULL values in `performed_by` are NOT acceptable in production data
+
+**Enforcement:**
+- Database migration automatically backfills any NULL `performed_by` values with "Lily"
+- All 14 tables have the `performed_by` column
+- All repository INSERT methods include `performed_by`
+- All repository UPDATE methods include `performed_by`
+
+**Never create a database write operation without setting `performed_by`. This is a constitutional requirement.**
+
 ### CRITICAL: Always ask when confused
 **WHENEVER YOU ARE CONFUSED OR UNSURE HOW TO PROCEED: Stop work and ask the user for input.**
 

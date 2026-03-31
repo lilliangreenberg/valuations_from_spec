@@ -273,6 +273,12 @@ body {
     border: 1px solid #eab308;
 }
 
+.status-no-url {
+    background-color: #374151;
+    color: #f9fafb;
+    border: 1px solid #4b5563;
+}
+
 .status-unknown {
     background-color: #f3f4f6;
     color: #6b7280;
@@ -292,6 +298,12 @@ body {
 [data-theme="dark"] .status-uncertain {
     background-color: #422006;
     color: #fbbf24;
+}
+
+[data-theme="dark"] .status-no-url {
+    background-color: #1f2937;
+    color: #d1d5db;
+    border-color: #374151;
 }
 
 /* Magnitude badges */
@@ -1198,12 +1210,14 @@ a[target="_blank"]::after {
 .health-yellow { background-color: #f59e0b; }
 .health-red { background-color: #ef4444; }
 .health-manual-closed { background-color: #a855f7; }
+.health-no-url { background-color: #374151; }
 .health-gray { background-color: #9ca3af; }
 
 [data-theme="dark"] .health-green { background-color: #16a34a; }
 [data-theme="dark"] .health-yellow { background-color: #d97706; }
 [data-theme="dark"] .health-red { background-color: #dc2626; }
 [data-theme="dark"] .health-manual-closed { background-color: #9333ea; }
+[data-theme="dark"] .health-no-url { background-color: #1f2937; }
 [data-theme="dark"] .health-gray { background-color: #6b7280; }
 
 /* Health grid tooltip */

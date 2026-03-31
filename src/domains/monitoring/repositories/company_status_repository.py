@@ -129,6 +129,34 @@ class CompanyStatusRepository:
             )
         return result
 
+    def get_skippable_company_ids(self) -> set[int]:
+        """Get company IDs that should be skipped in batch operations.
+
+        Includes:
+        - Companies manually set to likely_closed (is_manual_override=1)
+        - Companies with no_homepage_url status
+
+        Auto-detected likely_closed and uncertain statuses are NOT skipped.
+        """
+        rows = self.db.fetchall(
+            """SELECT cs.company_id
+               FROM company_statuses cs
+               INNER JOIN (
+                   SELECT company_id, MAX(id) AS max_id
+                   FROM company_statuses
+                   GROUP BY company_id
+               ) latest ON cs.id = latest.max_id
+               WHERE (cs.status = 'likely_closed' AND cs.is_manual_override = 1)
+                  OR cs.status = 'no_homepage_url'""",
+        )
+        result = {row["company_id"] for row in rows}
+        if result:
+            logger.info(
+                "found_skippable_companies",
+                count=len(result),
+            )
+        return result
+
     def _deserialize_row(self, row: Any) -> dict[str, Any]:
         """Deserialize JSON fields."""
         data = dict(row)

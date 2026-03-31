@@ -175,27 +175,21 @@ class TestLeadershipRepository:
         assert len(results) == 2
 
 
-# --- LinkedIn Browser Service Tests ---
+# --- CDP Browser Service Tests ---
 
 
-class TestLinkedInBrowserContract:
-    def test_blocked_error_raised_on_captcha(self) -> None:
-        """LinkedInBlockedError should be raised when CAPTCHA detected."""
-        from src.domains.leadership.services.linkedin_browser import (
-            LinkedInBlockedError,
-            LinkedInBrowser,
-        )
+class TestCDPBrowserContract:
+    def test_blocked_error_raised(self) -> None:
+        """CDPBlockedError should be a proper exception."""
+        from src.domains.leadership.services.cdp_browser import CDPBlockedError
 
-        LinkedInBrowser(headless=True, profile_dir="/tmp/test_profile")
-        # We can't actually run Playwright in CI, so we test the error class exists
-        assert issubclass(LinkedInBlockedError, Exception)
+        assert issubclass(CDPBlockedError, Exception)
 
     def test_browser_init_parameters(self) -> None:
-        """LinkedInBrowser accepts headless and profile_dir parameters."""
-        from src.domains.leadership.services.linkedin_browser import LinkedInBrowser
+        """CDPBrowser accepts profile_dir parameter."""
+        from src.domains.leadership.services.cdp_browser import CDPBrowser
 
-        browser = LinkedInBrowser(headless=True, profile_dir="/tmp/test_profile")
-        assert browser.headless is True
+        browser = CDPBrowser(profile_dir="/tmp/test_profile")
         assert browser.profile_dir == "/tmp/test_profile"
 
 
@@ -268,8 +262,8 @@ class TestLeadershipSearchContract:
 
 
 class TestLeadershipManagerContract:
-    def test_playwright_success_path(self, tmp_db: Database) -> None:
-        """When Playwright succeeds, results stored with playwright_scrape method."""
+    def test_cdp_success_path(self, tmp_db: Database) -> None:
+        """When CDP succeeds, results stored with cdp_scrape method."""
         from src.domains.leadership.repositories.leadership_repository import (
             LeadershipRepository,
         )
@@ -304,11 +298,14 @@ class TestLeadershipManagerContract:
         )
         tmp_db.connection.commit()
 
-        # Mock browser to return leadership data
+        # Mock CDP browser to return leadership data
         mock_browser = MagicMock()
         mock_browser.extract_people.return_value = [
             {"name": "Alice CEO", "title": "CEO", "profile_url": "https://linkedin.com/in/alice"},
         ]
+        mock_browser.get_page_html.return_value = "<html>mock</html>"
+        mock_browser.capture_people_screenshots.return_value = []
+        mock_browser.delay_between_pages.return_value = None
 
         mock_search = MagicMock()
 
@@ -322,7 +319,7 @@ class TestLeadershipManagerContract:
         company_repo = CompanyRepository(tmp_db, "test-user")
 
         manager = LeadershipManager(
-            linkedin_browser=mock_browser,
+            cdp_browser=mock_browser,
             leadership_search=mock_search,
             leadership_repo=leadership_repo,
             social_link_repo=social_repo,
@@ -331,19 +328,17 @@ class TestLeadershipManagerContract:
 
         result = manager.extract_company_leadership(company_id)
         assert result.get("leaders_found", 0) >= 1
-        assert result.get("method_used") == "playwright_scrape"
+        assert result.get("method_used") == "cdp_scrape"
         mock_search.search_leadership.assert_not_called()
 
     def test_fallback_to_kagi_on_blocked(self, tmp_db: Database) -> None:
-        """When Playwright is blocked, fallback to Kagi search."""
+        """When CDP is blocked, fallback to Kagi search."""
         from src.domains.leadership.repositories.leadership_repository import (
             LeadershipRepository,
         )
+        from src.domains.leadership.services.cdp_browser import CDPBlockedError
         from src.domains.leadership.services.leadership_manager import (
             LeadershipManager,
-        )
-        from src.domains.leadership.services.linkedin_browser import (
-            LinkedInBlockedError,
         )
 
         now = datetime.now(UTC).isoformat()
@@ -372,7 +367,8 @@ class TestLeadershipManagerContract:
         tmp_db.connection.commit()
 
         mock_browser = MagicMock()
-        mock_browser.extract_people.side_effect = LinkedInBlockedError("CAPTCHA detected")
+        mock_browser.extract_people.side_effect = CDPBlockedError("CAPTCHA detected")
+        mock_browser.delay_between_pages.return_value = None
 
         mock_search = MagicMock()
         mock_search.search_leadership.return_value = [
@@ -393,7 +389,7 @@ class TestLeadershipManagerContract:
         company_repo = CompanyRepository(tmp_db, "test-user")
 
         manager = LeadershipManager(
-            linkedin_browser=mock_browser,
+            cdp_browser=mock_browser,
             leadership_search=mock_search,
             leadership_repo=leadership_repo,
             social_link_repo=social_repo,
@@ -423,6 +419,7 @@ class TestLeadershipManagerContract:
         company_id = cursor.lastrowid
 
         mock_browser = MagicMock()
+        mock_browser.delay_between_pages.return_value = None
         mock_search = MagicMock()
         mock_search.search_leadership.return_value = []
 
@@ -436,7 +433,7 @@ class TestLeadershipManagerContract:
         company_repo = CompanyRepository(tmp_db, "test-user")
 
         manager = LeadershipManager(
-            linkedin_browser=mock_browser,
+            cdp_browser=mock_browser,
             leadership_search=mock_search,
             leadership_repo=leadership_repo,
             social_link_repo=social_repo,

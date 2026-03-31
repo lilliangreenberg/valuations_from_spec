@@ -42,19 +42,21 @@ def _get_operator() -> str:
 
 
 def _get_manually_closed_ids(db: Database, operator: str) -> set[int]:
-    """Get company IDs that have been manually set to likely_closed.
+    """Get company IDs that should be skipped in batch operations.
 
-    These companies are excluded from batch operations by default.
+    Skips companies that are manually set to likely_closed OR have
+    no_homepage_url status (cannot be scraped).
     """
     from src.domains.monitoring.repositories.company_status_repository import (
         CompanyStatusRepository,
     )
 
     status_repo = CompanyStatusRepository(db, operator)
-    closed_ids = status_repo.get_manually_closed_company_ids()
-    if closed_ids:
-        click.echo(f"[INFO] Excluding {len(closed_ids)} manually-closed companies")
-    return closed_ids
+    skip_ids = status_repo.get_skippable_company_ids()
+    if skip_ids:
+        click.echo(f"[INFO] Excluding {len(skip_ids)} skippable companies "
+                    "(manually-closed + no homepage URL)")
+    return skip_ids
 
 
 def _print_summary(title: str, stats: dict[str, Any]) -> None:
@@ -302,6 +304,17 @@ def detect_changes(
 
         social_snapshot_repo = SocialSnapshotRepository(db, operator)
 
+    # Always wire in LinkedIn data for leadership-aware status classification
+    from src.domains.leadership.repositories.leadership_repository import (
+        LeadershipRepository,
+    )
+    from src.domains.leadership.repositories.linkedin_snapshot_repository import (
+        LinkedInSnapshotRepository,
+    )
+
+    leadership_repo = LeadershipRepository(db, operator)
+    linkedin_snapshot_repo = LinkedInSnapshotRepository(db, operator)
+
     detector = ChangeDetector(
         snapshot_repo,
         change_repo,
@@ -310,6 +323,8 @@ def detect_changes(
         llm_enabled=bool(llm_client),
         social_snapshot_repo=social_snapshot_repo,
         status_repo=status_repo,
+        linkedin_snapshot_repo=linkedin_snapshot_repo,
+        leadership_repo=leadership_repo,
     )
 
     exclude_ids: set[int] | None = None
@@ -339,59 +354,6 @@ def detect_changes(
     report_path = write_report(report)
     click.echo(f"  Report written to: {report_path}")
 
-    db.close()
-
-
-@click.command()
-@click.option("--batch-size", default=50, type=int, help="Companies per batch")
-@click.option("--confidence-threshold", default=0.7, type=float, help="Min confidence 0.0-1.0")
-@click.option(
-    "--output-format",
-    default="summary",
-    type=click.Choice(["summary", "detailed", "json"]),
-    help="Output format",
-)
-@click.option("--include-social", is_flag=True, help="Include social media signals in analysis")
-def analyze_status(
-    batch_size: int, confidence_threshold: float, output_format: str, include_social: bool
-) -> None:
-    """Analyze company operational status from snapshots."""
-    config = _get_config()
-    configure_logging(config.log_level)
-    db = _get_db(config)
-
-    from src.domains.monitoring.repositories.company_status_repository import (
-        CompanyStatusRepository,
-    )
-    from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
-    from src.domains.monitoring.services.status_analyzer import StatusAnalyzer
-    from src.repositories.company_repository import CompanyRepository
-
-    operator = _get_operator()
-    snapshot_repo = SnapshotRepository(db, operator)
-    status_repo = CompanyStatusRepository(db, operator)
-    company_repo = CompanyRepository(db, operator)
-
-    social_snapshot_repo = None
-    if include_social:
-        from src.domains.monitoring.repositories.social_snapshot_repository import (
-            SocialSnapshotRepository,
-        )
-
-        social_snapshot_repo = SocialSnapshotRepository(db, operator)
-        click.echo("[INFO] Including social media signals in status analysis...")
-
-    analyzer = StatusAnalyzer(
-        snapshot_repo, status_repo, company_repo, social_snapshot_repo=social_snapshot_repo
-    )
-
-    click.echo("[INFO] Analyzing company statuses...")
-    result = analyzer.analyze_all_statuses()
-
-    if output_format == "json":
-        click.echo(json.dumps(result, indent=2))
-    else:
-        _print_summary("Status analysis complete", result)
     db.close()
 
 
@@ -899,14 +861,13 @@ def discover_social_media(
     )
     _print_summary("Social media discovery complete", result)
 
-    # Chain CEO LinkedIn discovery (opt-out via --skip-ceo-search)
-    if not skip_ceo_search and config.kagi_api_key:
-        click.echo("\n[INFO] Running CEO LinkedIn discovery...")
-        ceo_discovery = _build_ceo_linkedin_discovery(
-            db, config, operator, social_repo, company_repo
+    # CEO LinkedIn discovery via Kagi is disabled.
+    # Use extract-leadership (CDP + Chrome Extension) instead.
+    if not skip_ceo_search:
+        click.echo(
+            "\n[INFO] CEO LinkedIn discovery is now handled by extract-leadership "
+            "(CDP + Chrome Extension). Skipping Kagi-based CEO search."
         )
-        ceo_result = ceo_discovery.discover_all(limit=limit, exclude_company_ids=exclude_ids)
-        _print_summary("CEO LinkedIn discovery complete", ceo_result)
 
     report_config: dict[str, Any] = {
         "batch_size": batch_size,
@@ -1009,6 +970,29 @@ def discover_social_batch(
 
 
 # --- Logo Refresh ---
+
+
+@click.command()
+@click.option(
+    "--operator",
+    default="Lily",
+    type=str,
+    help="Operator name to backfill (default: Lily)",
+)
+def backfill_performed_by(operator: str) -> None:
+    """One-time backfill: set performed_by on all rows where it is NULL.
+
+    Sets the performed_by column to the given operator name for every row
+    across all 14 tables where it is currently NULL. Run once after upgrade.
+    """
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    click.echo(f"[INFO] Backfilling NULL performed_by with '{operator}'...")
+    total = db.backfill_performed_by(default_operator=operator)
+    click.echo(f"[SUCCESS] Updated {total} rows across all tables.")
+    db.close()
 
 
 @click.command()
@@ -1267,75 +1251,228 @@ def search_news_all(limit: int | None, max_workers: int, include_manually_closed
 
 
 @click.command()
-@click.option("--company-id", required=True, type=int, help="Company ID")
-@click.option("--headless", is_flag=True, help="Run browser in headless mode")
 @click.option(
     "--profile-dir",
     default=None,
     type=str,
-    help="Playwright browser profile directory",
+    help="Chrome user data directory for persistent login session",
 )
-def extract_leadership(company_id: int, headless: bool, profile_dir: str | None) -> None:
+def linkedin_login(profile_dir: str | None) -> None:
+    """Open Chrome for manual LinkedIn login.
+
+    Launches a headed Chrome window and navigates to the LinkedIn login page.
+    Log in manually, then press Enter in the terminal to save the session.
+    Cookies are persisted so subsequent extract-leadership runs stay logged in.
+    """
+    from src.domains.leadership.services.cdp_browser import CDPBrowser
+
+    config = _get_config()
+    browser_profile = profile_dir or config.linkedin_profile_dir
+    browser = CDPBrowser(profile_dir=browser_profile)
+
+    click.echo("[INFO] Opening Chrome for LinkedIn login...")
+    click.echo("[INFO] Log in manually, then press Enter in this terminal.")
+
+    try:
+        browser.launch()
+        browser.navigate("https://www.linkedin.com/login")
+
+        try:
+            input("\nPress Enter after logging in (or Ctrl+C to cancel)...")
+        except (EOFError, KeyboardInterrupt):
+            click.echo("\n[INFO] Waiting 60 seconds for login...")
+            import time
+
+            time.sleep(60)
+    finally:
+        browser.close()
+
+    click.echo("[SUCCESS] Login complete! Cookies saved to Chrome profile.")
+    click.echo("[INFO] You can now run extract-leadership commands.")
+
+
+@click.command()
+@click.argument("url")
+@click.option(
+    "--profile-dir",
+    default=None,
+    type=str,
+    help="Chrome user data directory for persistent login session",
+)
+@click.option(
+    "--output-dir",
+    default="docs/screenshots",
+    type=str,
+    help="Directory to save screenshots and JSON output",
+)
+def scrape_linkedin_profile(url: str, profile_dir: str | None, output_dir: str) -> None:
+    """Scrape a personal LinkedIn profile URL.
+
+    Opens a headed Chrome window, navigates to the profile, extracts data
+    via DOM + Claude Vision, and saves the results as JSON.
+
+    Usage: airtable-extractor scrape-linkedin-profile https://linkedin.com/in/someone
+    """
+    import base64
+    import json
+    import time
+    from pathlib import Path
+
+    from src.domains.leadership.services.cdp_browser import CDPBrowser
+
+    config = _get_config()
+    browser_profile = profile_dir or config.linkedin_profile_dir
+    browser = CDPBrowser(profile_dir=browser_profile, screenshot_dir=output_dir)
+
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    click.echo(f"[INFO] Scraping LinkedIn profile: {url}")
+
+    try:
+        browser.launch()
+
+        # Extract profile data via DOM
+        dom_data = browser.extract_person_profile(url)
+
+        if not dom_data.get("name"):
+            # Check for blocking
+            blocking = browser.detect_blocking()
+            if blocking == "auth_wall":
+                click.echo("[WARNING] LinkedIn requires login.")
+                click.echo("[INFO] Run 'airtable-extractor linkedin-login' first.")
+                return
+            if blocking:
+                click.echo(f"[ERROR] LinkedIn blocked access: {blocking}")
+                return
+
+        # Take screenshot
+        screenshot_bytes = browser.capture_screenshot()
+        safe_name = url.rstrip("/").split("/")[-1][:50]
+        timestamp = int(time.time())
+        screenshot_path = str(Path(output_dir) / f"profile_{safe_name}_{timestamp}.png")
+        with open(screenshot_path, "wb") as f:
+            f.write(screenshot_bytes)
+        click.echo(f"  Screenshot saved: {screenshot_path}")
+
+        # Run Claude Vision analysis if API key is available
+        vision_data: dict[str, Any] = {}
+        if config.anthropic_api_key:
+            from src.services.llm_client import LLMClient
+
+            click.echo("  Analyzing screenshot with Claude Vision...")
+            llm = LLMClient(api_key=config.anthropic_api_key, model=config.llm_model)
+            screenshot_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+
+            # Use a generic prompt (no specific company to check against)
+            prompt = (
+                "You are analyzing a screenshot of a LinkedIn personal profile page.\n\n"
+                "Extract the following information:\n"
+                "- person_name: The person's full name\n"
+                "- current_title: Their current job title\n"
+                "- current_employer: The company they currently work at\n"
+                "- location: Their location\n"
+                "- headline: Their full headline text\n"
+                "- about: Summary/about section if visible\n"
+                "- experience: List of experience entries visible "
+                "(each with title, company, dates)\n\n"
+                "Return the results as a JSON object. "
+                "If a field is not visible, set it to null.\n"
+                "Return ONLY the JSON object, no other text."
+            )
+            raw_vision = llm.analyze_screenshot(screenshot_b64, prompt)
+            if not raw_vision.get("error"):
+                vision_data = raw_vision
+                click.echo("  Vision analysis complete.")
+            else:
+                click.echo(f"  [WARNING] Vision analysis failed: {raw_vision.get('error')}")
+        else:
+            click.echo("  [INFO] Set ANTHROPIC_API_KEY for Claude Vision analysis.")
+
+        # Merge and display results
+        result = {
+            "url": url,
+            "dom_extraction": dom_data,
+            "vision_extraction": vision_data,
+            "screenshot_path": screenshot_path,
+        }
+
+        # Save JSON output
+        json_path = str(Path(output_dir) / f"profile_{safe_name}_{timestamp}.json")
+        with open(json_path, "w") as f:
+            json.dump(result, f, indent=2)
+        click.echo(f"  JSON saved: {json_path}")
+
+        # Print summary
+        name = vision_data.get("person_name") or dom_data.get("name", "Unknown")
+        title = vision_data.get("current_title") or dom_data.get("headline", "")
+        employer = vision_data.get("current_employer", "")
+        location = vision_data.get("location") or dom_data.get("location", "")
+
+        click.echo(f"\n[RESULT] {name}")
+        if title:
+            click.echo(f"  Title: {title}")
+        if employer:
+            click.echo(f"  Employer: {employer}")
+        if location:
+            click.echo(f"  Location: {location}")
+
+        experience = dom_data.get("experience", [])
+        if experience:
+            click.echo(f"  Experience entries: {len(experience)}")
+            for exp in experience[:5]:
+                click.echo(
+                    f"    - {exp.get('title', '')} at {exp.get('company', '')} "
+                    f"({exp.get('dates', '')})"
+                )
+
+    finally:
+        browser.close()
+
+
+@click.command()
+@click.option("--company-id", required=True, type=int, help="Company ID")
+@click.option(
+    "--profile-dir",
+    default=None,
+    type=str,
+    help="Chrome user data directory for persistent login session",
+)
+def extract_leadership(company_id: int, profile_dir: str | None) -> None:
     """Extract leadership profiles from LinkedIn for a single company."""
     config = _get_config()
     configure_logging(config.log_level)
     db = _get_db(config)
 
-    from src.domains.discovery.repositories.social_media_link_repository import (
-        SocialMediaLinkRepository,
-    )
-    from src.domains.leadership.repositories.leadership_repository import (
-        LeadershipRepository,
-    )
-    from src.domains.leadership.services.leadership_manager import LeadershipManager
-    from src.domains.leadership.services.linkedin_browser import LinkedInBrowser
-    from src.repositories.company_repository import CompanyRepository
+    manager, browser = _build_leadership_manager(config, db, profile_dir)
 
-    operator = _get_operator()
-    browser_headless = headless or config.linkedin_headless
-    browser_profile = profile_dir or config.linkedin_profile_dir
+    try:
+        browser.launch()
+        click.echo(f"[INFO] Extracting leadership for company {company_id}...")
+        result = manager.extract_company_leadership(company_id)
 
-    browser = LinkedInBrowser(headless=browser_headless, profile_dir=browser_profile)
-    leadership_repo = LeadershipRepository(db, operator)
-    social_repo = SocialMediaLinkRepository(db, operator)
-    company_repo = CompanyRepository(db, operator)
-
-    # Set up Kagi fallback
-    search_service = _build_leadership_search(config)
-
-    manager = LeadershipManager(
-        linkedin_browser=browser,
-        leadership_search=search_service,
-        leadership_repo=leadership_repo,
-        social_link_repo=social_repo,
-        company_repo=company_repo,
-    )
-
-    click.echo(f"[INFO] Extracting leadership for company {company_id}...")
-    result = manager.extract_company_leadership(company_id)
-
-    if result.get("error"):
-        click.echo(f"[ERROR] {result['error']}")
-    else:
-        _print_summary("Leadership extraction complete", result)
-        _print_leadership_changes(result.get("leadership_changes", []))
-    db.close()
+        if result.get("error"):
+            click.echo(f"[ERROR] {result['error']}")
+        else:
+            _print_summary("Leadership extraction complete", result)
+            _print_leadership_changes(result.get("leadership_changes", []))
+    finally:
+        browser.close()
+        db.close()
 
 
 @click.command()
 @click.option("--limit", default=None, type=int, help="Process first N companies")
-@click.option("--headless", is_flag=True, help="Run browser in headless mode")
 @click.option(
     "--profile-dir",
     default=None,
     type=str,
-    help="Playwright browser profile directory",
+    help="Chrome user data directory for persistent login session",
 )
 @click.option(
     "--max-workers",
     default=1,
     type=int,
-    help="Parallel workers (default 1 for Playwright safety; increase for Kagi-only mode)",
+    help="Parallel workers (default 1 for CDP browser; increase for Kagi-only mode)",
 )
 @click.option(
     "--include-manually-closed",
@@ -1345,7 +1482,6 @@ def extract_leadership(company_id: int, headless: bool, profile_dir: str | None)
 )
 def extract_leadership_all(
     limit: int | None,
-    headless: bool,
     profile_dir: str | None,
     max_workers: int,
     include_manually_closed: bool,
@@ -1355,134 +1491,85 @@ def extract_leadership_all(
     configure_logging(config.log_level)
     db = _get_db(config)
 
-    from src.domains.discovery.repositories.social_media_link_repository import (
-        SocialMediaLinkRepository,
-    )
-    from src.domains.leadership.repositories.leadership_repository import (
-        LeadershipRepository,
-    )
-    from src.domains.leadership.services.leadership_manager import LeadershipManager
-    from src.domains.leadership.services.linkedin_browser import LinkedInBrowser
-    from src.repositories.company_repository import CompanyRepository
-
+    manager, browser = _build_leadership_manager(config, db, profile_dir)
     operator = _get_operator()
-    browser_headless = headless or config.linkedin_headless
-    browser_profile = profile_dir or config.linkedin_profile_dir
-
-    browser = LinkedInBrowser(headless=browser_headless, profile_dir=browser_profile)
-    leadership_repo = LeadershipRepository(db, operator)
-    social_repo = SocialMediaLinkRepository(db, operator)
-    company_repo = CompanyRepository(db, operator)
-
-    search_service = _build_leadership_search(config)
-
-    manager = LeadershipManager(
-        linkedin_browser=browser,
-        leadership_search=search_service,
-        leadership_repo=leadership_repo,
-        social_link_repo=social_repo,
-        company_repo=company_repo,
-    )
 
     exclude_ids: set[int] | None = None
     if not include_manually_closed:
         exclude_ids = _get_manually_closed_ids(db, operator) or None
 
-    click.echo(f"[INFO] Extracting leadership for all companies ({max_workers} workers)...")
-    result = manager.extract_all_leadership(
-        limit=limit,
-        max_workers=max_workers,
-        exclude_company_ids=exclude_ids,
-    )
-    _print_summary("Leadership extraction complete", result)
+    try:
+        browser.launch()
+        click.echo(f"[INFO] Extracting leadership for all companies ({max_workers} workers)...")
+        result = manager.extract_all_leadership(
+            limit=limit,
+            max_workers=max_workers,
+            exclude_company_ids=exclude_ids,
+        )
+        _print_summary("Leadership extraction complete", result)
 
-    critical = result.get("critical_changes", [])
-    if critical:
-        click.echo(f"\n[CRITICAL] {len(critical)} critical leadership change(s):")
-        for change in critical:
-            click.echo(
-                f"  {change.get('company_name', 'Unknown')} | "
-                f"{change.get('change_type', '')} | "
-                f"{change.get('person_name', '')} ({change.get('title', '')})"
-            )
+        critical = result.get("critical_changes", [])
+        if critical:
+            click.echo(f"\n[CRITICAL] {len(critical)} critical leadership change(s):")
+            for change in critical:
+                click.echo(
+                    f"  {change.get('company_name', 'Unknown')} | "
+                    f"{change.get('change_type', '')} | "
+                    f"{change.get('person_name', '')} ({change.get('title', '')})"
+                )
 
-    report_config: dict[str, Any] = {
-        "limit": limit,
-        "max_workers": max_workers,
-        "headless": headless,
-    }
-    report = build_extract_leadership_report(result, report_config)
-    report_path = write_report(report)
-    click.echo(f"  Report written to: {report_path}")
-
-    db.close()
+        report_config: dict[str, Any] = {
+            "limit": limit,
+            "max_workers": max_workers,
+        }
+        report = build_extract_leadership_report(result, report_config)
+        report_path = write_report(report)
+        click.echo(f"  Report written to: {report_path}")
+    finally:
+        browser.close()
+        db.close()
 
 
 @click.command()
 @click.option("--limit", default=None, type=int, help="Process first N companies")
-@click.option("--headless", is_flag=True, help="Run browser in headless mode")
 @click.option(
     "--profile-dir",
     default=None,
     type=str,
-    help="Playwright browser profile directory",
+    help="Chrome user data directory for persistent login session",
 )
 def check_leadership_changes(
     limit: int | None,
-    headless: bool,
     profile_dir: str | None,
 ) -> None:
-    """Re-extract leadership and report changes only."""
+    """Re-extract leadership, verify employment, and report changes."""
     config = _get_config()
     configure_logging(config.log_level)
     db = _get_db(config)
 
-    from src.domains.discovery.repositories.social_media_link_repository import (
-        SocialMediaLinkRepository,
-    )
-    from src.domains.leadership.repositories.leadership_repository import (
-        LeadershipRepository,
-    )
-    from src.domains.leadership.services.leadership_manager import LeadershipManager
-    from src.domains.leadership.services.linkedin_browser import LinkedInBrowser
-    from src.repositories.company_repository import CompanyRepository
+    manager, browser = _build_leadership_manager(config, db, profile_dir)
 
-    operator = _get_operator()
-    browser_headless = headless or config.linkedin_headless
-    browser_profile = profile_dir or config.linkedin_profile_dir
+    try:
+        browser.launch()
+        click.echo("[INFO] Checking for leadership changes...")
+        result = manager.extract_all_leadership(limit=limit)
 
-    browser = LinkedInBrowser(headless=browser_headless, profile_dir=browser_profile)
-    leadership_repo = LeadershipRepository(db, operator)
-    social_repo = SocialMediaLinkRepository(db, operator)
-    company_repo = CompanyRepository(db, operator)
+        critical = result.get("critical_changes", [])
+        if critical:
+            click.echo(f"\n[CRITICAL] {len(critical)} critical leadership change(s):")
+            for change in critical:
+                click.echo(
+                    f"  {change.get('company_name', 'Unknown')} | "
+                    f"{change.get('change_type', '')} | "
+                    f"{change.get('person_name', '')} ({change.get('title', '')})"
+                )
+        else:
+            click.echo("[INFO] No critical leadership changes detected.")
 
-    search_service = _build_leadership_search(config)
-
-    manager = LeadershipManager(
-        linkedin_browser=browser,
-        leadership_search=search_service,
-        leadership_repo=leadership_repo,
-        social_link_repo=social_repo,
-        company_repo=company_repo,
-    )
-
-    click.echo("[INFO] Checking for leadership changes...")
-    result = manager.extract_all_leadership(limit=limit)
-
-    critical = result.get("critical_changes", [])
-    if critical:
-        click.echo(f"\n[CRITICAL] {len(critical)} critical leadership change(s):")
-        for change in critical:
-            click.echo(
-                f"  {change.get('company_name', 'Unknown')} | "
-                f"{change.get('change_type', '')} | "
-                f"{change.get('person_name', '')} ({change.get('title', '')})"
-            )
-    else:
-        click.echo("[INFO] No critical leadership changes detected.")
-
-    _print_summary("Leadership change check complete", result)
-    db.close()
+        _print_summary("Leadership change check complete", result)
+    finally:
+        browser.close()
+        db.close()
 
 
 @click.command()
@@ -1657,6 +1744,73 @@ def detect_social_changes(limit: int | None, include_manually_closed: bool) -> N
     db.close()
 
 
+def _build_leadership_manager(
+    config: Config,
+    db: Database,
+    profile_dir: str | None = None,
+) -> tuple[Any, Any]:
+    """Build the LeadershipManager with CDP browser and all dependencies.
+
+    Returns (manager, cdp_browser) tuple. Caller is responsible for
+    calling browser.launch() before use and browser.close() after.
+    """
+    from src.domains.discovery.repositories.social_media_link_repository import (
+        SocialMediaLinkRepository,
+    )
+    from src.domains.leadership.repositories.leadership_repository import (
+        LeadershipRepository,
+    )
+    from src.domains.leadership.repositories.linkedin_snapshot_repository import (
+        LinkedInSnapshotRepository,
+    )
+    from src.domains.leadership.services.cdp_browser import CDPBrowser
+    from src.domains.leadership.services.employment_verifier import EmploymentVerifier
+    from src.domains.leadership.services.leadership_manager import LeadershipManager
+    from src.repositories.company_repository import CompanyRepository
+    from src.services.llm_client import LLMClient
+
+    operator = _get_operator()
+    browser_profile = profile_dir or config.linkedin_profile_dir
+
+    browser = CDPBrowser(profile_dir=browser_profile)
+    leadership_repo = LeadershipRepository(db, operator)
+    social_repo = SocialMediaLinkRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
+    snapshot_repo = LinkedInSnapshotRepository(db, operator)
+    search_service = _build_leadership_search(config)
+
+    # Set up LLM client for Vision analysis
+    llm_client = None
+    if config.anthropic_api_key:
+        llm_client = LLMClient(
+            api_key=config.anthropic_api_key,
+            model=config.llm_model,
+        )
+
+    # Set up employment verifier
+    verifier = None
+    if llm_client:
+        verifier = EmploymentVerifier(
+            cdp_browser=browser,
+            llm_client=llm_client,
+            leadership_repo=leadership_repo,
+            snapshot_repo=snapshot_repo,
+        )
+
+    manager = LeadershipManager(
+        cdp_browser=browser,
+        leadership_search=search_service,
+        leadership_repo=leadership_repo,
+        social_link_repo=social_repo,
+        company_repo=company_repo,
+        llm_client=llm_client,
+        snapshot_repo=snapshot_repo,
+        employment_verifier=verifier,
+    )
+
+    return manager, browser
+
+
 def _build_leadership_search(config: Config) -> Any:
     """Build the LeadershipSearch service with Kagi client."""
     from src.domains.leadership.services.leadership_search import LeadershipSearch
@@ -1809,15 +1963,24 @@ def discover_ceo_linkedin(
     dry_run: bool,
     include_manually_closed: bool,
 ) -> None:
-    """Discover CEO/founder LinkedIn profiles via Kagi search.
+    """[DISABLED] Discover CEO/founder LinkedIn profiles via Kagi search.
 
-    Extracts CEO/founder names from website snapshots, then searches Kagi
-    for their LinkedIn profiles. Results are stored in company_leadership
-    and social_media_links tables.
+    This command is disabled. Use extract-leadership instead, which uses CDP +
+    Chrome Extension for direct LinkedIn scraping with Claude Vision analysis.
 
-    Can be run standalone or is automatically chained after discover-social-media
-    (opt-out via --skip-ceo-search on that command).
+    Previously extracted CEO/founder names from website snapshots, then searched
+    Kagi for their LinkedIn profiles.
     """
+    click.echo(
+        "[WARNING] discover-ceo-linkedin is disabled. "
+        "Use extract-leadership instead (CDP + Chrome Extension)."
+    )
+    click.echo(
+        "[INFO] The extract-leadership command now handles CEO/founder discovery "
+        "directly from LinkedIn company People tab."
+    )
+    return
+    # --- Original implementation below (kept for reference) ---
     config = _get_config()
     configure_logging(config.log_level)
     db = _get_db(config)

@@ -1,11 +1,15 @@
 """Leadership extraction orchestrator.
 
-Tries Playwright first, falls back to Kagi search.
+Uses CDP + Chrome Extension as the primary extraction method,
+with Kagi search as a fallback. Includes employment verification
+via personal profile visits and Claude Vision analysis.
 Detects leadership changes and flags critical departures.
 """
 
 from __future__ import annotations
 
+import base64
+import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -18,7 +22,12 @@ from src.domains.leadership.core.change_detection import (
     compare_leadership,
 )
 from src.domains.leadership.core.profile_parsing import filter_leadership_results
-from src.domains.leadership.services.linkedin_browser import LinkedInBlockedError
+from src.domains.leadership.core.vision_prompts import build_people_tab_prompt
+from src.domains.leadership.core.vision_result_parser import (
+    merge_dom_and_vision_results,
+    parse_people_tab_result,
+)
+from src.domains.leadership.services.cdp_browser import CDPBlockedError
 from src.utils.progress import ProgressTracker
 
 if TYPE_CHECKING:
@@ -28,29 +37,40 @@ if TYPE_CHECKING:
     from src.domains.leadership.repositories.leadership_repository import (
         LeadershipRepository,
     )
+    from src.domains.leadership.repositories.linkedin_snapshot_repository import (
+        LinkedInSnapshotRepository,
+    )
+    from src.domains.leadership.services.cdp_browser import CDPBrowser
+    from src.domains.leadership.services.employment_verifier import EmploymentVerifier
     from src.domains.leadership.services.leadership_search import LeadershipSearch
-    from src.domains.leadership.services.linkedin_browser import LinkedInBrowser
     from src.repositories.company_repository import CompanyRepository
+    from src.services.llm_client import LLMClient
 
 logger = structlog.get_logger(__name__)
 
 
 class LeadershipManager:
-    """Orchestrates leadership extraction with Playwright + Kagi fallback."""
+    """Orchestrates leadership extraction with CDP + Kagi fallback."""
 
     def __init__(
         self,
-        linkedin_browser: LinkedInBrowser,
+        cdp_browser: CDPBrowser,
         leadership_search: LeadershipSearch,
         leadership_repo: LeadershipRepository,
         social_link_repo: SocialMediaLinkRepository,
         company_repo: CompanyRepository,
+        llm_client: LLMClient | None = None,
+        snapshot_repo: LinkedInSnapshotRepository | None = None,
+        employment_verifier: EmploymentVerifier | None = None,
     ) -> None:
-        self.browser = linkedin_browser
+        self.browser = cdp_browser
         self.search = leadership_search
         self.leadership_repo = leadership_repo
         self.social_link_repo = social_link_repo
         self.company_repo = company_repo
+        self.llm = llm_client
+        self.snapshot_repo = snapshot_repo
+        self.verifier = employment_verifier
 
     def extract_company_leadership(
         self,
@@ -59,9 +79,11 @@ class LeadershipManager:
         """Extract leadership for a single company.
 
         1. Look up LinkedIn company URL from social_media_links
-        2. Try Playwright first -> Kagi fallback on failure
-        3. Detect leadership changes vs stored records
-        4. Store results
+        2. Try CDP extraction first -> Kagi fallback on failure
+        3. For CDP: DOM extraction + Vision analysis, merged
+        4. Detect leadership changes vs stored records
+        5. Verify existing leaders not seen in new scrape
+        6. Store results
 
         Returns summary dict with: company_id, company_name, leaders_found,
         method_used, leadership_changes, errors
@@ -77,39 +99,38 @@ class LeadershipManager:
         method_used = "kagi_search"
         errors: list[str] = []
 
-        # Try Playwright first (if we have a LinkedIn company URL)
+        # Try CDP extraction first (if we have a LinkedIn company URL)
         if linkedin_company_url:
             try:
-                raw_people = self.browser.extract_people(linkedin_company_url)
-                # Filter to leadership titles only
-                people = filter_leadership_results(raw_people)
-                method_used = "playwright_scrape"
-                logger.info(
-                    "playwright_extraction_succeeded",
-                    company=company_name,
-                    raw_count=len(raw_people),
-                    leaders=len(people),
+                people, method_used = self._extract_via_cdp(
+                    company_id, company_name, linkedin_company_url
                 )
-            except LinkedInBlockedError as exc:
+            except CDPBlockedError as exc:
                 logger.warning(
-                    "playwright_blocked_falling_back_to_kagi",
+                    "cdp_blocked_falling_back_to_kagi",
                     company=company_name,
                     reason=str(exc),
                 )
-                errors.append(f"Playwright blocked: {exc}")
+                errors.append(f"CDP blocked: {exc}")
             except Exception as exc:
                 logger.warning(
-                    "playwright_failed_falling_back_to_kagi",
+                    "cdp_failed_falling_back_to_kagi",
                     company=company_name,
                     error=str(exc),
+                    exc_info=True,
                 )
-                errors.append(f"Playwright error: {exc}")
+                errors.append(f"CDP error: {exc}")
 
-        # Fallback to Kagi search if Playwright didn't produce results
+        # Fallback to Kagi search if CDP didn't produce results
         if not people:
             try:
                 people = self.search.search_leadership(company_name)
                 method_used = "kagi_search"
+                logger.info(
+                    "kagi_fallback_used",
+                    company=company_name,
+                    leaders_found=len(people),
+                )
             except Exception as exc:
                 logger.error(
                     "kagi_search_failed",
@@ -123,7 +144,7 @@ class LeadershipManager:
 
         # Store results
         now = datetime.now(UTC).isoformat()
-        confidence = 0.8 if method_used == "playwright_scrape" else 0.6
+        confidence = 0.8 if method_used == "cdp_scrape" else 0.6
         stored_count = 0
 
         for person in people:
@@ -167,6 +188,13 @@ class LeadershipManager:
                 if profile_url:
                     self.leadership_repo.mark_not_current(company_id, profile_url)
 
+        # Verify leaders who were previously known but not in current People tab
+        verification_results: list[dict[str, Any]] = []
+        if self.verifier and method_used == "cdp_scrape":
+            verification_results = self._verify_missing_leaders(
+                company_id, company_name, previous_leadership, current_as_dicts
+            )
+
         # Log critical changes prominently
         critical_changes = [c for c in changes if c.get("severity") == "critical"]
         if critical_changes:
@@ -209,8 +237,133 @@ class LeadershipManager:
                 for c in changes
             ],
             "change_significance": change_summary.classification,
+            "verification_results": verification_results,
             "errors": errors,
         }
+
+    def _extract_via_cdp(
+        self,
+        company_id: int,
+        company_name: str,
+        linkedin_company_url: str,
+    ) -> tuple[list[dict[str, str]], str]:
+        """Extract leadership via CDP + Vision (dual strategy).
+
+        Returns (people_list, method_used).
+        """
+        now = datetime.now(UTC).isoformat()
+
+        # Step 1: DOM extraction via CDP
+        raw_people = self.browser.extract_people(linkedin_company_url)
+        dom_leaders = filter_leadership_results(raw_people)
+
+        logger.info(
+            "cdp_dom_extraction_complete",
+            company=company_name,
+            raw_count=len(raw_people),
+            leaders=len(dom_leaders),
+        )
+
+        # Step 2: Capture screenshots and run Vision analysis
+        vision_leaders: list[dict[str, str]] = []
+        screenshot_paths: list[str] = []
+
+        if self.llm:
+            try:
+                screenshot_paths = self.browser.capture_people_screenshots(
+                    linkedin_company_url, company_id
+                )
+
+                for path in screenshot_paths:
+                    with open(path, "rb") as f:
+                        screenshot_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+                    prompt = build_people_tab_prompt()
+                    raw_vision = self.llm.analyze_screenshot(screenshot_b64, prompt)
+
+                    if not raw_vision.get("error"):
+                        batch_people = parse_people_tab_result(raw_vision)
+                        vision_leaders.extend(batch_people)
+
+                logger.info(
+                    "cdp_vision_extraction_complete",
+                    company=company_name,
+                    vision_people=len(vision_leaders),
+                    screenshots=len(screenshot_paths),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "cdp_vision_analysis_failed",
+                    company=company_name,
+                    error=str(exc),
+                )
+
+        # Step 3: Merge DOM + Vision results
+        if vision_leaders:
+            merged = merge_dom_and_vision_results(dom_leaders, vision_leaders)
+            # Re-filter merged results for leadership titles
+            people = filter_leadership_results(merged)
+        else:
+            people = dom_leaders
+
+        # Step 4: Store LinkedIn snapshot
+        if self.snapshot_repo:
+            page_html = self.browser.get_page_html()
+            self.snapshot_repo.store_snapshot({
+                "company_id": company_id,
+                "linkedin_url": linkedin_company_url,
+                "url_type": "company",
+                "person_name": None,
+                "content_html": page_html,
+                "content_json": json.dumps({"employees": raw_people}),
+                "vision_data_json": json.dumps({"vision_leaders": vision_leaders}),
+                "screenshot_path": screenshot_paths[0] if screenshot_paths else None,
+                "captured_at": now,
+            })
+
+        logger.info(
+            "cdp_extraction_merged",
+            company=company_name,
+            dom_count=len(dom_leaders),
+            vision_count=len(vision_leaders),
+            merged_count=len(people),
+        )
+
+        return people, "cdp_scrape"
+
+    def _verify_missing_leaders(
+        self,
+        company_id: int,
+        company_name: str,
+        previous: list[dict[str, str]],
+        current: list[dict[str, str]],
+    ) -> list[dict[str, Any]]:
+        """Verify leaders who were previously known but not seen in current scrape.
+
+        Uses personal profile visits to confirm departures vs People tab omissions.
+        """
+        if not self.verifier:
+            return []
+
+        curr_urls = {p.get("linkedin_profile_url", "") for p in current}
+        missing = [p for p in previous if p.get("linkedin_profile_url", "") not in curr_urls]
+
+        if not missing:
+            return []
+
+        logger.info(
+            "verifying_missing_leaders",
+            company=company_name,
+            missing_count=len(missing),
+        )
+
+        results: list[dict[str, Any]] = []
+        for leader in missing:
+            result = self.verifier.verify_leader(company_id, company_name, leader)
+            results.append(result)
+            self.browser.delay_between_pages()
+
+        return results
 
     def extract_all_leadership(
         self,
@@ -223,7 +376,7 @@ class LeadershipManager:
         Args:
             limit: Process only the first N companies.
             max_workers: Number of parallel workers. Default 1 because
-                Playwright browser is single-threaded. Use higher values
+                CDP browser is single-threaded. Use higher values
                 only when using Kagi-only mode (no browser).
             exclude_company_ids: Company IDs to exclude (e.g. manually closed).
 
@@ -253,7 +406,7 @@ class LeadershipManager:
         skipped_details: list[dict[str, Any]] = []
 
         if max_workers <= 1:
-            # Sequential mode (default, safe for Playwright)
+            # Sequential mode (default, safe for CDP browser)
             for company in companies:
                 leaders_found = self._process_company_leadership(
                     company,
@@ -265,6 +418,8 @@ class LeadershipManager:
                 )
                 total_leaders += leaders_found
                 tracker.log_progress(every_n=1)
+                # Delay between companies
+                self.browser.delay_between_pages()
         else:
             # Parallel mode (for Kagi-only workflows)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -301,7 +456,9 @@ class LeadershipManager:
                                     "method_used": result["method_used"],
                                     "leaders_found": result["leaders_found"],
                                     "leaders": result.get("leaders", []),
-                                    "leadership_changes": result.get("leadership_changes", []),
+                                    "leadership_changes": result.get(
+                                        "leadership_changes", []
+                                    ),
                                 }
                             )
                     except Exception as exc:

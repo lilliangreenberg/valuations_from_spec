@@ -245,6 +245,59 @@ class LLMClient:
             logger.warning("llm_company_verification_failed", error=str(exc))
             return False, f"Verification failed: {exc}"
 
+    @retry_with_logging(max_attempts=4, max_wait=60)
+    def analyze_screenshot(
+        self,
+        screenshot_base64: str,
+        prompt: str,
+    ) -> dict[str, Any]:
+        """Analyze a screenshot image using Claude Vision.
+
+        Sends a base64-encoded PNG image to Claude with the given prompt
+        and returns the parsed JSON response.
+
+        Args:
+            screenshot_base64: Base64-encoded PNG image data.
+            prompt: The analysis prompt describing what to extract.
+
+        Returns:
+            Parsed JSON dict from the Vision response, or dict with 'error' key.
+        """
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=2000,
+                temperature=0.0,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/png",
+                                    "data": screenshot_base64,
+                                },
+                            },
+                            {
+                                "type": "text",
+                                "text": prompt,
+                            },
+                        ],
+                    }
+                ],
+            )
+
+            text = response.content[0].text
+            time.sleep(_INTER_REQUEST_DELAY_SECONDS)
+            return self._parse_json_response(text)
+        except _RETRYABLE_ANTHROPIC_EXCEPTIONS:
+            raise
+        except Exception as exc:
+            logger.warning("llm_screenshot_analysis_failed", error=str(exc))
+            return {"error": f"Screenshot analysis failed: {exc}"}
+
     def _call_llm(
         self,
         system_prompt: str,
