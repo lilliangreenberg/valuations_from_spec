@@ -31,6 +31,9 @@ class Config(BaseSettings):
     kagi_api_key: str | None = None
     linkedin_headless: bool = False
     linkedin_profile_dir: str = "data/linkedin_profile"
+    google_oauth_client_id: str | None = None
+    google_oauth_client_secret: str | None = None
+    session_secret_key: str | None = None
 
     @field_validator("airtable_api_key")
     @classmethod

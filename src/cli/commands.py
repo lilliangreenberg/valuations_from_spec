@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import getpass
 import json
+import os
+import sys
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -36,8 +38,37 @@ def _get_db(config: Config) -> Database:
     return db
 
 
+def _get_auth_service() -> Any:
+    """Create an AuthService if OAuth is configured, otherwise return None."""
+    config = _get_config()
+    if config.google_oauth_client_id and config.google_oauth_client_secret:
+        from src.services.auth import AuthService
+
+        return AuthService(config.google_oauth_client_id, config.google_oauth_client_secret)
+    return None
+
+
 def _get_operator() -> str:
-    """Get the current operator's username for audit attribution."""
+    """Get the current operator identity for audit attribution.
+
+    Resolution order:
+    1. OPERATOR_OVERRIDE env var (set by dashboard subprocess passthrough)
+    2. Stored Google OAuth credentials from data/auth.json
+    3. Error + exit if OAuth is configured but user not logged in
+    """
+    override = os.environ.get("OPERATOR_OVERRIDE")
+    if override:
+        return override
+
+    auth_service = _get_auth_service()
+    if auth_service is not None:
+        user = auth_service.get_current_user()
+        if user is not None:
+            return user.email
+        click.echo("Error: Google OAuth is configured but you are not logged in.", err=True)
+        click.echo("Run 'airtable-extractor login' to authenticate.", err=True)
+        sys.exit(1)
+
     return getpass.getuser()
 
 
@@ -54,8 +85,10 @@ def _get_manually_closed_ids(db: Database, operator: str) -> set[int]:
     status_repo = CompanyStatusRepository(db, operator)
     skip_ids = status_repo.get_skippable_company_ids()
     if skip_ids:
-        click.echo(f"[INFO] Excluding {len(skip_ids)} skippable companies "
-                    "(manually-closed + no homepage URL)")
+        click.echo(
+            f"[INFO] Excluding {len(skip_ids)} skippable companies "
+            "(manually-closed + no homepage URL)"
+        )
     return skip_ids
 
 
@@ -1852,7 +1885,13 @@ def dashboard(host: str, port: int, no_browser: bool) -> None:
     log_level = os.environ.get("LOG_LEVEL", "INFO")
     configure_logging(log_level)
 
-    app = create_app(database_path=database_path)
+    config = _get_config()
+    app = create_app(
+        database_path=database_path,
+        google_oauth_client_id=config.google_oauth_client_id,
+        google_oauth_client_secret=config.google_oauth_client_secret,
+        session_secret_key=config.session_secret_key,
+    )
 
     if not no_browser:
 
@@ -2011,3 +2050,54 @@ def discover_ceo_linkedin(
         _print_summary("CEO LinkedIn discovery complete", result)
 
     db.close()
+
+
+# --- Authentication commands ---
+
+
+@click.command()
+def login() -> None:
+    """Authenticate with Google OAuth (opens browser)."""
+    auth_service = _get_auth_service()
+    if auth_service is None:
+        click.echo(
+            "Error: Google OAuth is not configured. "
+            "Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in .env",
+            err=True,
+        )
+        sys.exit(1)
+
+    click.echo("Opening browser for Google login...")
+    user_info = auth_service.cli_login()
+    click.echo(f"Logged in as: {user_info.name} ({user_info.email})")
+
+
+@click.command()
+def logout() -> None:
+    """Clear stored Google OAuth credentials."""
+    auth_service = _get_auth_service()
+    if auth_service is None:
+        click.echo(
+            "Error: Google OAuth is not configured. "
+            "Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in .env",
+            err=True,
+        )
+        sys.exit(1)
+
+    auth_service.clear_credentials()
+    click.echo("Logged out. Stored credentials cleared.")
+
+
+@click.command()
+def whoami() -> None:
+    """Show the currently authenticated user."""
+    auth_service = _get_auth_service()
+    if auth_service is None:
+        click.echo(f"OAuth not configured. Using system user: {getpass.getuser()}")
+        return
+
+    user = auth_service.get_current_user()
+    if user is None:
+        click.echo("Not logged in. Run 'airtable-extractor login' to authenticate.")
+    else:
+        click.echo(f"Logged in as: {user.name} ({user.email})")

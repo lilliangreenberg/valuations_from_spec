@@ -259,8 +259,17 @@ class TaskRunner:
         self._queues: dict[str, asyncio.Queue[str]] = {}
         self.max_concurrent = max_concurrent
 
-    async def start_task(self, command: str, args: list[str]) -> str:
-        """Start a CLI command as a background subprocess. Returns task_id."""
+    async def start_task(
+        self, command: str, args: list[str], operator: str | None = None
+    ) -> str:
+        """Start a CLI command as a background subprocess. Returns task_id.
+
+        Args:
+            command: CLI command name (must be in ALLOWED_COMMANDS).
+            args: Command-line arguments.
+            operator: If provided, passed as OPERATOR_OVERRIDE env var to the subprocess
+                      so that the CLI records the correct user identity for audit.
+        """
         if command not in ALLOWED_COMMANDS:
             msg = f"Command not allowed: {command}"
             raise ValueError(msg)
@@ -277,13 +286,20 @@ class TaskRunner:
         self._queues[task_id] = asyncio.Queue()
 
         full_cmd = ["uv", "run", "airtable-extractor", command, *args]
-        logger.info("task_starting", task_id=task_id, command=full_cmd)
+        logger.info("task_starting", task_id=task_id, command=full_cmd, operator=operator)
+
+        env = None
+        if operator:
+            import os
+
+            env = {**os.environ, "OPERATOR_OVERRIDE": operator}
 
         process = await asyncio.create_subprocess_exec(
             *full_cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             limit=1024 * 1024,  # 1MB line buffer (default 64KB too small for SVG data)
+            env=env,
         )
         self._processes[task_id] = process
 

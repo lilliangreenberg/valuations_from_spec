@@ -28,6 +28,8 @@ from src.cli.commands import (
     list_inactive,
     list_significant_changes,
     list_uncertain_changes,
+    login,
+    logout,
     refresh_logos,
     scrape_linkedin_profile,
     search_news,
@@ -36,6 +38,7 @@ from src.cli.commands import (
     show_changes,
     show_social_links,
     show_status,
+    whoami,
 )
 
 
@@ -75,3 +78,6 @@ cli.add_command(get_company_notes)
 cli.add_command(capture_social_snapshots)
 cli.add_command(detect_social_changes)
 cli.add_command(dashboard)
+cli.add_command(login)
+cli.add_command(logout)
+cli.add_command(whoami)

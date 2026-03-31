@@ -459,7 +459,7 @@ async def delete_entry(
     import getpass
     from datetime import UTC, datetime
 
-    operator = getpass.getuser()
+    operator = getattr(request.state, "operator", getpass.getuser())
     now = datetime.now(UTC).isoformat()
 
     db = request.app.state.db
