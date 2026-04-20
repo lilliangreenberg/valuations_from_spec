@@ -141,13 +141,19 @@ def _is_inside_third_party_section(tag: Any) -> bool:
         direct_text = ""
         for child in parent.children:
             if hasattr(child, "name") and child.name in (
-                "h1", "h2", "h3", "h4", "h5", "h6", "p", "span", "div",
+                "h1",
+                "h2",
+                "h3",
+                "h4",
+                "h5",
+                "h6",
+                "p",
+                "span",
+                "div",
             ):
                 direct_text += " " + child.get_text(strip=True)
 
-        if direct_text and any(
-            pat.search(direct_text) for pat in _THIRD_PARTY_SECTION_PATTERNS
-        ):
+        if direct_text and any(pat.search(direct_text) for pat in _THIRD_PARTY_SECTION_PATTERNS):
             return True
 
         parent = parent.parent
@@ -263,8 +269,7 @@ class LogoService:
             # Handle both string and list @type
             type_values = schema_type if isinstance(schema_type, list) else [schema_type]
 
-            if any(t in ("Organization", "Corporation", "LocalBusiness")
-                   for t in type_values):
+            if any(t in ("Organization", "Corporation", "LocalBusiness") for t in type_values):
                 logo = data.get("logo")
                 if isinstance(logo, str) and logo:
                     return logo
@@ -288,7 +293,9 @@ class LogoService:
         return None
 
     def _try_header_nav_logo(
-        self, soup: Any, base_url: str,
+        self,
+        soup: Any,
+        base_url: str,
     ) -> dict[str, Any] | None:
         """Strategy 1: Find an image in header/nav linked to the homepage.
 

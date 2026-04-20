@@ -7,7 +7,6 @@ from typing import Any
 
 from src.models.company_status import CompanyStatusType, SignalType
 
-
 VALID_STATUSES = {member.value for member in CompanyStatusType}
 
 

@@ -43,7 +43,7 @@ async def changes_page(
         request,
         "changes.html",
         {
-            "changes": result["items"],
+            "company_groups": result["items"],
             "total": result["total"],
             "page": result["page"],
             "per_page": result["per_page"],
@@ -89,7 +89,7 @@ async def changes_list_partial(
         request,
         "partials/change_filters.html",
         {
-            "changes": result["items"],
+            "company_groups": result["items"],
             "total": result["total"],
             "page": result["page"],
             "per_page": result["per_page"],

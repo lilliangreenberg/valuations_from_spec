@@ -47,9 +47,7 @@ class TestBuildCaptureSnapshotsReport:
                     "error": "timeout",
                 }
             ],
-            "skipped": [
-                {"company_id": 2, "name": "SkipCo", "reason": "no_homepage_url"}
-            ],
+            "skipped": [{"company_id": 2, "name": "SkipCo", "reason": "no_homepage_url"}],
         }
 
         report = build_capture_snapshots_report(result, {"mode": "batch", "batch_size": 50})

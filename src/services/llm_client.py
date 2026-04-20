@@ -78,8 +78,7 @@ _CLASSIFICATION_TOOL: dict[str, Any] = {
                 "type": "number",
                 "enum": _CONFIDENCE_ENUM,
                 "description": (
-                    "0.5=coin flip, 0.7=probable, 0.8=confident,"
-                    " 0.9=very confident, 0.95=certain"
+                    "0.5=coin flip, 0.7=probable, 0.8=confident, 0.9=very confident, 0.95=certain"
                 ),
             },
             "reasoning": {
@@ -186,13 +185,22 @@ class LLMClient:
         """
         if social_context:
             system_prompt, user_prompt = build_enriched_significance_prompt(
-                content_excerpt, keywords, categories, magnitude,
-                company_name, homepage_url, social_context,
+                content_excerpt,
+                keywords,
+                categories,
+                magnitude,
+                company_name,
+                homepage_url,
+                social_context,
             )
         else:
             system_prompt, user_prompt = build_significance_classification_prompt(
-                content_excerpt, keywords, categories, magnitude,
-                company_name, homepage_url,
+                content_excerpt,
+                keywords,
+                categories,
+                magnitude,
+                company_name,
+                homepage_url,
             )
         return self._call_llm_with_tool(
             system_prompt, user_prompt, _CLASSIFICATION_TOOL, "classify_significance"
@@ -213,17 +221,29 @@ class LLMClient:
         """Classify significance and determine company status in a single call."""
         if social_context:
             system_prompt, user_prompt = build_status_aware_enriched_prompt(
-                content_excerpt, keywords, categories, magnitude,
-                company_name, homepage_url, social_context,
+                content_excerpt,
+                keywords,
+                categories,
+                magnitude,
+                company_name,
+                homepage_url,
+                social_context,
                 company_notes=company_notes,
             )
         else:
             system_prompt, user_prompt = build_status_aware_significance_prompt(
-                content_excerpt, keywords, categories, magnitude,
-                company_name, homepage_url, company_notes=company_notes,
+                content_excerpt,
+                keywords,
+                categories,
+                magnitude,
+                company_name,
+                homepage_url,
+                company_notes=company_notes,
             )
         return self._call_llm_with_tool(
-            system_prompt, user_prompt, _STATUS_CLASSIFICATION_TOOL,
+            system_prompt,
+            user_prompt,
+            _STATUS_CLASSIFICATION_TOOL,
             "classify_significance_with_status",
         )
 
@@ -238,7 +258,11 @@ class LLMClient:
     ) -> dict[str, Any]:
         """Classify baseline signals from a company's first website snapshot."""
         system_prompt, user_prompt = build_baseline_classification_prompt(
-            content_excerpt, keywords, categories, company_name, homepage_url,
+            content_excerpt,
+            keywords,
+            categories,
+            company_name,
+            homepage_url,
         )
         return self._call_llm_with_tool(
             system_prompt, user_prompt, _CLASSIFICATION_TOOL, "classify_baseline"
@@ -255,10 +279,16 @@ class LLMClient:
     ) -> dict[str, Any]:
         """Classify significance of a news article."""
         system_prompt, user_prompt = build_news_classification_prompt(
-            title, source, content, keywords, company_name,
+            title,
+            source,
+            content,
+            keywords,
+            company_name,
         )
         return self._call_llm_with_tool(
-            system_prompt, user_prompt, _CLASSIFICATION_TOOL,
+            system_prompt,
+            user_prompt,
+            _CLASSIFICATION_TOOL,
             "classify_news_significance",
         )
 
@@ -277,13 +307,19 @@ class LLMClient:
         Returns (is_match, reasoning).
         """
         system_prompt, user_prompt = build_company_verification_prompt(
-            company_name, company_url, article_title, article_source,
-            article_snippet, company_description=company_description,
+            company_name,
+            company_url,
+            article_title,
+            article_source,
+            article_snippet,
+            company_description=company_description,
         )
 
         try:
             result = self._call_llm_with_tool(
-                system_prompt, user_prompt, _VERIFICATION_TOOL,
+                system_prompt,
+                user_prompt,
+                _VERIFICATION_TOOL,
                 "verify_company_identity",
             )
             is_match = result.get("is_match", False)

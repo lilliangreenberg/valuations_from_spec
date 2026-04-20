@@ -213,6 +213,7 @@ class QueryService:
         has_changes: bool | None = None,
         flagged: bool | None = None,
         freshness: str | None = None,
+        manual_override: str | None = None,
         sort_by: str = "name",
         sort_order: str = "asc",
         page: int = 1,
@@ -255,21 +256,32 @@ class QueryService:
         elif has_changes is False:
             conditions.append("last_change_date IS NULL")
 
+        not_manually_closed = (
+            "(cs.status IS NULL OR NOT (cs.status = 'likely_closed' AND cs.is_manual_override = 1))"
+        )
         freshness_thresholds = {
-            "fresh": "ls.last_snapshot >= datetime('now', '-7 days')",
+            "fresh": (f"ls.last_snapshot >= datetime('now', '-7 days') AND {not_manually_closed}"),
             "recent": (
                 "ls.last_snapshot >= datetime('now', '-30 days') "
-                "AND ls.last_snapshot < datetime('now', '-7 days')"
+                f"AND ls.last_snapshot < datetime('now', '-7 days') AND {not_manually_closed}"
             ),
             "stale": (
                 "ls.last_snapshot >= datetime('now', '-90 days') "
-                "AND ls.last_snapshot < datetime('now', '-30 days')"
+                f"AND ls.last_snapshot < datetime('now', '-30 days') AND {not_manually_closed}"
             ),
-            "very_stale": ("ls.last_snapshot < datetime('now', '-90 days')"),
-            "never": "ls.last_snapshot IS NULL",
+            "very_stale": (
+                f"ls.last_snapshot < datetime('now', '-90 days') AND {not_manually_closed}"
+            ),
+            "never": f"ls.last_snapshot IS NULL AND {not_manually_closed}",
+            "manually_closed": ("cs.status = 'likely_closed' AND cs.is_manual_override = 1"),
         }
         if freshness and freshness in freshness_thresholds:
             conditions.append(freshness_thresholds[freshness])
+
+        if manual_override == "yes":
+            conditions.append("cs.is_manual_override = 1")
+        elif manual_override == "no":
+            conditions.append("COALESCE(cs.is_manual_override, 0) = 0")
 
         where_clause = " AND ".join(conditions) if conditions else "1=1"
 
@@ -279,7 +291,7 @@ class QueryService:
                 SELECT c.id
                 FROM companies c
                 LEFT JOIN (
-                    SELECT company_id, status
+                    SELECT company_id, status, is_manual_override
                     FROM company_statuses
                     WHERE id IN (
                         SELECT MAX(id) FROM company_statuses GROUP BY company_id
@@ -371,7 +383,11 @@ class QueryService:
         page: int = 1,
         per_page: int = 50,
     ) -> dict[str, Any]:
-        """Paginated changes view with filters."""
+        """Paginated changes view grouped by company.
+
+        Returns company groups with nested change records instead of
+        a flat list. Total reflects distinct companies with changes.
+        """
         conditions: list[str] = [
             "cr.has_changed = 1",
             "cr.detected_at >= datetime('now', ?)",
@@ -392,18 +408,23 @@ class QueryService:
 
         where_clause = " AND ".join(conditions)
 
+        # Count distinct companies with matching changes
         count_row = self.db.fetchone(
-            f"SELECT COUNT(*) as cnt FROM change_records cr WHERE {where_clause}",
+            "SELECT COUNT(DISTINCT cr.company_id) as cnt "
+            f"FROM change_records cr WHERE {where_clause}",
             tuple(params),
         )
         total = count_row["cnt"] if count_row else 0
         total_pages = max(1, math.ceil(total / per_page))
         offset = (page - 1) * per_page
 
-        rows = self.db.fetchall(
-            f"""SELECT cr.*, c.name as company_name, c.notes as company_notes,
+        # Fetch paginated company groups
+        company_rows = self.db.fetchall(
+            f"""SELECT cr.company_id, c.name as company_name, c.notes as company_notes,
                        COALESCE(cs.status, 'unknown') as company_status,
-                       COALESCE(cs.is_manual_override, 0) as company_status_manual
+                       COALESCE(cs.is_manual_override, 0) as company_status_manual,
+                       MAX(cr.detected_at) as latest_change,
+                       COUNT(*) as change_count
                 FROM change_records cr
                 JOIN companies c ON cr.company_id = c.id
                 LEFT JOIN (
@@ -412,13 +433,59 @@ class QueryService:
                     WHERE id IN (SELECT MAX(id) FROM company_statuses GROUP BY company_id)
                 ) cs ON c.id = cs.company_id
                 WHERE {where_clause}
-                ORDER BY cr.detected_at DESC
+                GROUP BY cr.company_id
+                ORDER BY latest_change DESC
                 LIMIT ? OFFSET ?""",
             (*params, per_page, offset),
         )
 
+        if not company_rows:
+            return {
+                "items": [],
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+                "total_pages": total_pages,
+            }
+
+        # Fetch all change records for these companies
+        company_ids = [r["company_id"] for r in company_rows]
+        placeholders = ",".join("?" * len(company_ids))
+        change_rows = self.db.fetchall(
+            f"""SELECT cr.*
+                FROM change_records cr
+                WHERE cr.company_id IN ({placeholders}) AND {where_clause}
+                ORDER BY cr.detected_at DESC""",
+            (*company_ids, *params),
+        )
+
+        # Group changes by company_id
+        changes_by_company: dict[int, list[dict[str, Any]]] = {}
+        for row in change_rows:
+            cid = row["company_id"]
+            if cid not in changes_by_company:
+                changes_by_company[cid] = []
+            changes_by_company[cid].append(self._deserialize_json_fields(dict(row)))
+
+        # Build grouped result
+        items: list[dict[str, Any]] = []
+        for company in company_rows:
+            cid = company["company_id"]
+            items.append(
+                {
+                    "company_id": cid,
+                    "company_name": company["company_name"],
+                    "company_notes": company["company_notes"],
+                    "company_status": company["company_status"],
+                    "company_status_manual": company["company_status_manual"],
+                    "latest_change": company["latest_change"],
+                    "change_count": company["change_count"],
+                    "changes": changes_by_company.get(cid, []),
+                }
+            )
+
         return {
-            "items": [self._deserialize_json_fields(dict(r)) for r in rows],
+            "items": items,
             "total": total,
             "page": page,
             "per_page": per_page,
@@ -559,10 +626,12 @@ class QueryService:
             """SELECT mag, COUNT(*) as cnt FROM (
                    SELECT company_id,
                        CASE
-                           WHEN SUM(CASE WHEN LOWER(change_magnitude) = 'major' THEN 1 ELSE 0 END) > 0
-                               THEN 'major'
-                           WHEN SUM(CASE WHEN LOWER(change_magnitude) = 'moderate' THEN 1 ELSE 0 END) > 0
-                               THEN 'moderate'
+                           WHEN SUM(
+                               CASE WHEN LOWER(change_magnitude) = 'major' THEN 1 ELSE 0 END
+                           ) > 0 THEN 'major'
+                           WHEN SUM(
+                               CASE WHEN LOWER(change_magnitude) = 'moderate' THEN 1 ELSE 0 END
+                           ) > 0 THEN 'moderate'
                            ELSE 'minor'
                        END as mag
                    FROM change_records
@@ -711,21 +780,35 @@ class QueryService:
         """Data for the 'Snapshot Freshness' widget.
 
         Classifies each company by how recently it was last scanned.
+        Companies manually marked as likely_closed are separated into
+        their own tier instead of inflating the regular freshness counts.
         """
         rows = self.db.fetchall("""
             SELECT
                 c.id, c.name,
-                MAX(s.captured_at) as last_snapshot,
+                ls.last_snapshot,
                 CASE
-                    WHEN MAX(s.captured_at) IS NULL THEN 'never'
-                    WHEN MAX(s.captured_at) >= datetime('now', '-7 days') THEN 'fresh'
-                    WHEN MAX(s.captured_at) >= datetime('now', '-30 days') THEN 'recent'
-                    WHEN MAX(s.captured_at) >= datetime('now', '-90 days') THEN 'stale'
+                    WHEN cs.status = 'likely_closed' AND cs.is_manual_override = 1
+                        THEN 'manually_closed'
+                    WHEN ls.last_snapshot IS NULL THEN 'never'
+                    WHEN ls.last_snapshot >= datetime('now', '-7 days') THEN 'fresh'
+                    WHEN ls.last_snapshot >= datetime('now', '-30 days') THEN 'recent'
+                    WHEN ls.last_snapshot >= datetime('now', '-90 days') THEN 'stale'
                     ELSE 'very_stale'
                 END as tier
             FROM companies c
-            LEFT JOIN snapshots s ON c.id = s.company_id
-            GROUP BY c.id, c.name
+            LEFT JOIN (
+                SELECT company_id, MAX(captured_at) as last_snapshot
+                FROM snapshots
+                GROUP BY company_id
+            ) ls ON c.id = ls.company_id
+            LEFT JOIN (
+                SELECT company_id, status, is_manual_override
+                FROM company_statuses
+                WHERE id IN (
+                    SELECT MAX(id) FROM company_statuses GROUP BY company_id
+                )
+            ) cs ON c.id = cs.company_id
             ORDER BY c.name
         """)
 
@@ -735,6 +818,7 @@ class QueryService:
             "stale": 0,
             "very_stale": 0,
             "never_scanned": 0,
+            "manually_closed": 0,
         }
         companies_by_tier: dict[str, list[dict[str, Any]]] = {
             "fresh": [],
@@ -742,6 +826,7 @@ class QueryService:
             "stale": [],
             "very_stale": [],
             "never_scanned": [],
+            "manually_closed": [],
         }
 
         for row in rows:
@@ -797,6 +882,160 @@ class QueryService:
                 d["indicators"] = []
             result.append(d)
         return result
+
+    def get_status_news_contradictions(
+        self, days: int = 30, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        """Companies marked operational despite recent significant-negative news.
+
+        The highest-value "risk blindness" query -- catches portfolio
+        companies where status analysis hasn't caught up to clear warning
+        signals in the news.
+        """
+        rows = self.db.fetchall(
+            """SELECT
+                   c.id as company_id,
+                   c.name as company_name,
+                   c.homepage_url as homepage_url,
+                   cs.status as status,
+                   cs.confidence as status_confidence,
+                   cs.last_checked as status_last_checked,
+                   na.title as news_title,
+                   na.source as news_source,
+                   na.content_url as news_url,
+                   na.published_at as news_published_at,
+                   na.significance_confidence as news_confidence,
+                   na.matched_categories as news_categories
+               FROM companies c
+               INNER JOIN (
+                   SELECT company_id, MAX(id) as max_id
+                   FROM company_statuses
+                   GROUP BY company_id
+               ) latest ON latest.company_id = c.id
+               JOIN company_statuses cs ON cs.id = latest.max_id
+               JOIN news_articles na ON na.company_id = c.id
+               WHERE cs.status = 'operational'
+                 AND na.significance_classification = 'significant'
+                 AND na.significance_sentiment = 'negative'
+                 AND na.published_at >= datetime('now', ?)
+               ORDER BY na.published_at DESC
+               LIMIT ?""",
+            (f"-{days} days", limit),
+        )
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            data = dict(row)
+            raw_cats = data.get("news_categories") or "[]"
+            try:
+                data["news_categories"] = json.loads(raw_cats) if raw_cats else []
+            except (json.JSONDecodeError, TypeError):
+                data["news_categories"] = []
+            results.append(data)
+        return results
+
+    def get_recent_leadership_departures(
+        self, days: int = 90, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        """Recent critical leadership changes across the portfolio.
+
+        Powers the "Leadership Alerts" dashboard widget. Critical severity
+        means CEO / founder / CTO / COO departures.
+        """
+        rows = self.db.fetchall(
+            """SELECT lc.*, c.name AS company_name, c.homepage_url AS homepage_url
+               FROM leadership_changes lc
+               JOIN companies c ON lc.company_id = c.id
+               WHERE lc.severity = 'critical'
+                 AND lc.detected_at >= datetime('now', ?)
+               ORDER BY lc.detected_at DESC
+               LIMIT ?""",
+            (f"-{days} days", limit),
+        )
+        return [dict(row) for row in rows]
+
+    def get_news_sentiment_trend(self, company_id: int, months: int = 12) -> list[dict[str, Any]]:
+        """Per-month positive vs negative news counts for one company.
+
+        Feeds a small sparkline on the company detail page and enables
+        downstream sentiment-flip detection.
+        """
+        rows = self.db.fetchall(
+            """SELECT
+                   strftime('%Y-%m', published_at) AS month,
+                   SUM(CASE WHEN significance_sentiment = 'positive' THEN 1 ELSE 0 END)
+                       AS positive,
+                   SUM(CASE WHEN significance_sentiment = 'negative' THEN 1 ELSE 0 END)
+                       AS negative,
+                   COUNT(*) AS total
+               FROM news_articles
+               WHERE company_id = ?
+                 AND significance_classification = 'significant'
+                 AND published_at >= datetime('now', ?)
+               GROUP BY month
+               ORDER BY month""",
+            (company_id, f"-{months * 30} days"),
+        )
+        return [dict(row) for row in rows]
+
+    def get_change_frequency_anomalies(
+        self, days: int = 90, baseline_days: int = 365
+    ) -> list[dict[str, Any]]:
+        """Companies with an unusual change-detection rate in the recent window.
+
+        Compares the rate of detected changes in the last `days` days
+        against the per-company baseline over the last `baseline_days`
+        days. Surfaces both spikes (rebrand / migration) and drops
+        (site frozen / abandoned).
+        """
+        rows = self.db.fetchall(
+            """SELECT
+                   c.id AS company_id,
+                   c.name AS company_name,
+                   recent.cnt AS recent_count,
+                   baseline.cnt AS baseline_count
+               FROM companies c
+               LEFT JOIN (
+                   SELECT company_id, COUNT(*) AS cnt
+                   FROM change_records
+                   WHERE has_changed = 1
+                     AND detected_at >= datetime('now', ?)
+                   GROUP BY company_id
+               ) recent ON recent.company_id = c.id
+               LEFT JOIN (
+                   SELECT company_id, COUNT(*) AS cnt
+                   FROM change_records
+                   WHERE has_changed = 1
+                     AND detected_at >= datetime('now', ?)
+                   GROUP BY company_id
+               ) baseline ON baseline.company_id = c.id
+               WHERE baseline.cnt IS NOT NULL AND baseline.cnt > 0""",
+            (f"-{days} days", f"-{baseline_days} days"),
+        )
+
+        anomalies: list[dict[str, Any]] = []
+        for row in rows:
+            data = dict(row)
+            recent = float(data.get("recent_count") or 0)
+            baseline = float(data.get("baseline_count") or 0)
+            if baseline <= 0:
+                continue
+            # Scale both rates to the same window length for comparison.
+            expected = baseline * (days / baseline_days)
+            if expected <= 0:
+                continue
+            ratio = recent / expected
+            # Flag spikes (> 2x expected) and droughts (< 0.1x expected)
+            if ratio >= 2.0 or ratio <= 0.1:
+                data["expected_count"] = round(expected, 2)
+                data["ratio"] = round(ratio, 2)
+                data["direction"] = "spike" if ratio >= 2.0 else "drought"
+                anomalies.append(data)
+
+        anomalies.sort(
+            key=lambda d: abs((d.get("ratio") or 1.0) - 1.0),
+            reverse=True,
+        )
+        return anomalies
 
     def _deserialize_json_fields(self, data: dict[str, Any]) -> dict[str, Any]:
         """Deserialize JSON string fields to Python objects."""

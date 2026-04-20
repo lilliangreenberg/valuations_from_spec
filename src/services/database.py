@@ -168,6 +168,12 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_change_records_company_id"
                 " ON change_records(company_id)"
             )
+            # Prevent duplicate change records for the same snapshot pair
+            # (race condition protection for concurrent detect-changes runs)
+            cursor.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_change_records_unique_pair"
+                " ON change_records(company_id, snapshot_id_old, snapshot_id_new)"
+            )
 
             # company_statuses table
             cursor.execute("""
@@ -337,6 +343,37 @@ class Database:
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_company_leadership_title"
                 " ON company_leadership(title)"
+            )
+
+            # leadership_changes table (append-only event log for departures,
+            # new arrivals, and other leadership transitions detected by
+            # compare_leadership). Every extraction run inserts a row per
+            # detected change, giving us a persistent history.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS leadership_changes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    company_id INTEGER NOT NULL,
+                    change_type TEXT NOT NULL,
+                    person_name TEXT NOT NULL,
+                    title TEXT,
+                    linkedin_profile_url TEXT,
+                    severity TEXT NOT NULL,
+                    detected_at TEXT NOT NULL,
+                    confidence REAL NOT NULL DEFAULT 0.0,
+                    discovery_method TEXT,
+                    context TEXT,
+                    performed_by TEXT,
+                    FOREIGN KEY (company_id)
+                        REFERENCES companies(id) ON DELETE CASCADE
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_leadership_changes_company_id"
+                " ON leadership_changes(company_id, detected_at DESC)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_leadership_changes_severity"
+                " ON leadership_changes(severity, detected_at DESC)"
             )
 
             # social_media_snapshots table

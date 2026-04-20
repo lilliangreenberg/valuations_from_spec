@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from src.domains.discovery.core.url_normalization import normalize_social_url
+
 if TYPE_CHECKING:
     from src.services.database import Database
 
@@ -22,10 +24,11 @@ class LeadershipRepository:
     def store_leadership(self, data: dict[str, Any]) -> int:
         """Store a leadership record. Uses explicit check to skip duplicates.
 
-        Returns row ID if stored, 0 if duplicate skipped.
+        Returns row ID if stored, 0 if duplicate skipped. The LinkedIn URL
+        is normalized so cosmetic variants map to the same canonical form.
         """
         company_id = data["company_id"]
-        profile_url = data["linkedin_profile_url"]
+        profile_url = normalize_social_url(data["linkedin_profile_url"])
 
         if self.leadership_exists(company_id, profile_url):
             logger.debug(
@@ -77,42 +80,45 @@ class LeadershipRepository:
 
     def leadership_exists(self, company_id: int, linkedin_profile_url: str) -> bool:
         """Check if a leadership record already exists."""
+        normalized = normalize_social_url(linkedin_profile_url)
         row = self.db.fetchone(
             """SELECT id FROM company_leadership
                WHERE company_id = ? AND linkedin_profile_url = ?""",
-            (company_id, linkedin_profile_url),
+            (company_id, normalized),
         )
         return row is not None
 
     def mark_not_current(self, company_id: int, linkedin_profile_url: str) -> None:
         """Mark a leadership record as no longer current (departed)."""
+        normalized = normalize_social_url(linkedin_profile_url)
         self.db.execute(
             """UPDATE company_leadership
                SET is_current = 0, performed_by = ?
                WHERE company_id = ? AND linkedin_profile_url = ?""",
-            (self.operator, company_id, linkedin_profile_url),
+            (self.operator, company_id, normalized),
         )
         self.db.connection.commit()
         logger.info(
             "leadership_marked_not_current",
             company_id=company_id,
-            url=linkedin_profile_url,
+            url=normalized,
         )
 
     def update_verification_date(
         self, company_id: int, linkedin_profile_url: str, last_verified_at: str
     ) -> None:
         """Update last_verified_at for an existing leadership record."""
+        normalized = normalize_social_url(linkedin_profile_url)
         self.db.execute(
             "UPDATE company_leadership SET last_verified_at = ?, performed_by = ? "
             "WHERE company_id = ? AND linkedin_profile_url = ?",
-            (last_verified_at, self.operator, company_id, linkedin_profile_url),
+            (last_verified_at, self.operator, company_id, normalized),
         )
         self.db.connection.commit()
         logger.info(
             "leadership_verification_updated",
             company_id=company_id,
-            url=linkedin_profile_url,
+            url=normalized,
         )
 
     def get_all_leadership(self, limit: int = 100) -> list[dict[str, Any]]:

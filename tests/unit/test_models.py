@@ -76,6 +76,7 @@ def _valid_snapshot_kwargs() -> dict:
         "company_id": 1,
         "url": "https://example.com",
         "content_markdown": "# Hello",
+        "content_checksum": VALID_CHECKSUM,
         "captured_at": PAST_DATETIME,
     }
 
@@ -476,11 +477,21 @@ class TestSnapshot:
         with pytest.raises(ValidationError):
             Snapshot(**kwargs)
 
-    def test_checksum_none_accepted(self) -> None:
+    def test_checksum_none_accepted_for_failed_capture(self) -> None:
+        """None checksum is accepted when the snapshot has no content."""
         kwargs = _valid_snapshot_kwargs()
+        kwargs["content_markdown"] = None
         kwargs["content_checksum"] = None
+        kwargs["error_message"] = "Connection timeout"
         snap = Snapshot(**kwargs)
         assert snap.content_checksum is None
+
+    def test_checksum_required_when_content_present(self) -> None:
+        """None checksum is rejected when content_markdown is provided."""
+        kwargs = _valid_snapshot_kwargs()
+        kwargs["content_checksum"] = None
+        with pytest.raises(ValidationError):
+            Snapshot(**kwargs)
 
     def test_captured_at_past_accepted(self) -> None:
         kwargs = _valid_snapshot_kwargs()
@@ -1678,6 +1689,7 @@ class TestEdgeCases:
             company_id=1,
             url="https://example.com",
             content_markdown="# hi",
+            content_checksum=VALID_CHECKSUM,
             content_html="<p>hi</p>",
             error_message="partial load",
             captured_at=PAST_DATETIME,

@@ -19,6 +19,7 @@ from src.models.company_status import (
 from src.models.config import Config
 from src.models.discovery_result import DiscoveryResult
 from src.models.keyword_match import KeywordMatch
+from src.models.leadership_change import LeadershipChange, LeadershipChangeSeverity
 from src.models.llm_validation import LLMValidationResult
 from src.models.news_article import NewsArticle
 from src.models.processing_error import ProcessingError
@@ -50,6 +51,8 @@ __all__ = [
     "ExtractionLocation",
     "HTMLRegion",
     "KeywordMatch",
+    "LeadershipChange",
+    "LeadershipChangeSeverity",
     "LLMValidationResult",
     "NewsArticle",
     "Platform",

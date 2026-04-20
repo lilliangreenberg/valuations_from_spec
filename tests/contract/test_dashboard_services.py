@@ -91,6 +91,125 @@ class TestQueryServiceCompaniesList:
         assert result["per_page"] == 50
 
 
+def _insert_company(db: Database, name: str = "TestCo", url: str = "https://test.com") -> int:
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC).isoformat()
+    cursor = db.execute(
+        "INSERT INTO companies "
+        "(name, homepage_url, source_sheet, created_at, updated_at, performed_by) "
+        "VALUES (?, ?, 'test', ?, ?, 'test')",
+        (name, url, now, now),
+    )
+    db.connection.commit()
+    return cursor.lastrowid  # type: ignore[return-value]
+
+
+def _insert_snapshot(db: Database, company_id: int, captured_at: str) -> None:
+    db.execute(
+        "INSERT INTO snapshots "
+        "(company_id, url, content_markdown, content_checksum, captured_at, performed_by) "
+        "VALUES (?, 'https://example.com', 'md', ?, ?, 'test')",
+        (company_id, "a" * 32, captured_at),
+    )
+    db.connection.commit()
+
+
+def _insert_status(
+    db: Database,
+    company_id: int,
+    status: str = "operational",
+    is_manual_override: int = 0,
+) -> None:
+    from datetime import UTC, datetime
+
+    db.execute(
+        "INSERT INTO company_statuses "
+        "(company_id, status, confidence, indicators, last_checked, "
+        "is_manual_override, performed_by) "
+        "VALUES (?, ?, 0.9, '[]', ?, ?, 'test')",
+        (company_id, status, datetime.now(UTC).isoformat(), is_manual_override),
+    )
+    db.connection.commit()
+
+
+class TestCompaniesListFreshnessManuallyClosedFilter:
+    def test_manually_closed_freshness_returns_only_manual_closed(
+        self, temp_db: Database, query_service: QueryService
+    ) -> None:
+        from datetime import UTC, datetime
+
+        cid1 = _insert_company(temp_db, name="ManualCo", url="https://manual.com")
+        _insert_snapshot(temp_db, cid1, datetime.now(UTC).isoformat())
+        _insert_status(temp_db, cid1, status="likely_closed", is_manual_override=1)
+
+        cid2 = _insert_company(temp_db, name="FreshCo", url="https://fresh.com")
+        _insert_snapshot(temp_db, cid2, datetime.now(UTC).isoformat())
+
+        result = query_service.get_companies_list(freshness="manually_closed")
+        assert result["total"] == 1
+        assert result["items"][0]["name"] == "ManualCo"
+
+    def test_auto_likely_closed_not_in_manually_closed(
+        self, temp_db: Database, query_service: QueryService
+    ) -> None:
+        from datetime import UTC, datetime
+
+        cid = _insert_company(temp_db, name="AutoClosed")
+        _insert_snapshot(temp_db, cid, datetime.now(UTC).isoformat())
+        _insert_status(temp_db, cid, status="likely_closed", is_manual_override=0)
+
+        result = query_service.get_companies_list(freshness="manually_closed")
+        assert result["total"] == 0
+
+    def test_recent_freshness_excludes_manually_closed(
+        self, temp_db: Database, query_service: QueryService
+    ) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        # Company with 10-day-old snapshot, manually closed
+        cid = _insert_company(temp_db, name="ClosedRecent")
+        ten_days_ago = (datetime.now(UTC) - timedelta(days=10)).isoformat()
+        _insert_snapshot(temp_db, cid, ten_days_ago)
+        _insert_status(temp_db, cid, status="likely_closed", is_manual_override=1)
+
+        # This company would be "recent" by age but is manually closed
+        result = query_service.get_companies_list(freshness="recent")
+        assert result["total"] == 0
+
+
+class TestCompaniesListManualOverrideFilter:
+    def test_manual_override_yes_returns_only_overrides(
+        self, temp_db: Database, query_service: QueryService
+    ) -> None:
+        cid1 = _insert_company(temp_db, name="ManualOp", url="https://m.com")
+        _insert_status(temp_db, cid1, status="operational", is_manual_override=1)
+
+        cid2 = _insert_company(temp_db, name="AutoOp", url="https://a.com")
+        _insert_status(temp_db, cid2, status="operational", is_manual_override=0)
+
+        result = query_service.get_companies_list(manual_override="yes")
+        assert result["total"] == 1
+        assert result["items"][0]["name"] == "ManualOp"
+
+    def test_manual_override_no_returns_auto_detected(
+        self, temp_db: Database, query_service: QueryService
+    ) -> None:
+        cid1 = _insert_company(temp_db, name="ManualOp", url="https://m.com")
+        _insert_status(temp_db, cid1, status="operational", is_manual_override=1)
+
+        cid2 = _insert_company(temp_db, name="AutoOp", url="https://a.com")
+        _insert_status(temp_db, cid2, status="operational", is_manual_override=0)
+
+        _insert_company(temp_db, name="NoStatus", url="https://n.com")
+
+        result = query_service.get_companies_list(manual_override="no")
+        names = [item["name"] for item in result["items"]]
+        assert "AutoOp" in names
+        assert "NoStatus" in names
+        assert "ManualOp" not in names
+
+
 class TestQueryServiceCompanySummary:
     def test_nonexistent_company_returns_none(self, query_service: QueryService) -> None:
         result = query_service.get_company_summary(99999)
@@ -101,6 +220,42 @@ class TestQueryServiceSourceSheets:
     def test_returns_list(self, query_service: QueryService) -> None:
         sheets = query_service.get_source_sheets()
         assert isinstance(sheets, list)
+
+
+def _insert_change_record(
+    db: Database,
+    company_id: int,
+    detected_at: str | None = None,
+    classification: str = "significant",
+    sentiment: str = "negative",
+) -> int:
+    from datetime import UTC, datetime
+
+    if detected_at is None:
+        detected_at = datetime.now(UTC).isoformat()
+    # Create two snapshots to satisfy FK constraints
+    snap1 = db.execute(
+        "INSERT INTO snapshots "
+        "(company_id, url, content_markdown, content_checksum, captured_at, performed_by) "
+        "VALUES (?, 'https://example.com', 'old', ?, ?, 'test')",
+        (company_id, "a" * 32, detected_at),
+    ).lastrowid
+    snap2 = db.execute(
+        "INSERT INTO snapshots "
+        "(company_id, url, content_markdown, content_checksum, captured_at, performed_by) "
+        "VALUES (?, 'https://example.com', 'new', ?, ?, 'test')",
+        (company_id, "b" * 32, detected_at),
+    ).lastrowid
+    cursor = db.execute(
+        "INSERT INTO change_records "
+        "(company_id, snapshot_id_old, snapshot_id_new, checksum_old, checksum_new, "
+        "has_changed, change_magnitude, detected_at, "
+        "significance_classification, significance_sentiment, performed_by) "
+        "VALUES (?, ?, ?, ?, ?, 1, 'MAJOR', ?, ?, ?, 'test')",
+        (company_id, snap1, snap2, "a" * 32, "b" * 32, detected_at, classification, sentiment),
+    )
+    db.connection.commit()
+    return cursor.lastrowid  # type: ignore[return-value]
 
 
 class TestQueryServiceChangesFiltered:
@@ -114,6 +269,46 @@ class TestQueryServiceChangesFiltered:
         result = query_service.get_changes_filtered()
         assert result["items"] == []
         assert result["total"] == 0
+
+    def test_groups_by_company(self, temp_db: Database, query_service: QueryService) -> None:
+        cid = _insert_company(temp_db, name="GroupCo")
+        _insert_change_record(temp_db, cid)
+        _insert_change_record(temp_db, cid)
+
+        result = query_service.get_changes_filtered(days=7)
+        assert result["total"] == 1  # 1 company, not 2 records
+        assert len(result["items"]) == 1
+        group = result["items"][0]
+        assert group["company_id"] == cid
+        assert group["company_name"] == "GroupCo"
+        assert group["change_count"] == 2
+        assert len(group["changes"]) == 2
+
+    def test_multiple_companies_separate_groups(
+        self, temp_db: Database, query_service: QueryService
+    ) -> None:
+        cid1 = _insert_company(temp_db, name="AlphaCo", url="https://a.com")
+        cid2 = _insert_company(temp_db, name="BetaCo", url="https://b.com")
+        _insert_change_record(temp_db, cid1)
+        _insert_change_record(temp_db, cid2)
+        _insert_change_record(temp_db, cid2)
+
+        result = query_service.get_changes_filtered(days=7)
+        assert result["total"] == 2
+        assert len(result["items"]) == 2
+        names = {g["company_name"] for g in result["items"]}
+        assert names == {"AlphaCo", "BetaCo"}
+
+    def test_total_reflects_company_count_not_records(
+        self, temp_db: Database, query_service: QueryService
+    ) -> None:
+        cid = _insert_company(temp_db, name="ManyChanges")
+        for _ in range(5):
+            _insert_change_record(temp_db, cid)
+
+        result = query_service.get_changes_filtered(days=7)
+        assert result["total"] == 1
+        assert result["items"][0]["change_count"] == 5
 
 
 class TestQueryServiceNewsFiltered:

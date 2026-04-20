@@ -40,35 +40,41 @@ class TestLinkedInSnapshotRepository:
         return LinkedInSnapshotRepository(db, "test_operator")
 
     def test_store_snapshot(self, repo: LinkedInSnapshotRepository) -> None:
-        row_id = repo.store_snapshot({
-            "company_id": 1,
-            "linkedin_url": "https://www.linkedin.com/company/testcorp",
-            "url_type": "company",
-            "content_html": "<html>test</html>",
-            "content_json": '{"employees": []}',
-            "vision_data_json": '{}',
-            "screenshot_path": "docs/screenshots/test.png",
-            "captured_at": datetime.now(UTC).isoformat(),
-        })
+        row_id = repo.store_snapshot(
+            {
+                "company_id": 1,
+                "linkedin_url": "https://www.linkedin.com/company/testcorp",
+                "url_type": "company",
+                "content_html": "<html>test</html>",
+                "content_json": '{"employees": []}',
+                "vision_data_json": "{}",
+                "screenshot_path": "docs/screenshots/test.png",
+                "captured_at": datetime.now(UTC).isoformat(),
+            }
+        )
         assert row_id > 0
 
     def test_get_latest_snapshot(self, repo: LinkedInSnapshotRepository) -> None:
         url = "https://www.linkedin.com/company/testcorp"
 
-        repo.store_snapshot({
-            "company_id": 1,
-            "linkedin_url": url,
-            "url_type": "company",
-            "content_html": "<html>old</html>",
-            "captured_at": "2026-01-01T00:00:00",
-        })
-        repo.store_snapshot({
-            "company_id": 1,
-            "linkedin_url": url,
-            "url_type": "company",
-            "content_html": "<html>new</html>",
-            "captured_at": "2026-03-01T00:00:00",
-        })
+        repo.store_snapshot(
+            {
+                "company_id": 1,
+                "linkedin_url": url,
+                "url_type": "company",
+                "content_html": "<html>old</html>",
+                "captured_at": "2026-01-01T00:00:00",
+            }
+        )
+        repo.store_snapshot(
+            {
+                "company_id": 1,
+                "linkedin_url": url,
+                "url_type": "company",
+                "content_html": "<html>new</html>",
+                "captured_at": "2026-03-01T00:00:00",
+            }
+        )
 
         latest = repo.get_latest_snapshot(1, url)
         assert latest is not None
@@ -76,39 +82,45 @@ class TestLinkedInSnapshotRepository:
 
     def test_get_snapshots_for_company(self, repo: LinkedInSnapshotRepository) -> None:
         url = "https://www.linkedin.com/company/testcorp"
-        repo.store_snapshot({
-            "company_id": 1,
-            "linkedin_url": url,
-            "url_type": "company",
-            "content_html": "<html>test</html>",
-            "captured_at": datetime.now(UTC).isoformat(),
-        })
+        repo.store_snapshot(
+            {
+                "company_id": 1,
+                "linkedin_url": url,
+                "url_type": "company",
+                "content_html": "<html>test</html>",
+                "captured_at": datetime.now(UTC).isoformat(),
+            }
+        )
 
         snapshots = repo.get_snapshots_for_company(1)
         assert len(snapshots) == 1
 
     def test_get_person_snapshots(self, repo: LinkedInSnapshotRepository) -> None:
-        repo.store_snapshot({
-            "company_id": 1,
-            "linkedin_url": "https://www.linkedin.com/in/janedoe",
-            "url_type": "person",
-            "person_name": "Jane Doe",
-            "content_html": "<html>profile</html>",
-            "captured_at": datetime.now(UTC).isoformat(),
-        })
+        repo.store_snapshot(
+            {
+                "company_id": 1,
+                "linkedin_url": "https://www.linkedin.com/in/janedoe",
+                "url_type": "person",
+                "person_name": "Jane Doe",
+                "content_html": "<html>profile</html>",
+                "captured_at": datetime.now(UTC).isoformat(),
+            }
+        )
 
         snapshots = repo.get_person_snapshots(1, "Jane Doe")
         assert len(snapshots) == 1
         assert snapshots[0]["person_name"] == "Jane Doe"
 
     def test_content_checksum_computed(self, repo: LinkedInSnapshotRepository) -> None:
-        repo.store_snapshot({
-            "company_id": 1,
-            "linkedin_url": "https://www.linkedin.com/company/test",
-            "url_type": "company",
-            "content_html": "<html>test content</html>",
-            "captured_at": datetime.now(UTC).isoformat(),
-        })
+        repo.store_snapshot(
+            {
+                "company_id": 1,
+                "linkedin_url": "https://www.linkedin.com/company/test",
+                "url_type": "company",
+                "content_html": "<html>test content</html>",
+                "captured_at": datetime.now(UTC).isoformat(),
+            }
+        )
 
         latest = repo.get_latest_snapshot(1, "https://www.linkedin.com/company/test")
         assert latest is not None
@@ -116,29 +128,31 @@ class TestLinkedInSnapshotRepository:
         assert len(latest["content_checksum"]) == 32  # MD5 hex length
 
     def test_get_latest_company_snapshot(self, repo: LinkedInSnapshotRepository) -> None:
-        repo.store_snapshot({
-            "company_id": 1,
-            "linkedin_url": "https://www.linkedin.com/company/test",
-            "url_type": "company",
-            "content_html": "<html>company</html>",
-            "captured_at": datetime.now(UTC).isoformat(),
-        })
-        repo.store_snapshot({
-            "company_id": 1,
-            "linkedin_url": "https://www.linkedin.com/in/person",
-            "url_type": "person",
-            "person_name": "Person",
-            "content_html": "<html>person</html>",
-            "captured_at": datetime.now(UTC).isoformat(),
-        })
+        repo.store_snapshot(
+            {
+                "company_id": 1,
+                "linkedin_url": "https://www.linkedin.com/company/test",
+                "url_type": "company",
+                "content_html": "<html>company</html>",
+                "captured_at": datetime.now(UTC).isoformat(),
+            }
+        )
+        repo.store_snapshot(
+            {
+                "company_id": 1,
+                "linkedin_url": "https://www.linkedin.com/in/person",
+                "url_type": "person",
+                "person_name": "Person",
+                "content_html": "<html>person</html>",
+                "captured_at": datetime.now(UTC).isoformat(),
+            }
+        )
 
         latest = repo.get_latest_company_snapshot(1)
         assert latest is not None
         assert latest["url_type"] == "company"
 
-    def test_returns_none_when_no_snapshots(
-        self, repo: LinkedInSnapshotRepository
-    ) -> None:
+    def test_returns_none_when_no_snapshots(self, repo: LinkedInSnapshotRepository) -> None:
         assert repo.get_latest_snapshot(999, "https://example.com") is None
         assert repo.get_latest_company_snapshot(999) is None
 
@@ -169,17 +183,19 @@ class TestEmploymentVerifierContract:
         )
 
         leadership_repo = LeadershipRepository(db, "test")
-        leadership_repo.store_leadership({
-            "company_id": 1,
-            "person_name": "Jane Smith",
-            "title": "CEO",
-            "linkedin_profile_url": "https://www.linkedin.com/in/janesmith",
-            "discovery_method": "cdp_scrape",
-            "confidence": 0.8,
-            "is_current": True,
-            "discovered_at": now,
-            "last_verified_at": now,
-        })
+        leadership_repo.store_leadership(
+            {
+                "company_id": 1,
+                "person_name": "Jane Smith",
+                "title": "CEO",
+                "linkedin_profile_url": "https://www.linkedin.com/in/janesmith",
+                "discovery_method": "cdp_scrape",
+                "confidence": 0.8,
+                "is_current": True,
+                "discovered_at": now,
+                "last_verified_at": now,
+            }
+        )
 
         snapshot_repo = LinkedInSnapshotRepository(db, "test")
 
@@ -246,17 +262,19 @@ class TestEmploymentVerifierContract:
         )
 
         leadership_repo = LeadershipRepository(db, "test")
-        leadership_repo.store_leadership({
-            "company_id": 1,
-            "person_name": "Bob Jones",
-            "title": "CTO",
-            "linkedin_profile_url": "https://www.linkedin.com/in/bobjones",
-            "discovery_method": "cdp_scrape",
-            "confidence": 0.8,
-            "is_current": True,
-            "discovered_at": now,
-            "last_verified_at": now,
-        })
+        leadership_repo.store_leadership(
+            {
+                "company_id": 1,
+                "person_name": "Bob Jones",
+                "title": "CTO",
+                "linkedin_profile_url": "https://www.linkedin.com/in/bobjones",
+                "discovery_method": "cdp_scrape",
+                "confidence": 0.8,
+                "is_current": True,
+                "discovered_at": now,
+                "last_verified_at": now,
+            }
+        )
 
         snapshot_repo = LinkedInSnapshotRepository(db, "test")
 
@@ -329,8 +347,15 @@ class TestLeadershipManagerCDPContract:
                (company_id, platform, profile_url, account_type,
                 discovery_method, verification_status, discovered_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (1, "linkedin", "https://www.linkedin.com/company/testcorp",
-             "company", "homepage_scrape", "unverified", now),
+            (
+                1,
+                "linkedin",
+                "https://www.linkedin.com/company/testcorp",
+                "company",
+                "homepage_scrape",
+                "unverified",
+                now,
+            ),
         )
         db.connection.commit()
 
@@ -352,7 +377,11 @@ class TestLeadershipManagerCDPContract:
         # Mock browser
         mock_browser = MagicMock()
         mock_browser.extract_people.return_value = [
-            {"name": "Jane Smith", "title": "CEO", "profile_url": "https://www.linkedin.com/in/janesmith"},
+            {
+                "name": "Jane Smith",
+                "title": "CEO",
+                "profile_url": "https://www.linkedin.com/in/janesmith",
+            },
         ]
         mock_browser.get_page_html.return_value = "<html>people page</html>"
         mock_browser.capture_people_screenshots.return_value = ["/tmp/screenshot.png"]
@@ -362,8 +391,16 @@ class TestLeadershipManagerCDPContract:
         mock_llm = MagicMock()
         mock_llm.analyze_screenshot.return_value = {
             "employees": [
-                {"name": "Jane Smith", "title": "CEO", "profile_url": "https://www.linkedin.com/in/janesmith"},
-                {"name": "Bob Jones", "title": "CTO", "profile_url": "https://www.linkedin.com/in/bobjones"},
+                {
+                    "name": "Jane Smith",
+                    "title": "CEO",
+                    "profile_url": "https://www.linkedin.com/in/janesmith",
+                },
+                {
+                    "name": "Bob Jones",
+                    "title": "CTO",
+                    "profile_url": "https://www.linkedin.com/in/bobjones",
+                },
             ]
         }
 

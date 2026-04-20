@@ -24,6 +24,11 @@
         <span class="freshness-tier-count">{{ widget.summary.get("never_scanned", 0) }}</span>
         <span class="freshness-tier-label">Never<br><small>Scanned</small></span>
       </a>
+      <div class="freshness-tier-separator"></div>
+      <a href="/companies?freshness=manually_closed" class="freshness-tier tier-manually-closed" style="text-decoration: none; color: inherit;">
+        <span class="freshness-tier-count">{{ widget.summary.get("manually_closed", 0) }}</span>
+        <span class="freshness-tier-label">Manually<br><small>Closed</small></span>
+      </a>
     </div>
 
     {% if widget.size == "large" and widget.companies_by_tier is defined %}

@@ -78,7 +78,5 @@ class TestOAuthConfig:
         assert "openid" in config.scopes
 
     def test_custom_scopes(self) -> None:
-        config = OAuthConfig(
-            client_id="cid", client_secret="csec", scopes=["openid"]
-        )
+        config = OAuthConfig(client_id="cid", client_secret="csec", scopes=["openid"])
         assert config.scopes == ["openid"]

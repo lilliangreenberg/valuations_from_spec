@@ -546,7 +546,7 @@ class TestVerificationPipelineCompatibility:
         kagi_eval = evaluate_articles(kagi_articles)
         fc_eval = evaluate_articles(fc_articles)
 
-        print(f"\n  [Odeko Inc.] Verification pass rate (no LLM):")
+        print("\n  [Odeko Inc.] Verification pass rate (no LLM):")
         print(
             f"    Kagi:           {kagi_eval['passed']}/{kagi_eval['total']} passed "
             f"(domain: {kagi_eval['domain_hits']}, context: {kagi_eval['context_hits']})"
@@ -591,6 +591,6 @@ class TestDateFieldReliability:
             if getattr(item, "date", None):
                 fc_with_date += 1
 
-        print(f"\n  [Odeko Inc.] Date field presence:")
+        print("\n  [Odeko Inc.] Date field presence:")
         print(f"    Kagi:           {kagi_with_date}/{len(kagi_articles)} have dates")
         print(f"    Firecrawl news: {fc_with_date}/{len(fc_result.news or [])} have dates")

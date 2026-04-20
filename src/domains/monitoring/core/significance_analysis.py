@@ -279,6 +279,25 @@ FALSE_POSITIVE_PHRASES: list[str] = [
     # "retreat" keyword (market_exit category)
     "company retreat",
     "team retreat",
+    # "sold to" keyword (acquisition category) -- commerce usage, not M&A
+    "sold to consumers",
+    "sold to customers",
+    "sold to retail",
+    "sold to retailers",
+    "sold to businesses",
+    "sold to buyers",
+    "sold to users",
+    "sold to clients",
+    "sold to merchants",
+    "sold to distributors",
+    "sold to resellers",
+    "sold to dealers",
+    "sold to end users",
+    "sold to end-users",
+    "sold to the public",
+    "sold to subscribers",
+    "sold to patients",
+    "sold to enterprises",
 ]
 
 # Negation words that precede keywords

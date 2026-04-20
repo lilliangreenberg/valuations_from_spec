@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from src.domains.discovery.core.url_normalization import normalize_social_url
+
 if TYPE_CHECKING:
     from src.services.database import Database
 
@@ -20,7 +22,14 @@ class SocialMediaLinkRepository:
         self.operator = operator
 
     def store_social_link(self, data: dict[str, Any]) -> int:
-        """Store a social media link. Handles UNIQUE constraint via upsert."""
+        """Store a social media link. Handles UNIQUE constraint via upsert.
+
+        The profile URL is normalized before insertion so that cosmetic
+        variants (trailing slash, www prefix, extra path segments) map to
+        the same canonical form and the UNIQUE(company_id, profile_url)
+        index actually catches duplicates.
+        """
+        profile_url = normalize_social_url(data["profile_url"])
         try:
             cursor = self.db.execute(
                 """INSERT INTO social_media_links
@@ -32,7 +41,7 @@ class SocialMediaLinkRepository:
                 (
                     data["company_id"],
                     data["platform"],
-                    data["profile_url"],
+                    profile_url,
                     data["discovery_method"],
                     data.get("verification_status", "unverified"),
                     data.get("similarity_score"),
@@ -49,7 +58,7 @@ class SocialMediaLinkRepository:
             return cursor.lastrowid or 0
         except Exception as exc:
             if "UNIQUE constraint" in str(exc):
-                logger.debug("duplicate_social_link_skipped", url=data.get("profile_url"))
+                logger.debug("duplicate_social_link_skipped", url=profile_url)
                 return 0
             raise
 

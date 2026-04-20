@@ -90,12 +90,18 @@ def _insert_change_record(
     return cursor.lastrowid  # type: ignore[return-value]
 
 
-def _insert_status(db: Database, company_id: int, status: str = "operational") -> None:
+def _insert_status(
+    db: Database,
+    company_id: int,
+    status: str = "operational",
+    is_manual_override: int = 0,
+) -> None:
     """Insert a company status."""
     db.execute(
-        "INSERT INTO company_statuses (company_id, status, confidence, indicators, last_checked) "
-        "VALUES (?, ?, 0.9, '[]', ?)",
-        (company_id, status, datetime.now(UTC).isoformat()),
+        "INSERT INTO company_statuses "
+        "(company_id, status, confidence, indicators, last_checked, is_manual_override) "
+        "VALUES (?, ?, 0.9, '[]', ?, ?)",
+        (company_id, status, datetime.now(UTC).isoformat(), is_manual_override),
     )
     db.connection.commit()
 
@@ -197,6 +203,7 @@ class TestGetAlertsSummary:
         cid = _insert_company(temp_db, name="TestCo1", flagged=True)
         s1 = _insert_snapshot(temp_db, cid)
         s2 = _insert_snapshot(temp_db, cid)
+        s3 = _insert_snapshot(temp_db, cid)
         _insert_change_record(
             temp_db,
             cid,
@@ -208,8 +215,8 @@ class TestGetAlertsSummary:
         _insert_change_record(
             temp_db,
             cid,
-            s1,
             s2,
+            s3,
             classification="uncertain",
         )
         result = query_service.get_alerts_summary()
@@ -257,7 +264,7 @@ class TestGetSnapshotFreshness:
 
     def test_returns_all_tiers(self, query_service: QueryService) -> None:
         result = query_service.get_snapshot_freshness()
-        for tier in ("fresh", "recent", "stale", "very_stale", "never_scanned"):
+        for tier in ("fresh", "recent", "stale", "very_stale", "never_scanned", "manually_closed"):
             assert tier in result["summary"]
             assert tier in result["companies_by_tier"]
 
@@ -284,6 +291,27 @@ class TestGetSnapshotFreshness:
         result = query_service.get_snapshot_freshness()
         fresh_companies = result["companies_by_tier"]["fresh"]
         assert any(c["name"] == "FreshCo" for c in fresh_companies)
+
+    def test_manually_closed_company_excluded_from_regular_tiers(
+        self, temp_db: Database, query_service: QueryService
+    ) -> None:
+        cid = _insert_company(temp_db, name="ClosedCo")
+        _insert_snapshot(temp_db, cid, captured_at=datetime.now(UTC).isoformat())
+        _insert_status(temp_db, cid, status="likely_closed", is_manual_override=1)
+        result = query_service.get_snapshot_freshness()
+        assert result["summary"]["manually_closed"] == 1
+        assert result["summary"]["fresh"] == 0
+        assert any(c["name"] == "ClosedCo" for c in result["companies_by_tier"]["manually_closed"])
+
+    def test_auto_likely_closed_stays_in_regular_tiers(
+        self, temp_db: Database, query_service: QueryService
+    ) -> None:
+        cid = _insert_company(temp_db, name="AutoClosedCo")
+        _insert_snapshot(temp_db, cid, captured_at=datetime.now(UTC).isoformat())
+        _insert_status(temp_db, cid, status="likely_closed", is_manual_override=0)
+        result = query_service.get_snapshot_freshness()
+        assert result["summary"]["fresh"] == 1
+        assert result["summary"]["manually_closed"] == 0
 
 
 class TestGetCompanyHealthGrid:

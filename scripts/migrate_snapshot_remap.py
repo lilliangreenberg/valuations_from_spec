@@ -58,18 +58,18 @@ BACKUP_SUFFIX = "_pre_remap_backup_" + datetime.now(UTC).strftime("%Y%m%d_%H%M%S
 # (keeper_id, duplicate_id) -- all child records move from duplicate to keeper
 MERGES: list[tuple[int, int]] = [
     # URL-duplicates
-    (236, 528),   # Opal Inc. keeps, Opal Camera deletes
-    (663, 472),   # Beamm keeps (correct name), Beamm Techologies deletes
-    (274, 484),   # Finfra Tech keeps, Digital Micro deletes
+    (236, 528),  # Opal Inc. keeps, Opal Camera deletes
+    (663, 472),  # Beamm keeps (correct name), Beamm Techologies deletes
+    (274, 484),  # Finfra Tech keeps, Digital Micro deletes
     # Name-duplicates with NULL URL
-    (112, 637),   # Agrata (has URL + social) keeps, Agrata (no URL) deletes
-    (416, 17),    # Candoriq (has URL) keeps, Candoriq (no URL) deletes
-    (640, 363),   # Lightbulbml (has URL) keeps, Lightbulbml (no URL) deletes
+    (112, 637),  # Agrata (has URL + social) keeps, Agrata (no URL) deletes
+    (416, 17),  # Candoriq (has URL) keeps, Candoriq (no URL) deletes
+    (640, 363),  # Lightbulbml (has URL) keeps, Lightbulbml (no URL) deletes
     # Name-duplicates with www/non-www
-    (67, 436),    # Fiber Ai (fiber.ai) keeps, Fiber Ai (www.fiber.ai) deletes
-    (405, 671),   # Kick (www.kick.co) keeps, Kick (kick.co) deletes
+    (67, 436),  # Fiber Ai (fiber.ai) keeps, Fiber Ai (www.fiber.ai) deletes
+    (405, 671),  # Kick (www.kick.co) keeps, Kick (kick.co) deletes
     # Rebrand
-    (49, 260),    # Mobilus Labs (original domain) keeps, Mobilus Labs (aana.ai) deletes
+    (49, 260),  # Mobilus Labs (original domain) keeps, Mobilus Labs (aana.ai) deletes
 ]
 
 # Tables with company_id foreign key (and the column name)
@@ -229,32 +229,41 @@ def merge_duplicate_companies(conn: sqlite3.Connection) -> dict[str, int]:
             # company_leadership: UNIQUE(company_id, linkedin_profile_url)
             if table == "social_media_links":
                 # Delete from duplicate where keeper already has that profile_url
-                cursor = conn.execute(f"""
+                cursor = conn.execute(
+                    f"""
                     DELETE FROM {table}
                     WHERE {col} = ? AND profile_url IN (
                         SELECT profile_url FROM {table} WHERE {col} = ?
                     )
-                """, (dup_id, keeper_id))
+                """,
+                    (dup_id, keeper_id),
+                )
                 if cursor.rowcount > 0:
                     print(f"    [DEDUP] Removed {cursor.rowcount} duplicate social_media_links")
 
             elif table == "blog_links":
-                cursor = conn.execute(f"""
+                cursor = conn.execute(
+                    f"""
                     DELETE FROM {table}
                     WHERE {col} = ? AND blog_url IN (
                         SELECT blog_url FROM {table} WHERE {col} = ?
                     )
-                """, (dup_id, keeper_id))
+                """,
+                    (dup_id, keeper_id),
+                )
                 if cursor.rowcount > 0:
                     print(f"    [DEDUP] Removed {cursor.rowcount} duplicate blog_links")
 
             elif table == "company_leadership":
-                cursor = conn.execute(f"""
+                cursor = conn.execute(
+                    f"""
                     DELETE FROM {table}
                     WHERE {col} = ? AND linkedin_profile_url IN (
                         SELECT linkedin_profile_url FROM {table} WHERE {col} = ?
                     )
-                """, (dup_id, keeper_id))
+                """,
+                    (dup_id, keeper_id),
+                )
                 if cursor.rowcount > 0:
                     print(f"    [DEDUP] Removed {cursor.rowcount} duplicate company_leadership")
 
@@ -312,7 +321,6 @@ def validate(conn: sqlite3.Connection) -> bool:
     ok = True
 
     # Check 1: No mismatched snapshot URLs
-    mismatches = count_mismatches(conn)
     # Some mismatches are expected for companies whose domain now serves
     # different content (the snapshot URL is correct, it just doesn't match
     # the company's registered homepage because the company no longer owns the domain).
@@ -330,7 +338,7 @@ def validate(conn: sqlite3.Connection) -> bool:
         print(f"[FAIL] {wrong_company} snapshots have URLs matching a different company")
         ok = False
     else:
-        print(f"[PASS] No snapshots have URLs belonging to a different company")
+        print("[PASS] No snapshots have URLs belonging to a different company")
 
     # Check 2: Change records match their snapshot's company_id
     cr_mismatch = conn.execute("""

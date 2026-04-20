@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-import contextlib
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from src.core.data_access import parse_datetime
 from src.domains.monitoring.core.change_detection import (
     detect_content_change,
+    detect_error_state_transition,
     extract_content_diff,
 )
 from src.domains.monitoring.core.significance_analysis import (
@@ -82,12 +83,7 @@ class ChangeDetector:
         inactivity_results: list[tuple[str, bool, int | None]] = []
 
         for snap in snapshots:
-            post_date_str = snap.get("latest_post_date")
-            post_date = None
-            if post_date_str:
-                with contextlib.suppress(ValueError, TypeError):
-                    post_date = datetime.fromisoformat(post_date_str)
-
+            post_date = parse_datetime(snap.get("latest_post_date"))
             is_inactive, days = check_posting_inactivity(post_date, reference_date=now)
             inactivity_results.append((snap.get("source_url", ""), is_inactive, days))
 
@@ -110,33 +106,33 @@ class ChangeDetector:
         if not leadership_records:
             return ""
 
-        # Check latest LinkedIn snapshots for verification data
+        # Check the most recent LinkedIn snapshots for verification data.
+        # Only the newest few rows per company matter for the LLM context;
+        # older snapshots are historical noise.
         verification_results: list[dict[str, str]] = []
         if self.linkedin_snapshot_repo:
-            snapshots = self.linkedin_snapshot_repo.get_snapshots_for_company(company_id)
+            snapshots = self.linkedin_snapshot_repo.get_snapshots_for_company(company_id, limit=10)
             for snap in snapshots:
                 if snap.get("url_type") == "person" and snap.get("vision_data_json"):
                     try:
                         import json
 
                         vision_data = json.loads(snap["vision_data_json"])
-                        verification_results.append({
-                            "person_name": snap.get("person_name", ""),
-                            "status": "departed" if not vision_data.get(
-                                "is_employed", True
-                            ) else "employed",
-                            "confidence": str(vision_data.get("confidence", 0.0)),
-                            "evidence": vision_data.get("evidence", ""),
-                            "change_detected": str(not vision_data.get(
-                                "is_employed", True
-                            )),
-                        })
+                        verification_results.append(
+                            {
+                                "person_name": snap.get("person_name", ""),
+                                "status": "departed"
+                                if not vision_data.get("is_employed", True)
+                                else "employed",
+                                "confidence": str(vision_data.get("confidence", 0.0)),
+                                "evidence": vision_data.get("evidence", ""),
+                                "change_detected": str(not vision_data.get("is_employed", True)),
+                            }
+                        )
                     except (json.JSONDecodeError, TypeError):
                         pass
 
-        return build_linkedin_verification_context(
-            verification_results, leadership_records
-        )
+        return build_linkedin_verification_context(verification_results, leadership_records)
 
     def detect_all_changes(
         self,
@@ -202,8 +198,14 @@ class ChangeDetector:
                 new_snap = snapshots[0]  # Most recent
                 old_snap = snapshots[1]  # Previous
 
-                old_checksum = old_snap.get("content_checksum", "") or ""
-                new_checksum = new_snap.get("content_checksum", "") or ""
+                # None = failed capture (no content). Empty strings from the
+                # DB are coerced to None so the comparison logic treats them
+                # as missing rather than as an equal empty checksum, which
+                # would mask two failed snapshots as "unchanged".
+                raw_old = old_snap.get("content_checksum")
+                raw_new = new_snap.get("content_checksum")
+                old_checksum: str | None = raw_old if raw_old else None
+                new_checksum: str | None = raw_new if raw_new else None
 
                 has_changed, magnitude, similarity = detect_content_change(
                     old_checksum,
@@ -212,14 +214,38 @@ class ChangeDetector:
                     new_snap.get("content_markdown"),
                 )
 
+                # Detect transitions in and out of error states even when
+                # detect_content_change reports no content-level change
+                # (e.g., two consecutive failures with different error
+                # messages should still surface as a change).
+                error_transition, error_description = detect_error_state_transition(
+                    old_snap.get("error_message"),
+                    new_snap.get("error_message"),
+                    old_checksum,
+                    new_checksum,
+                )
+                if error_transition and not has_changed:
+                    # Two consecutive error captures with different messages:
+                    # force has_changed so the error is surfaced. The
+                    # downstream "new_snap_error" branch classifies it as
+                    # uncertain and stores the error text.
+                    has_changed = True
+                    logger.info(
+                        "error_state_transition_detected",
+                        company_id=company_id,
+                        description=error_description,
+                    )
+
                 now = datetime.now(UTC).isoformat()
 
                 record_data: dict[str, Any] = {
                     "company_id": company_id,
                     "snapshot_id_old": old_snap["id"],
                     "snapshot_id_new": new_snap["id"],
-                    "checksum_old": old_checksum,
-                    "checksum_new": new_checksum,
+                    # Schema requires NOT NULL; store empty string for
+                    # failed captures. The in-memory logic above uses None.
+                    "checksum_old": old_checksum or "",
+                    "checksum_new": new_checksum or "",
                     "has_changed": has_changed,
                     "change_magnitude": magnitude.value,
                     "detected_at": now,
@@ -305,18 +331,12 @@ class ChangeDetector:
 
                         # Append current status context so LLM can factor it in
                         if self.status_repo is not None:
-                            current_status = self.status_repo.get_latest_status(
-                                company_id
-                            )
+                            current_status = self.status_repo.get_latest_status(company_id)
                             if current_status:
                                 status_str = current_status.get("status", "unknown")
                                 status_conf = current_status.get("confidence", 0.0)
-                                status_reason = current_status.get(
-                                    "status_reason", ""
-                                ) or ""
-                                is_manual = current_status.get(
-                                    "is_manual_override", False
-                                )
+                                status_reason = current_status.get("status_reason", "") or ""
+                                is_manual = current_status.get("is_manual_override", False)
                                 manual_note = " (manually set)" if is_manual else ""
                                 status_context = (
                                     f"\nCurrent company status: "
@@ -331,8 +351,21 @@ class ChangeDetector:
                                     else status_context
                                 )
 
+                        # Short-circuit: skip the LLM entirely when the
+                        # keyword engine is already highly confident about
+                        # an obvious case. Saves one LLM call per company
+                        # in the common "copyright/styling tweak" scenario.
+                        skip_llm = _should_skip_llm(sig_result, magnitude.value)
+                        if skip_llm:
+                            logger.debug(
+                                "llm_skipped_obvious_case",
+                                company_id=company_id,
+                                classification=sig_result.classification,
+                                confidence=sig_result.confidence,
+                            )
+
                         # LLM as primary classifier -- keywords passed as hints
-                        if self.llm_enabled and self.llm_client:
+                        if not skip_llm and self.llm_enabled and self.llm_client:
                             try:
                                 llm_result = self.llm_client.classify_significance_with_status(
                                     content_excerpt=analysis_text[:_LLM_CONTENT_LIMIT],
@@ -488,3 +521,47 @@ class ChangeDetector:
             "status_changes": status_change_details,
         }
         return summary
+
+
+# Category names from significance_analysis.NEGATIVE_KEYWORDS/POSITIVE_KEYWORDS
+# that count as "concrete business signals". Used below to decide when the
+# keyword engine is confident enough that the LLM cannot realistically flip
+# the answer.
+_DECISIVE_SIGNIFICANT_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "funding",
+        "product_launch",
+        "partnerships",
+        "expansion",
+        "closure",
+        "financial_distress",
+        "acquisition",
+        "layoffs_downsizing",
+    }
+)
+
+
+def _should_skip_llm(sig_result: Any, magnitude: str) -> bool:
+    """Return True when the keyword engine is confident enough to skip the LLM.
+
+    Two cases:
+      1. Obvious noise -- classification=insignificant, minor magnitude,
+         confidence >= 0.85. These are copyright/CSS tweaks that the LLM
+         would unanimously agree are insignificant; the LLM call is pure cost.
+      2. Obvious real event -- classification=significant, confidence >= 0.90,
+         at least one matched category is a decisive business signal
+         (funding, acquisition, closure, etc.). The LLM's role here is
+         verification; at this confidence it won't flip a correct answer.
+    """
+    classification = getattr(sig_result, "classification", "") or ""
+    confidence = float(getattr(sig_result, "confidence", 0.0) or 0.0)
+    matched_categories = getattr(sig_result, "matched_categories", None) or []
+
+    if classification == "insignificant" and magnitude == "minor" and confidence >= 0.85:
+        return True
+
+    return (
+        classification == "significant"
+        and confidence >= 0.90
+        and bool(set(matched_categories) & _DECISIVE_SIGNIFICANT_CATEGORIES)
+    )

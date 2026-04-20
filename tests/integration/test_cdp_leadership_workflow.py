@@ -47,8 +47,15 @@ def full_db(tmp_path: Any) -> tuple[Database, int]:
            (company_id, platform, profile_url, account_type,
             discovery_method, verification_status, discovered_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (company_id, "linkedin", "https://www.linkedin.com/company/acmecorp",
-         "company", "homepage_scrape", "unverified", now),
+        (
+            company_id,
+            "linkedin",
+            "https://www.linkedin.com/company/acmecorp",
+            "company",
+            "homepage_scrape",
+            "unverified",
+            now,
+        ),
     )
     db.connection.commit()
     return db, company_id
@@ -57,9 +64,7 @@ def full_db(tmp_path: Any) -> tuple[Database, int]:
 class TestCDPLeadershipExtractionWorkflow:
     """Test the full extraction -> storage -> change detection pipeline."""
 
-    def test_first_extraction_stores_leaders(
-        self, full_db: tuple[Database, int]
-    ) -> None:
+    def test_first_extraction_stores_leaders(self, full_db: tuple[Database, int]) -> None:
         db, company_id = full_db
         operator = "test"
 
@@ -70,10 +75,16 @@ class TestCDPLeadershipExtractionWorkflow:
 
         mock_browser = MagicMock()
         mock_browser.extract_people.return_value = [
-            {"name": "Alice CEO", "title": "CEO",
-             "profile_url": "https://www.linkedin.com/in/aliceceo"},
-            {"name": "Bob CTO", "title": "CTO",
-             "profile_url": "https://www.linkedin.com/in/bobcto"},
+            {
+                "name": "Alice CEO",
+                "title": "CEO",
+                "profile_url": "https://www.linkedin.com/in/aliceceo",
+            },
+            {
+                "name": "Bob CTO",
+                "title": "CTO",
+                "profile_url": "https://www.linkedin.com/in/bobcto",
+            },
         ]
         mock_browser.get_page_html.return_value = "<html>people</html>"
         mock_browser.capture_people_screenshots.return_value = []
@@ -98,9 +109,7 @@ class TestCDPLeadershipExtractionWorkflow:
         leaders = leadership_repo.get_current_leadership(company_id)
         assert len(leaders) == 2
 
-    def test_second_extraction_detects_departure(
-        self, full_db: tuple[Database, int]
-    ) -> None:
+    def test_second_extraction_detects_departure(self, full_db: tuple[Database, int]) -> None:
         db, company_id = full_db
         operator = "test"
         now = datetime.now(UTC).isoformat()
@@ -111,23 +120,28 @@ class TestCDPLeadershipExtractionWorkflow:
         snapshot_repo = LinkedInSnapshotRepository(db, operator)
 
         # Pre-populate: Alice was CEO
-        leadership_repo.store_leadership({
-            "company_id": company_id,
-            "person_name": "Alice CEO",
-            "title": "CEO",
-            "linkedin_profile_url": "https://www.linkedin.com/in/aliceceo",
-            "discovery_method": "cdp_scrape",
-            "confidence": 0.8,
-            "is_current": True,
-            "discovered_at": now,
-            "last_verified_at": now,
-        })
+        leadership_repo.store_leadership(
+            {
+                "company_id": company_id,
+                "person_name": "Alice CEO",
+                "title": "CEO",
+                "linkedin_profile_url": "https://www.linkedin.com/in/aliceceo",
+                "discovery_method": "cdp_scrape",
+                "confidence": 0.8,
+                "is_current": True,
+                "discovered_at": now,
+                "last_verified_at": now,
+            }
+        )
 
         # Now extraction only finds Bob (Alice is gone)
         mock_browser = MagicMock()
         mock_browser.extract_people.return_value = [
-            {"name": "Bob CTO", "title": "CTO",
-             "profile_url": "https://www.linkedin.com/in/bobcto"},
+            {
+                "name": "Bob CTO",
+                "title": "CTO",
+                "profile_url": "https://www.linkedin.com/in/bobcto",
+            },
         ]
         mock_browser.get_page_html.return_value = "<html>people</html>"
         mock_browser.capture_people_screenshots.return_value = []
@@ -153,9 +167,7 @@ class TestCDPLeadershipExtractionWorkflow:
         assert departure[0]["person_name"] == "Alice CEO"
         assert result["change_significance"] == "significant"
 
-    def test_kagi_fallback_on_cdp_failure(
-        self, full_db: tuple[Database, int]
-    ) -> None:
+    def test_kagi_fallback_on_cdp_failure(self, full_db: tuple[Database, int]) -> None:
         db, company_id = full_db
         operator = "test"
 
@@ -171,8 +183,7 @@ class TestCDPLeadershipExtractionWorkflow:
 
         mock_search = MagicMock()
         mock_search.search_leadership.return_value = [
-            {"name": "Alice", "title": "CEO",
-             "profile_url": "https://www.linkedin.com/in/alice"},
+            {"name": "Alice", "title": "CEO", "profile_url": "https://www.linkedin.com/in/alice"},
         ]
 
         manager = LeadershipManager(
@@ -201,9 +212,7 @@ class TestCDPDiscoveryMethodEnum:
 class TestLinkedInSnapshotWorkflow:
     """Test snapshot storage during leadership extraction."""
 
-    def test_company_snapshot_stored_on_extraction(
-        self, full_db: tuple[Database, int]
-    ) -> None:
+    def test_company_snapshot_stored_on_extraction(self, full_db: tuple[Database, int]) -> None:
         db, company_id = full_db
         operator = "test"
 
@@ -214,8 +223,7 @@ class TestLinkedInSnapshotWorkflow:
 
         mock_browser = MagicMock()
         mock_browser.extract_people.return_value = [
-            {"name": "Jane", "title": "CEO",
-             "profile_url": "https://www.linkedin.com/in/jane"},
+            {"name": "Jane", "title": "CEO", "profile_url": "https://www.linkedin.com/in/jane"},
         ]
         mock_browser.get_page_html.return_value = "<html>people page content</html>"
         mock_browser.capture_people_screenshots.return_value = []

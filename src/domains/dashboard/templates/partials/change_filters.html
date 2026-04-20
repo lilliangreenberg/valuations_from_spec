@@ -1,84 +1,94 @@
-{# Partial: changes results list with pagination #}
+{# Partial: changes results grouped by company with pagination #}
+<span id="results-count" hx-swap-oob="true">({{ total }} companies)</span>
 
-{% if changes %}
+{% if company_groups %}
 <div class="space-y-3">
-  {% for change in changes %}
+  {% for group in company_groups %}
   <div class="bg-white dark:bg-gray-800 rounded shadow p-4 mb-3">
+    {# Company header #}
     <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
-      <div>
-        <a href="/companies/{{ change.company_id }}"
+      <div class="flex items-center gap-2 flex-wrap">
+        <a href="/companies/{{ group.company_id }}"
            class="text-blue-600 dark:text-blue-400 font-semibold hover:underline">
-          {{ change.company_name }} (ID: {{ change.company_id }})
+          {{ group.company_name }} (ID: {{ group.company_id }})
         </a>
-        <span class="ml-2 text-sm text-gray-500 dark:text-gray-400">
-          {{ change.detected_at | date_short }}
+        <span class="inline-block px-2 py-0.5 text-xs font-medium rounded bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300">
+          {{ group.change_count }} change{{ 's' if group.change_count != 1 else '' }}
         </span>
-        {% if change.company_status and change.company_status != 'unknown' %}
-        <span class="ml-2 badge {{ change.company_status | status_badge }}">{{ change.company_status }}</span>
-        {% if change.company_status_manual %}
-        <span class="ml-1 text-xs font-medium px-1.5 py-0.5 rounded"
+        {% if group.company_status and group.company_status != 'unknown' %}
+        <span class="badge {{ group.company_status | status_badge }}">{{ group.company_status }}</span>
+        {% if group.company_status_manual %}
+        <span class="text-xs font-medium px-1.5 py-0.5 rounded"
               style="background: var(--accent-blue); color: white; opacity: 0.85;">MANUAL</span>
         {% endif %}
         {% endif %}
       </div>
-      <div class="flex items-center gap-2">
-        <span class="text-xs font-mono text-gray-600 dark:text-gray-400">
-          {{ change.change_magnitude | magnitude }}
-        </span>
-        {% if change.significance_classification %}
-        <span class="inline-block px-2 py-0.5 text-xs font-medium rounded {{ change.significance_classification | significance_badge }}">
-          {{ change.significance_classification | upper }}
-        </span>
-        {% endif %}
-        {% if change.performed_by %}
-        <span class="inline-block px-1.5 py-0.5 text-xs font-medium rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-          {{ change.performed_by }}
-        </span>
-        {% endif %}
-        <button class="btn-delete"
-                hx-delete="/companies/{{ change.company_id }}/changes/{{ change.id }}"
-                hx-confirm="Delete this change record?"
-                hx-target="closest .bg-white"
-                hx-swap="outerHTML swap:0.3s"
-                title="Delete entry">&times;</button>
+      <div class="text-sm text-gray-500 dark:text-gray-400">
+        Latest: {{ group.latest_change | date_short }}
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center gap-3 text-sm">
-      {% if change.significance_sentiment %}
-      <span class="{{ change.significance_sentiment | sentiment_color }} font-medium">
-        {{ change.significance_sentiment | title }}
-      </span>
-      {% endif %}
+    {% if group.company_notes %}
+    <p class="mb-2 text-xs italic" style="color: var(--text-secondary)">
+      Analyst note: {{ group.company_notes }}
+    </p>
+    {% endif %}
 
-      {% if change.significance_confidence is not none %}
-      <span class="text-gray-500 dark:text-gray-400">
-        Confidence: {{ change.significance_confidence | confidence }}
-      </span>
+    {# Individual change records #}
+    <div class="space-y-2 {% if group.change_count > 1 %}border-t border-gray-100 dark:border-gray-700 pt-2 mt-2{% endif %}">
+      {% for change in group.changes %}
+      <div class="flex flex-wrap items-start justify-between gap-2 py-1 {% if not loop.first %}border-t border-gray-50 dark:border-gray-750{% endif %}">
+        <div class="flex flex-wrap items-center gap-2 text-sm">
+          <span class="text-gray-500 dark:text-gray-400">
+            {{ change.detected_at | date_short }}
+          </span>
+          <span class="text-xs font-mono text-gray-600 dark:text-gray-400">
+            {{ change.change_magnitude | magnitude }}
+          </span>
+          {% if change.significance_classification %}
+          <span class="inline-block px-2 py-0.5 text-xs font-medium rounded {{ change.significance_classification | significance_badge }}">
+            {{ change.significance_classification | upper }}
+          </span>
+          {% endif %}
+          {% if change.significance_sentiment %}
+          <span class="{{ change.significance_sentiment | sentiment_color }} text-xs font-medium">
+            {{ change.significance_sentiment | title }}
+          </span>
+          {% endif %}
+          {% if change.significance_confidence is not none %}
+          <span class="text-xs text-gray-500 dark:text-gray-400">
+            {{ change.significance_confidence | confidence }}
+          </span>
+          {% endif %}
+          {% if change.performed_by %}
+          <span class="inline-block px-1.5 py-0.5 text-xs font-medium rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+            {{ change.performed_by }}
+          </span>
+          {% endif %}
+        </div>
+        <button class="btn-delete"
+                hx-delete="/companies/{{ change.company_id }}/changes/{{ change.id }}"
+                hx-confirm="Delete this change record?"
+                hx-target="closest div"
+                hx-swap="outerHTML swap:0.3s"
+                title="Delete entry">&times;</button>
+      </div>
+      {% if change.matched_keywords %}
+      <div class="flex flex-wrap gap-1 ml-0">
+        {% for keyword in change.matched_keywords %}
+        <span class="inline-block bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs px-2 py-0.5 rounded">
+          {{ keyword }}
+        </span>
+        {% endfor %}
+      </div>
       {% endif %}
-    </div>
-
-    {% if change.matched_keywords %}
-    <div class="mt-2 flex flex-wrap gap-1">
-      {% for keyword in change.matched_keywords %}
-      <span class="inline-block bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs px-2 py-0.5 rounded">
-        {{ keyword }}
-      </span>
+      {% if change.significance_notes %}
+      <p class="text-xs text-gray-600 dark:text-gray-400 ml-0">
+        {{ change.significance_notes }}
+      </p>
+      {% endif %}
       {% endfor %}
     </div>
-    {% endif %}
-
-    {% if change.significance_notes %}
-    <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-      {{ change.significance_notes }}
-    </p>
-    {% endif %}
-
-    {% if change.company_notes %}
-    <p class="mt-2 text-xs italic" style="color: var(--text-secondary)">
-      Analyst note: {{ change.company_notes }}
-    </p>
-    {% endif %}
   </div>
   {% endfor %}
 </div>

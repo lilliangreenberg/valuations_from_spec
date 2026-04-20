@@ -693,11 +693,28 @@ class TestCalculateConfidence:
 class TestDetermineStatus:
     """Tests for determine_status."""
 
-    def test_low_confidence_returns_uncertain(self) -> None:
-        """Confidence < 0.4 -> UNCERTAIN regardless of indicators."""
+    def test_low_confidence_no_negatives_defaults_operational(self) -> None:
+        """No negative signals with no previous status -> OPERATIONAL."""
         indicators = [("type", "value", SignalType.POSITIVE)]
+        assert determine_status(0.39, indicators) == CompanyStatusType.OPERATIONAL
+        assert determine_status(0.0, indicators) == CompanyStatusType.OPERATIONAL
+
+    def test_low_confidence_no_negatives_preserves_previous(self) -> None:
+        """No negative signals preserves previous status."""
+        indicators = [("type", "value", SignalType.POSITIVE)]
+        assert (
+            determine_status(0.39, indicators, CompanyStatusType.UNCERTAIN)
+            == CompanyStatusType.UNCERTAIN
+        )
+        assert (
+            determine_status(0.0, indicators, CompanyStatusType.OPERATIONAL)
+            == CompanyStatusType.OPERATIONAL
+        )
+
+    def test_low_confidence_with_negatives_returns_uncertain(self) -> None:
+        """Confidence < 0.4 with negative signals -> UNCERTAIN."""
+        indicators = [("type", "value", SignalType.NEGATIVE)]
         assert determine_status(0.39, indicators) == CompanyStatusType.UNCERTAIN
-        assert determine_status(0.0, indicators) == CompanyStatusType.UNCERTAIN
 
     def test_high_confidence_with_negative_is_likely_closed(self) -> None:
         indicators = [
@@ -712,6 +729,25 @@ class TestDetermineStatus:
             ("b", "2", SignalType.POSITIVE),
         ]
         assert determine_status(0.8, indicators) == CompanyStatusType.OPERATIONAL
+
+    def test_uncertain_promoted_with_two_positives(self) -> None:
+        """A stuck-uncertain company escapes to operational on 2+ positives."""
+        indicators = [
+            ("a", "1", SignalType.POSITIVE),
+            ("b", "2", SignalType.POSITIVE),
+        ]
+        assert (
+            determine_status(0.8, indicators, CompanyStatusType.UNCERTAIN)
+            == CompanyStatusType.OPERATIONAL
+        )
+
+    def test_uncertain_not_promoted_with_one_positive(self) -> None:
+        """Single positive isn't enough to escape UNCERTAIN."""
+        indicators = [("a", "1", SignalType.POSITIVE)]
+        assert (
+            determine_status(0.4, indicators, CompanyStatusType.UNCERTAIN)
+            == CompanyStatusType.UNCERTAIN
+        )
 
     def test_high_confidence_boundary_0_70(self) -> None:
         """Exactly 0.70 is >= 0.70, so high confidence rules apply."""
@@ -742,22 +778,37 @@ class TestDetermineStatus:
         # confidence=0.6 (adjusted), positive=1, negative=1 -> uncertain
         assert determine_status(0.6, indicators) == CompanyStatusType.UNCERTAIN
 
-    def test_medium_confidence_all_neutral(self) -> None:
+    def test_medium_confidence_all_neutral_defaults_operational(self) -> None:
         indicators = [
             ("a", "1", SignalType.NEUTRAL),
             ("b", "2", SignalType.NEUTRAL),
         ]
-        # 0 positive, 0 negative -> equal -> uncertain
-        assert determine_status(0.5, indicators) == CompanyStatusType.UNCERTAIN
+        # 0 negative signals -> preserves previous or defaults to operational
+        assert determine_status(0.5, indicators) == CompanyStatusType.OPERATIONAL
+
+    def test_medium_confidence_all_neutral_preserves_uncertain(self) -> None:
+        indicators = [
+            ("a", "1", SignalType.NEUTRAL),
+            ("b", "2", SignalType.NEUTRAL),
+        ]
+        # 0 negative signals + previous uncertain -> stays uncertain
+        assert (
+            determine_status(0.5, indicators, CompanyStatusType.UNCERTAIN)
+            == CompanyStatusType.UNCERTAIN
+        )
 
     def test_boundary_0_40_is_medium(self) -> None:
         """Exactly 0.40 is not < 0.40, so it falls into medium confidence range."""
         indicators = [("a", "1", SignalType.POSITIVE)]
         assert determine_status(0.40, indicators) == CompanyStatusType.OPERATIONAL
 
-    def test_empty_indicators_with_confidence(self) -> None:
-        """No indicators at medium confidence: 0 pos, 0 neg -> uncertain."""
-        assert determine_status(0.5, []) == CompanyStatusType.UNCERTAIN
+    def test_empty_indicators_defaults_operational(self) -> None:
+        """No indicators (0 neg) -> defaults to operational."""
+        assert determine_status(0.5, []) == CompanyStatusType.OPERATIONAL
+
+    def test_empty_indicators_preserves_uncertain(self) -> None:
+        """No indicators + previous uncertain -> stays uncertain."""
+        assert determine_status(0.5, [], CompanyStatusType.UNCERTAIN) == CompanyStatusType.UNCERTAIN
 
     def test_status_values_are_strings(self) -> None:
         assert CompanyStatusType.OPERATIONAL == "operational"
@@ -768,9 +819,18 @@ class TestDetermineStatus:
 class TestAnalyzeSnapshotStatus:
     """Tests for analyze_snapshot_status -- full pipeline."""
 
-    def test_empty_content_no_headers(self) -> None:
-        """No indicators at all -> confidence 0.0 -> uncertain."""
+    def test_empty_content_no_headers_defaults_operational(self) -> None:
+        """No indicators at all -> no negatives -> defaults to operational."""
         status, confidence, indicators = analyze_snapshot_status("")
+        assert status == CompanyStatusType.OPERATIONAL
+        assert confidence == 0.0
+        assert indicators == []
+
+    def test_empty_content_preserves_uncertain(self) -> None:
+        """No indicators + previous uncertain -> stays uncertain."""
+        status, confidence, indicators = analyze_snapshot_status(
+            "", previous_status=CompanyStatusType.UNCERTAIN
+        )
         assert status == CompanyStatusType.UNCERTAIN
         assert confidence == 0.0
         assert indicators == []
@@ -1081,6 +1141,24 @@ class TestDetectFalsePositives:
             "abandoned cart",
             "company retreat",
             "team retreat",
+            "sold to consumers",
+            "sold to customers",
+            "sold to retail",
+            "sold to retailers",
+            "sold to businesses",
+            "sold to buyers",
+            "sold to users",
+            "sold to clients",
+            "sold to merchants",
+            "sold to distributors",
+            "sold to resellers",
+            "sold to dealers",
+            "sold to end users",
+            "sold to end-users",
+            "sold to the public",
+            "sold to subscribers",
+            "sold to patients",
+            "sold to enterprises",
         }
         assert set(FALSE_POSITIVE_PHRASES) == expected
 

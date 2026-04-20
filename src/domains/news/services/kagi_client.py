@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
@@ -12,6 +14,9 @@ import structlog
 from src.utils.retry import retry_with_logging
 
 logger = structlog.get_logger(__name__)
+
+# Minimum seconds between Kagi API requests (shared across threads)
+_KAGI_REQUEST_INTERVAL: float = 1.0
 
 
 class KagiClient:
@@ -27,6 +32,8 @@ class KagiClient:
                 "Authorization": f"Bot {api_key}",
             }
         )
+        self._lock = threading.Lock()
+        self._last_request_time: float = 0.0
 
     @retry_with_logging(max_attempts=3)
     def search(
@@ -53,6 +60,13 @@ class KagiClient:
             full_query += f" after:{after_date}"
         if before_date:
             full_query += f" before:{before_date}"
+
+        # Throttle requests to avoid Kagi rate limits (thread-safe)
+        with self._lock:
+            elapsed = time.monotonic() - self._last_request_time
+            if elapsed < _KAGI_REQUEST_INTERVAL:
+                time.sleep(_KAGI_REQUEST_INTERVAL - elapsed)
+            self._last_request_time = time.monotonic()
 
         response = self.session.get(
             self.BASE_URL,

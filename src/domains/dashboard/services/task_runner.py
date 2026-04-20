@@ -259,9 +259,7 @@ class TaskRunner:
         self._queues: dict[str, asyncio.Queue[str]] = {}
         self.max_concurrent = max_concurrent
 
-    async def start_task(
-        self, command: str, args: list[str], operator: str | None = None
-    ) -> str:
+    async def start_task(self, command: str, args: list[str], operator: str | None = None) -> str:
         """Start a CLI command as a background subprocess. Returns task_id.
 
         Args:

@@ -175,9 +175,7 @@ def _get_debugger_url(port: int) -> str:
             last_error = str(exc)
             time.sleep(0.5)
 
-    raise CDPConnectionError(
-        f"Could not connect to Chrome debugger on port {port}: {last_error}"
-    )
+    raise CDPConnectionError(f"Could not connect to Chrome debugger on port {port}: {last_error}")
 
 
 def _get_page_targets(port: int) -> list[dict[str, Any]]:
@@ -608,11 +606,13 @@ class CDPBrowser:
                 for emp in parsed.get("employees", []):
                     profile_url = extract_linkedin_profile_url(emp.get("profile_url", ""))
                     if profile_url and emp.get("name"):
-                        people.append({
-                            "name": emp["name"],
-                            "title": emp.get("title", ""),
-                            "profile_url": profile_url,
-                        })
+                        people.append(
+                            {
+                                "name": emp["name"],
+                                "title": emp.get("title", ""),
+                                "profile_url": profile_url,
+                            }
+                        )
             except (json.JSONDecodeError, TypeError) as exc:
                 logger.warning("cdp_people_parse_failed", error=str(exc))
 

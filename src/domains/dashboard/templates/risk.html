@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Risk - Portfolio Monitor{% endblock %}
+
+{% block content %}
+<div class="widget-page-header">
+  <h1 class="text-2xl font-bold" style="color: var(--text-primary)">Risk Surface</h1>
+  <p class="text-sm" style="color: var(--text-secondary)">
+    Cross-source signals the individual dashboards can miss.
+  </p>
+</div>
+
+<!-- Status vs news contradictions -->
+<section class="mb-8">
+  <h2 class="text-xl font-semibold mb-2" style="color: var(--text-primary)">
+    Status / News Contradictions
+  </h2>
+  <p class="text-sm mb-3" style="color: var(--text-secondary)">
+    Companies currently marked <strong>operational</strong> that have a significant-negative
+    news article in the last 30 days. These are the most likely blind spots: the website
+    still looks fine, but news suggests something bigger is happening.
+  </p>
+  {% if contradictions %}
+    <div class="overflow-x-auto rounded-lg border" style="border-color: var(--border-color)">
+      <table class="min-w-full text-sm">
+        <thead>
+          <tr style="background-color: var(--bg-subtle)">
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">Company</th>
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">Status</th>
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">News</th>
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">Source</th>
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">Published</th>
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">Confidence</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in contradictions %}
+          <tr class="border-t" style="border-color: var(--border-color)">
+            <td class="px-4 py-2">
+              <a href="/companies/{{ c.company_id }}" class="no-underline hover:underline" style="color: var(--text-primary)">
+                {{ c.company_name }}
+              </a>
+            </td>
+            <td class="px-4 py-2">
+              <span class="status-badge status-operational">{{ c.status }}</span>
+            </td>
+            <td class="px-4 py-2" style="color: var(--text-primary)">
+              <a href="{{ c.news_url }}" target="_blank" rel="noopener" class="no-underline hover:underline" style="color: var(--text-primary)">
+                {{ c.news_title }}
+              </a>
+              {% if c.news_categories %}
+                <div class="text-xs mt-0.5" style="color: var(--text-secondary)">
+                  {{ c.news_categories | join(", ") }}
+                </div>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2" style="color: var(--text-secondary)">{{ c.news_source }}</td>
+            <td class="px-4 py-2" style="color: var(--text-secondary)">{{ c.news_published_at[:10] }}</td>
+            <td class="px-4 py-2" style="color: var(--text-secondary)">{{ "%.0f%%" | format((c.news_confidence or 0) * 100) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="text-sm italic" style="color: var(--text-secondary)">
+      No contradictions detected in the last 30 days.
+    </div>
+  {% endif %}
+</section>
+
+<!-- Recent critical leadership departures -->
+<section class="mb-8">
+  <h2 class="text-xl font-semibold mb-2" style="color: var(--text-primary)">
+    Recent Critical Leadership Departures
+  </h2>
+  <p class="text-sm mb-3" style="color: var(--text-secondary)">
+    CEO / founder / CTO / COO transitions detected in the last 90 days,
+    from the <code>leadership_changes</code> event log.
+  </p>
+  {% if departures %}
+    <div class="overflow-x-auto rounded-lg border" style="border-color: var(--border-color)">
+      <table class="min-w-full text-sm">
+        <thead>
+          <tr style="background-color: var(--bg-subtle)">
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">Company</th>
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">Change</th>
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">Person</th>
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">Title</th>
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">Detected</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in departures %}
+          <tr class="border-t" style="border-color: var(--border-color)">
+            <td class="px-4 py-2">
+              <a href="/companies/{{ d.company_id }}" class="no-underline hover:underline" style="color: var(--text-primary)">
+                {{ d.company_name }}
+              </a>
+            </td>
+            <td class="px-4 py-2" style="color: var(--text-primary)">{{ d.change_type }}</td>
+            <td class="px-4 py-2" style="color: var(--text-primary)">
+              {% if d.linkedin_profile_url %}
+                <a href="{{ d.linkedin_profile_url }}" target="_blank" rel="noopener" class="no-underline hover:underline" style="color: var(--text-primary)">
+                  {{ d.person_name }}
+                </a>
+              {% else %}
+                {{ d.person_name }}
+              {% endif %}
+            </td>
+            <td class="px-4 py-2" style="color: var(--text-secondary)">{{ d.title or "-" }}</td>
+            <td class="px-4 py-2" style="color: var(--text-secondary)">{{ d.detected_at[:10] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="text-sm italic" style="color: var(--text-secondary)">
+      No critical leadership departures in the last 90 days.
+    </div>
+  {% endif %}
+</section>
+
+<!-- Change frequency anomalies -->
+<section class="mb-8">
+  <h2 class="text-xl font-semibold mb-2" style="color: var(--text-primary)">
+    Change Frequency Anomalies
+  </h2>
+  <p class="text-sm mb-3" style="color: var(--text-secondary)">
+    Companies whose recent change-detection rate is far above or below their
+    12-month baseline. Spikes often indicate a rebrand or migration; droughts
+    often indicate a frozen or abandoned site.
+  </p>
+  {% if anomalies %}
+    <div class="overflow-x-auto rounded-lg border" style="border-color: var(--border-color)">
+      <table class="min-w-full text-sm">
+        <thead>
+          <tr style="background-color: var(--bg-subtle)">
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">Company</th>
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">Direction</th>
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">Recent (90d)</th>
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">Expected</th>
+            <th class="px-4 py-2 text-left font-semibold" style="color: var(--text-primary)">Ratio</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in anomalies %}
+          <tr class="border-t" style="border-color: var(--border-color)">
+            <td class="px-4 py-2">
+              <a href="/companies/{{ a.company_id }}" class="no-underline hover:underline" style="color: var(--text-primary)">
+                {{ a.company_name }}
+              </a>
+            </td>
+            <td class="px-4 py-2" style="color: var(--text-primary)">{{ a.direction }}</td>
+            <td class="px-4 py-2" style="color: var(--text-secondary)">{{ a.recent_count }}</td>
+            <td class="px-4 py-2" style="color: var(--text-secondary)">{{ a.expected_count }}</td>
+            <td class="px-4 py-2" style="color: var(--text-secondary)">{{ "%.1fx" | format(a.ratio) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="text-sm italic" style="color: var(--text-secondary)">
+      No significant anomalies in the last 90 days.
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -6,6 +6,7 @@ import click
 
 from src.cli.commands import (
     analyze_baseline,
+    analyze_status,
     backfill_performed_by,
     backfill_significance,
     capture_snapshots,
@@ -30,7 +31,9 @@ from src.cli.commands import (
     list_uncertain_changes,
     login,
     logout,
+    reconcile_leadership,
     refresh_logos,
+    run_full_scan,
     scrape_linkedin_profile,
     search_news,
     search_news_all,
@@ -71,6 +74,7 @@ cli.add_command(extract_leadership_all)
 cli.add_command(check_leadership_changes)
 cli.add_command(discover_ceo_linkedin)
 cli.add_command(analyze_baseline)
+cli.add_command(analyze_status)
 cli.add_command(backfill_performed_by)
 cli.add_command(refresh_logos)
 cli.add_command(set_company_notes)
@@ -81,3 +85,5 @@ cli.add_command(dashboard)
 cli.add_command(login)
 cli.add_command(logout)
 cli.add_command(whoami)
+cli.add_command(run_full_scan)
+cli.add_command(reconcile_leadership)

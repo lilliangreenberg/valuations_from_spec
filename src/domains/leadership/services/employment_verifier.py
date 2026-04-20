@@ -93,9 +93,7 @@ class EmploymentVerifier:
 
             # Capture screenshot and analyze with Vision
             screenshot_bytes = self.browser.capture_screenshot()
-            screenshot_path = self.browser.capture_profile_screenshot(
-                company_id, person_name
-            )
+            screenshot_path = self.browser.capture_profile_screenshot(company_id, person_name)
 
             # Send to Claude Vision
             screenshot_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
@@ -151,17 +149,19 @@ class EmploymentVerifier:
         change_detected = status in (STATUS_DEPARTED, STATUS_WRONG_PERSON)
 
         # Store LinkedIn snapshot
-        self.snapshot_repo.store_snapshot({
-            "company_id": company_id,
-            "linkedin_url": profile_url,
-            "url_type": "person",
-            "person_name": person_name,
-            "content_html": page_html,
-            "content_json": json.dumps(dom_data),
-            "vision_data_json": json.dumps(vision_data),
-            "screenshot_path": screenshot_path,
-            "captured_at": now,
-        })
+        self.snapshot_repo.store_snapshot(
+            {
+                "company_id": company_id,
+                "linkedin_url": profile_url,
+                "url_type": "person",
+                "person_name": person_name,
+                "content_html": page_html,
+                "content_json": json.dumps(dom_data),
+                "vision_data_json": json.dumps(vision_data),
+                "screenshot_path": screenshot_path,
+                "captured_at": now,
+            }
+        )
 
         # Update leadership record based on result
         if status == STATUS_DEPARTED:
@@ -185,9 +185,7 @@ class EmploymentVerifier:
             )
         else:
             # Still employed or unknown -- update verification date
-            self.leadership_repo.update_verification_date(
-                company_id, profile_url, now
-            )
+            self.leadership_repo.update_verification_date(company_id, profile_url, now)
 
         logger.info(
             "employment_verification_complete",

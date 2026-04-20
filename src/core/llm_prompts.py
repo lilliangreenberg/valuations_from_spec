@@ -42,21 +42,21 @@ _FALSE_POSITIVE_RULES = (
 
 _FEW_SHOT_EXAMPLES = (
     "EXAMPLES:\n\n"
-    'Example 1 -- Insignificant (routine update):\n'
+    "Example 1 -- Insignificant (routine update):\n"
     'Company "Acme Labs" (acmelabs.io). Copyright year 2025->2026, nav text changes, team photo'
     " swap. Magnitude: minor. Keywords: none.\n"
     "Result: classification=insignificant, sentiment=neutral, confidence=0.95,"
     ' reasoning="Copyright year and photo swap are routine maintenance.",'
     " company_status=operational,"
     ' status_reason="Active website maintenance indicates normal operations."\n\n'
-    'Example 2 -- Significant negative (acquisition):\n'
+    "Example 2 -- Significant negative (acquisition):\n"
     'Company "DataSync" (datasync.com). Content: "DataSync has been acquired by Snowflake.'
     ' Our team will be joining Snowflake..." Magnitude: major. Keywords: acquired, acquisition.\n'
     "Result: classification=significant, sentiment=negative, confidence=0.95,"
     ' reasoning="Explicit acquisition by Snowflake means DataSync is no longer independent.",'
     " validated_keywords=[acquired, acquisition], company_status=likely_closed,"
     ' status_reason="DataSync acquired by Snowflake per homepage announcement."\n\n'
-    'Example 3 -- Insignificant (false positive keywords):\n'
+    "Example 3 -- Insignificant (false positive keywords):\n"
     'Company "Recall AI" (recall.ai). Product updates: "recall your meetings instantly",'
     ' "talent acquisition teams love our product". Magnitude: moderate.'
     " Keywords: recall, talent acquisition.\n"
@@ -243,9 +243,25 @@ _STATUS_RULES = (
     "- operational: active website with product/hiring/business content\n"
     "- likely_closed: shutdown notice, acquired, domain parked/404/redirect,"
     " 'winding down' language\n"
-    "- uncertain: insufficient evidence\n\n"
-    "Default to operational. Only change status with clear, strong evidence.\n"
-    "Minor or insignificant website changes should NOT flip status."
+    "- uncertain: genuinely ambiguous signals (e.g., domain redirect to unknown"
+    " destination, cryptic placeholder content, conflicting closure/activity signals)\n\n"
+    "CRITICAL STATUS RULES:\n"
+    "1. Preserve the current status unless there is concrete negative evidence"
+    " (shutdown notice, acquisition, parked domain, etc.) to change it.\n"
+    "2. A live website serving real content (product pages, blog, team page)"
+    " is operational. The absence of extra positive signals (social media,"
+    " recent blog posts, hiring pages) does NOT make a company uncertain.\n"
+    "3. 'Minor UI changes only' on a live website = operational, not uncertain.\n"
+    "4. Only use 'uncertain' when the website content itself is genuinely"
+    " ambiguous -- e.g., a redirect, a cryptic under-construction page, or"
+    " conflicting signals about closure.\n"
+    "5. Never downgrade from operational to uncertain just because data is sparse.\n"
+    "6. The homepage content excerpt is the authoritative, just-captured signal"
+    " about the homepage's state. If it shows functional content (product, pricing,"
+    " careers, customers), the company is operational -- regardless of any external,"
+    " social, or secondary context that claims the homepage is broken, down, or"
+    " abandoned. A direct successful capture of the homepage always overrides an"
+    " indirect claim of failure for that same homepage."
 )
 
 STATUS_AWARE_SIGNIFICANCE_SYSTEM_PROMPT = (
@@ -297,7 +313,22 @@ _SOCIAL_SIGNALS = (
     "- Recent blog/Medium posts about product/funding/growth = positive\n"
     "- Blog/Medium inactive 1+ year = negative signal\n"
     "- No social presence = neutral (not all companies blog)\n"
-    "Reference BOTH homepage and social signals in reasoning."
+    "Reference BOTH homepage and social signals in reasoning.\n\n"
+    "SIGNAL PRECEDENCE (CRITICAL):\n"
+    "- The homepage content excerpt is the DIRECT, JUST-CAPTURED snapshot of the"
+    " homepage. It is the authoritative source of truth for the homepage's current"
+    " state.\n"
+    "- Social/blog context is INDIRECT evidence (posts written by humans at a"
+    " different time, external mentions, third-party claims).\n"
+    "- When the homepage excerpt shows functional signals (product page, pricing,"
+    " careers, customers, feature launches) but social/external context claims the"
+    " homepage is broken, down, erroring, or abandoned: TRUST THE HOMEPAGE EXCERPT."
+    " The social claim is stale, wrong, or refers to a transient issue already"
+    " resolved. Do NOT classify the change as significant-negative on this basis,"
+    " and do NOT downgrade status to likely_closed.\n"
+    "- Social signals may only ADD to a negative classification when the homepage"
+    " excerpt itself is also negative or ambiguous. They cannot OVERRIDE a clearly"
+    " functional homepage."
 )
 
 ENRICHED_SIGNIFICANCE_SYSTEM_PROMPT = (

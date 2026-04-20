@@ -13,6 +13,7 @@ from src.domains.monitoring.core.significance_analysis import (
 )
 from src.domains.news.core.verification_logic import (
     COMPETING_DOMAIN_PENALTY,
+    VERIFICATION_THRESHOLD,
     build_evidence_list,
     calculate_weighted_confidence,
     check_domain_in_content,
@@ -136,12 +137,21 @@ class NewsMonitorManager:
         failed_details: list[dict[str, Any]] = []
         skipped_details: list[dict[str, Any]] = []
 
-        # Phase 1: Parallel Kagi search
+        # Pre-compute date ranges on the main thread (SQLite is not thread-safe)
+        date_ranges: dict[int, tuple[str, str]] = {}
+        for company in companies:
+            date_ranges[company["id"]] = self._calculate_date_range(company["id"])
+
+        # Phase 1: Parallel Kagi search (no DB access in worker threads)
         search_results: dict[int, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(self._fetch_news_for_company, company): company
+                executor.submit(
+                    self._fetch_news_kagi_only,
+                    company,
+                    date_ranges[company["id"]],
+                ): company
                 for company in companies
             }
 
@@ -233,14 +243,28 @@ class NewsMonitorManager:
         self,
         company: dict[str, Any],
     ) -> list[dict[str, Any]] | None:
-        """Fetch news articles from Kagi for a single company (thread-safe).
+        """Fetch news articles from Kagi for a single company.
+
+        Calculates date range from snapshots (requires DB access -- NOT
+        thread-safe). Used by the single-company path.
 
         Returns list of raw article dicts, or None on error.
         """
-        company_id = company["id"]
-        name = company["name"]
+        after_date, before_date = self._calculate_date_range(company["id"])
+        return self._fetch_news_kagi_only(company, (after_date, before_date))
 
-        after_date, before_date = self._calculate_date_range(company_id)
+    def _fetch_news_kagi_only(
+        self,
+        company: dict[str, Any],
+        date_range: tuple[str, str],
+    ) -> list[dict[str, Any]] | None:
+        """Fetch news articles from Kagi (thread-safe -- no DB access).
+
+        date_range must be pre-computed on the main thread.
+        Returns list of raw article dicts, or None on error.
+        """
+        name = company["name"]
+        after_date, before_date = date_range
 
         articles = self.kagi.search(
             query=name,
@@ -281,90 +305,41 @@ class NewsMonitorManager:
         if snapshots:
             company_description = extract_company_description(snapshots[0].get("content_markdown"))
 
-        for article in articles:
-            if self.news_repo.check_duplicate_news_url(article["url"]):
-                continue
+        # Filter out duplicates on main thread (SQLite read)
+        new_articles = [
+            a for a in articles if not self.news_repo.check_duplicate_news_url(a["url"])
+        ]
 
-            signals: dict[str, float] = {}
+        # Process LLM work in parallel across articles (pure HTTP, no DB access)
+        processed: list[dict[str, Any] | None] = [None] * len(new_articles)
 
-            domain_matched = check_domain_match(article["url"], company_domain)
-            if not domain_matched:
-                domain_matched = check_domain_in_content(article.get("snippet", ""), company_domain)
-
-            if domain_matched:
-                signals["domain"] = 1.0
-            elif detect_competing_domain(article["url"], company_domain):
-                signals["domain"] = COMPETING_DOMAIN_PENALTY
-            else:
-                signals["domain"] = 0.0
-
-            context_matched = check_name_in_context(article.get("snippet", ""), company_name)
-            signals["context"] = 1.0 if context_matched else 0.0
-
-            llm_match: tuple[bool, str] | None = None
-            if self.llm_client:
-                try:
-                    is_match, reasoning = self.llm_client.verify_company_identity(
-                        company_name=company_name,
-                        company_url=homepage_url or "",
-                        article_title=article.get("title", ""),
-                        article_source=article.get("source", ""),
-                        article_snippet=article.get("snippet", ""),
-                        company_description=company_description,
-                    )
-                    signals["llm"] = 1.0 if is_match else 0.0
-                    llm_match = (is_match, reasoning)
-                except Exception as exc:
-                    logger.warning("llm_verification_failed", error=str(exc))
-
-            confidence = calculate_weighted_confidence(signals)
-
-            if not is_article_verified(confidence):
-                logger.debug(
-                    "article_rejected",
-                    title=article.get("title", "")[:80],
-                    signals=signals,
-                    confidence=confidence,
-                )
-                continue
-
-            verified += 1
-
-            evidence = build_evidence_list(
-                domain_match=domain_matched,
-                domain_name=company_domain,
-                context_match=context_matched,
+        def _process_one(index: int, article: dict[str, Any]) -> None:
+            processed[index] = self._process_article_llm(
+                article=article,
                 company_name=company_name,
-                llm_match=llm_match,
+                homepage_url=homepage_url,
+                company_domain=company_domain,
+                company_description=company_description,
             )
 
-            combined_text = article.get("snippet", "") + " " + article.get("title", "")
-            sig_result = analyze_content_significance(combined_text)
+        if new_articles:
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                list(
+                    executor.map(
+                        lambda pair: _process_one(*pair),
+                        enumerate(new_articles),
+                    )
+                )
 
-            # LLM as primary classifier -- keywords passed as hints
-            if self.llm_client:
-                try:
-                    llm_result = self.llm_client.classify_news_significance(
-                        title=article.get("title", ""),
-                        source=article.get("source", ""),
-                        content=article.get("snippet", ""),
-                        keywords=sig_result.matched_keywords,
-                        company_name=company_name,
-                    )
-                    if not llm_result.get("error"):
-                        sig_result.classification = llm_result.get(
-                            "classification", sig_result.classification
-                        )
-                        sig_result.sentiment = llm_result.get("sentiment", sig_result.sentiment)
-                        sig_result.confidence = llm_result.get("confidence", sig_result.confidence)
-                        if llm_result.get("reasoning"):
-                            sig_result.notes = llm_result["reasoning"]
-                except Exception as exc:
-                    logger.warning(
-                        "llm_news_classification_failed",
-                        article_url=article.get("url", ""),
-                        error=str(exc),
-                    )
+        # Sequential DB writes on main thread (SQLite safety)
+        for result in processed:
+            if result is None or not result["verified"]:
+                continue
+            verified += 1
+            article = result["article"]
+            confidence = result["confidence"]
+            evidence = result["evidence"]
+            sig_result = result["sig_result"]
 
             self.news_repo.store_news_article(
                 {
@@ -407,6 +382,113 @@ class NewsMonitorManager:
             "articles_verified": verified,
             "articles_stored": stored,
             "article_details": article_details,
+        }
+
+    def _process_article_llm(
+        self,
+        article: dict[str, Any],
+        company_name: str,
+        homepage_url: str,
+        company_domain: str,
+        company_description: str,
+    ) -> dict[str, Any]:
+        """Run verification + significance for a single article (thread-safe).
+
+        No DB access. LLM calls are short-circuited when the outcome is
+        already decided by domain + context signals alone.
+
+        Returns a dict with: verified, article, confidence, evidence, sig_result.
+        """
+        signals: dict[str, float] = {}
+
+        domain_matched = check_domain_match(article["url"], company_domain)
+        if not domain_matched:
+            domain_matched = check_domain_in_content(article.get("snippet", ""), company_domain)
+
+        if domain_matched:
+            signals["domain"] = 1.0
+        elif detect_competing_domain(article["url"], company_domain):
+            signals["domain"] = COMPETING_DOMAIN_PENALTY
+        else:
+            signals["domain"] = 0.0
+
+        context_matched = check_name_in_context(article.get("snippet", ""), company_name)
+        signals["context"] = 1.0 if context_matched else 0.0
+
+        # Short-circuit: skip LLM verification if domain + context alone
+        # already clear the threshold. This avoids an LLM call for the
+        # most common "obvious match" case (domain mentioned + name in
+        # business context).
+        base_confidence = calculate_weighted_confidence(signals)
+        llm_match: tuple[bool, str] | None = None
+
+        if self.llm_client and base_confidence < VERIFICATION_THRESHOLD:
+            try:
+                is_match, reasoning = self.llm_client.verify_company_identity(
+                    company_name=company_name,
+                    company_url=homepage_url or "",
+                    article_title=article.get("title", ""),
+                    article_source=article.get("source", ""),
+                    article_snippet=article.get("snippet", ""),
+                    company_description=company_description,
+                )
+                signals["llm"] = 1.0 if is_match else 0.0
+                llm_match = (is_match, reasoning)
+            except Exception as exc:
+                logger.warning("llm_verification_failed", error=str(exc))
+
+        confidence = calculate_weighted_confidence(signals)
+
+        if not is_article_verified(confidence):
+            logger.debug(
+                "article_rejected",
+                title=article.get("title", "")[:80],
+                signals=signals,
+                confidence=confidence,
+            )
+            return {"verified": False}
+
+        evidence = build_evidence_list(
+            domain_match=domain_matched,
+            domain_name=company_domain,
+            context_match=context_matched,
+            company_name=company_name,
+            llm_match=llm_match,
+        )
+
+        combined_text = article.get("snippet", "") + " " + article.get("title", "")
+        sig_result = analyze_content_significance(combined_text)
+
+        if self.llm_client:
+            try:
+                llm_result = self.llm_client.classify_news_significance(
+                    title=article.get("title", ""),
+                    source=article.get("source", ""),
+                    content=article.get("snippet", ""),
+                    keywords=sig_result.matched_keywords,
+                    company_name=company_name,
+                )
+                if not llm_result.get("error"):
+                    sig_result.classification = llm_result.get(
+                        "classification", sig_result.classification
+                    )
+                    sig_result.sentiment = llm_result.get("sentiment", sig_result.sentiment)
+                    sig_result.confidence = llm_result.get("confidence", sig_result.confidence)
+                    if llm_result.get("reasoning"):
+                        sig_result.notes = llm_result["reasoning"]
+            except Exception as exc:
+                logger.warning(
+                    "llm_news_classification_failed",
+                    article_url=article.get("url", ""),
+                    error=str(exc),
+                )
+
+        return {
+            "verified": True,
+            "article": article,
+            "confidence": confidence,
+            "evidence": evidence,
+            "sig_result": sig_result,
         }
 
     def _calculate_date_range(self, company_id: int) -> tuple[str, str]:

@@ -33,8 +33,13 @@ class TestBuildLinkedinVerificationContext:
 
     def test_verification_with_changes(self) -> None:
         records = [
-            {"person_name": "Jane", "title": "CEO", "is_current": True,
-             "last_verified_at": "2026-03-24", "discovery_method": "cdp_scrape"},
+            {
+                "person_name": "Jane",
+                "title": "CEO",
+                "is_current": True,
+                "last_verified_at": "2026-03-24",
+                "discovery_method": "cdp_scrape",
+            },
         ]
         verifications = [
             {
@@ -53,8 +58,13 @@ class TestBuildLinkedinVerificationContext:
 
     def test_all_leaders_confirmed(self) -> None:
         records = [
-            {"person_name": "Jane", "title": "CEO", "is_current": True,
-             "last_verified_at": "2026-03-24", "discovery_method": "cdp_scrape"},
+            {
+                "person_name": "Jane",
+                "title": "CEO",
+                "is_current": True,
+                "last_verified_at": "2026-03-24",
+                "discovery_method": "cdp_scrape",
+            },
         ]
         verifications = [
             {

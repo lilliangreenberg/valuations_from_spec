@@ -115,9 +115,7 @@ class TestLLMClientThrottle:
             "create",
             return_value=_mock_tool_use_response(_valid_classification_result()),
         ):
-            result = llm_client._call_llm_with_tool(
-                "sys", "user", _CLASSIFICATION_TOOL, "test_op"
-            )
+            result = llm_client._call_llm_with_tool("sys", "user", _CLASSIFICATION_TOOL, "test_op")
 
         assert "error" not in result
         mock_sleep.assert_called_once_with(_INTER_REQUEST_DELAY_SECONDS)
@@ -134,9 +132,7 @@ class TestLLMClientThrottle:
             "create",
             side_effect=ValueError("bad input"),
         ):
-            result = llm_client._call_llm_with_tool(
-                "sys", "user", _CLASSIFICATION_TOOL, "test_op"
-            )
+            result = llm_client._call_llm_with_tool("sys", "user", _CLASSIFICATION_TOOL, "test_op")
 
         assert "error" in result
         mock_sleep.assert_not_called()
@@ -165,9 +161,7 @@ class TestLLMClientThrottle:
 class TestLLMClientFallback:
     """Verify graceful fallback when API calls fail."""
 
-    def test_call_llm_with_tool_returns_error_on_exception(
-        self, llm_client: LLMClient
-    ) -> None:
+    def test_call_llm_with_tool_returns_error_on_exception(self, llm_client: LLMClient) -> None:
         from src.services.llm_client import _CLASSIFICATION_TOOL
 
         with patch.object(
@@ -175,17 +169,13 @@ class TestLLMClientFallback:
             "create",
             side_effect=ValueError("unexpected"),
         ):
-            result = llm_client._call_llm_with_tool(
-                "sys", "user", _CLASSIFICATION_TOOL, "test_op"
-            )
+            result = llm_client._call_llm_with_tool("sys", "user", _CLASSIFICATION_TOOL, "test_op")
 
         assert "error" in result
         assert result["classification"] == "uncertain"
         assert result["confidence"] == 0.5
 
-    def test_call_llm_with_tool_success_returns_tool_input(
-        self, llm_client: LLMClient
-    ) -> None:
+    def test_call_llm_with_tool_success_returns_tool_input(self, llm_client: LLMClient) -> None:
         from src.services.llm_client import _CLASSIFICATION_TOOL
 
         with patch.object(
@@ -193,17 +183,13 @@ class TestLLMClientFallback:
             "create",
             return_value=_mock_tool_use_response(_valid_classification_result()),
         ):
-            result = llm_client._call_llm_with_tool(
-                "sys", "user", _CLASSIFICATION_TOOL, "test_op"
-            )
+            result = llm_client._call_llm_with_tool("sys", "user", _CLASSIFICATION_TOOL, "test_op")
 
         assert "error" not in result
         assert result["classification"] == "insignificant"
         assert result["confidence"] == 0.9
 
-    def test_verify_company_identity_returns_false_on_failure(
-        self, llm_client: LLMClient
-    ) -> None:
+    def test_verify_company_identity_returns_false_on_failure(self, llm_client: LLMClient) -> None:
         with patch.object(
             llm_client.client.messages,
             "create",
@@ -220,9 +206,7 @@ class TestLLMClientFallback:
         assert is_match is False
         assert "failed" in reasoning.lower()
 
-    def test_screenshot_analysis_still_uses_text_parsing(
-        self, llm_client: LLMClient
-    ) -> None:
+    def test_screenshot_analysis_still_uses_text_parsing(self, llm_client: LLMClient) -> None:
         """analyze_screenshot should still use text-based JSON parsing."""
         json_text = '{"company_name": "Test", "industry": "Tech"}'
         with patch.object(

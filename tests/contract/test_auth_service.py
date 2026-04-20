@@ -99,9 +99,7 @@ class TestGetCurrentUser:
             user = auth_service.get_current_user()
         assert user is None
 
-    def test_refreshes_expired_token(
-        self, auth_service: AuthService, tmp_path: Path
-    ) -> None:
+    def test_refreshes_expired_token(self, auth_service: AuthService, tmp_path: Path) -> None:
         expired_creds = StoredCredentials(
             access_token="ya29.expired",
             refresh_token="1//refresh",
@@ -159,9 +157,7 @@ class TestIsAuthenticated:
             auth_service.save_credentials(sample_credentials)
             assert auth_service.is_authenticated() is True
 
-    def test_false_when_no_credentials(
-        self, auth_service: AuthService, tmp_path: Path
-    ) -> None:
+    def test_false_when_no_credentials(self, auth_service: AuthService, tmp_path: Path) -> None:
         token_path = tmp_path / "nonexistent.json"
         with patch("src.services.auth.AUTH_TOKEN_PATH", token_path):
             assert auth_service.is_authenticated() is False

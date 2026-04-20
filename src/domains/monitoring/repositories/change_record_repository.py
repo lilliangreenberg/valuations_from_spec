@@ -21,9 +21,15 @@ class ChangeRecordRepository:
         self.operator = operator
 
     def store_change_record(self, data: dict[str, Any]) -> int:
-        """Store a new change record. Returns record ID."""
+        """Store a new change record. Returns the record ID.
+
+        Uses INSERT OR IGNORE with a UNIQUE index on
+        (company_id, snapshot_id_old, snapshot_id_new) to atomically
+        skip duplicates under concurrent writes. If a conflict occurs,
+        the existing record's ID is returned.
+        """
         cursor = self.db.execute(
-            """INSERT INTO change_records
+            """INSERT OR IGNORE INTO change_records
                (company_id, snapshot_id_old, snapshot_id_new, checksum_old, checksum_new,
                 has_changed, change_magnitude, detected_at,
                 significance_classification, significance_sentiment,
@@ -50,6 +56,29 @@ class ChangeRecordRepository:
             ),
         )
         self.db.connection.commit()
+
+        if cursor.rowcount == 0:
+            # Conflict -- the row already existed. Fetch its ID.
+            existing = self.db.fetchone(
+                """SELECT id FROM change_records
+                   WHERE company_id = ? AND snapshot_id_old = ? AND snapshot_id_new = ?""",
+                (
+                    data["company_id"],
+                    data["snapshot_id_old"],
+                    data["snapshot_id_new"],
+                ),
+            )
+            if existing:
+                logger.debug(
+                    "skipped_duplicate_change_record",
+                    company_id=data["company_id"],
+                    existing_id=existing["id"],
+                    snapshot_id_old=data["snapshot_id_old"],
+                    snapshot_id_new=data["snapshot_id_new"],
+                )
+                return int(existing["id"])
+            return 0
+
         return cursor.lastrowid or 0
 
     def get_changes_for_company(self, company_id: int) -> list[dict[str, Any]]:

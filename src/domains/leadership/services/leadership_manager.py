@@ -34,6 +34,9 @@ if TYPE_CHECKING:
     from src.domains.discovery.repositories.social_media_link_repository import (
         SocialMediaLinkRepository,
     )
+    from src.domains.leadership.repositories.leadership_change_repository import (
+        LeadershipChangeRepository,
+    )
     from src.domains.leadership.repositories.leadership_repository import (
         LeadershipRepository,
     )
@@ -62,6 +65,7 @@ class LeadershipManager:
         llm_client: LLMClient | None = None,
         snapshot_repo: LinkedInSnapshotRepository | None = None,
         employment_verifier: EmploymentVerifier | None = None,
+        leadership_change_repo: LeadershipChangeRepository | None = None,
     ) -> None:
         self.browser = cdp_browser
         self.search = leadership_search
@@ -71,6 +75,7 @@ class LeadershipManager:
         self.llm = llm_client
         self.snapshot_repo = snapshot_repo
         self.verifier = employment_verifier
+        self.leadership_change_repo = leadership_change_repo
 
     def extract_company_leadership(
         self,
@@ -179,6 +184,39 @@ class LeadershipManager:
         ]
         changes = compare_leadership(previous_leadership, current_as_dicts)
         change_summary = build_leadership_change_summary(changes)
+
+        # Persist detected changes to the append-only event log. Only write
+        # when there was at least one previously-known leader, so bootstrap
+        # runs (first-ever extraction for a company) don't generate a flood
+        # of phantom "NEW_LEADERSHIP" events for every current employee.
+        if self.leadership_change_repo is not None and previous_leadership and changes:
+            events = [
+                {
+                    "company_id": company_id,
+                    "change_type": str(change.get("change_type", "")),
+                    "person_name": str(change.get("person_name", "")) or "Unknown",
+                    "title": str(change.get("title", "")) or None,
+                    "linkedin_profile_url": str(change.get("profile_url", "")) or None,
+                    "severity": str(change.get("severity", "minor")),
+                    "detected_at": now,
+                    "confidence": confidence,
+                    "discovery_method": method_used,
+                }
+                for change in changes
+            ]
+            try:
+                inserted = self.leadership_change_repo.store_changes(events)
+                logger.info(
+                    "leadership_changes_recorded",
+                    company_id=company_id,
+                    count=inserted,
+                )
+            except Exception as exc:
+                logger.error(
+                    "leadership_changes_persist_failed",
+                    company_id=company_id,
+                    error=str(exc),
+                )
 
         # Mark departed leaders
         for change in changes:
@@ -309,17 +347,19 @@ class LeadershipManager:
         # Step 4: Store LinkedIn snapshot
         if self.snapshot_repo:
             page_html = self.browser.get_page_html()
-            self.snapshot_repo.store_snapshot({
-                "company_id": company_id,
-                "linkedin_url": linkedin_company_url,
-                "url_type": "company",
-                "person_name": None,
-                "content_html": page_html,
-                "content_json": json.dumps({"employees": raw_people}),
-                "vision_data_json": json.dumps({"vision_leaders": vision_leaders}),
-                "screenshot_path": screenshot_paths[0] if screenshot_paths else None,
-                "captured_at": now,
-            })
+            self.snapshot_repo.store_snapshot(
+                {
+                    "company_id": company_id,
+                    "linkedin_url": linkedin_company_url,
+                    "url_type": "company",
+                    "person_name": None,
+                    "content_html": page_html,
+                    "content_json": json.dumps({"employees": raw_people}),
+                    "vision_data_json": json.dumps({"vision_leaders": vision_leaders}),
+                    "screenshot_path": screenshot_paths[0] if screenshot_paths else None,
+                    "captured_at": now,
+                }
+            )
 
         logger.info(
             "cdp_extraction_merged",
@@ -456,9 +496,7 @@ class LeadershipManager:
                                     "method_used": result["method_used"],
                                     "leaders_found": result["leaders_found"],
                                     "leaders": result.get("leaders", []),
-                                    "leadership_changes": result.get(
-                                        "leadership_changes", []
-                                    ),
+                                    "leadership_changes": result.get("leadership_changes", []),
                                 }
                             )
                     except Exception as exc:

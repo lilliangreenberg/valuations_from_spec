@@ -11,7 +11,7 @@ import io
 import sqlite3
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import urljoin
 
 import requests
@@ -205,7 +205,7 @@ def main() -> None:
                 continue
 
         # Store in database
-        now = datetime.now(tz=timezone.utc).isoformat()
+        now = datetime.now(tz=UTC).isoformat()
         try:
             conn.execute(
                 """INSERT INTO company_logos

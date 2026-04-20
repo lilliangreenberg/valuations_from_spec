@@ -102,6 +102,7 @@ class TestDatabaseInitialization:
         "processing_errors",
         "company_logos",
         "company_leadership",
+        "leadership_changes",
         "leadership_mentions",
         "social_media_snapshots",
         "social_media_change_records",
@@ -113,6 +114,7 @@ class TestDatabaseInitialization:
         "idx_snapshots_company_id",
         "idx_snapshots_captured_at",
         "idx_change_records_company_id",
+        "idx_change_records_unique_pair",
         "idx_social_media_links_company_id",
         "idx_social_media_links_platform",
         "idx_news_articles_company_id",
@@ -122,6 +124,8 @@ class TestDatabaseInitialization:
         "idx_company_logos_perceptual_hash",
         "idx_company_leadership_company_id",
         "idx_company_leadership_title",
+        "idx_leadership_changes_company_id",
+        "idx_leadership_changes_severity",
         "idx_leadership_mentions_company_id",
         "idx_social_snapshots_company_id",
         "idx_social_snapshots_source_type",
@@ -138,11 +142,11 @@ class TestDatabaseInitialization:
         for expected in self.EXPECTED_TABLES:
             assert expected in table_names, f"Table '{expected}' missing from schema"
 
-    def test_exactly_fourteen_tables(self, db: Database) -> None:
+    def test_expected_table_count(self, db: Database) -> None:
         rows = db.fetchall(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
-        assert len(rows) == 14
+        assert len(rows) == len(self.EXPECTED_TABLES)
 
     def test_all_indexes_created(self, db: Database) -> None:
         rows = db.fetchall(
@@ -174,7 +178,7 @@ class TestDatabaseInitialization:
         rows = database.fetchall(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
-        assert len(rows) == 14
+        assert len(rows) == len(self.EXPECTED_TABLES)
 
 
 class TestDatabaseTransaction:
@@ -2212,8 +2216,6 @@ class TestPerformedByAttribution:
             (cid, "https://old.com", _now_iso()),
         )
         db.connection.commit()
-        row = db.fetchone(
-            "SELECT performed_by FROM snapshots WHERE url = 'https://old.com'"
-        )
+        row = db.fetchone("SELECT performed_by FROM snapshots WHERE url = 'https://old.com'")
         assert row is not None
         assert row["performed_by"] is None

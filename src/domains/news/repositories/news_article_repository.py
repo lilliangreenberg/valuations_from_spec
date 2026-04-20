@@ -100,6 +100,48 @@ class NewsArticleRepository:
         )
         return [self._deserialize_row(row) for row in rows]
 
+    def get_recent_significant_news_by_company(
+        self,
+        days: int = 90,
+    ) -> dict[int, list[dict[str, Any]]]:
+        """Return recent significant news grouped by company_id.
+
+        Single query used by batch callers to avoid per-company round trips.
+        """
+        rows = self.db.fetchall(
+            """SELECT * FROM news_articles
+               WHERE significance_classification = 'significant'
+                 AND published_at >= datetime('now', ?)
+               ORDER BY published_at DESC""",
+            (f"-{days} days",),
+        )
+        grouped: dict[int, list[dict[str, Any]]] = {}
+        for row in rows:
+            data = self._deserialize_row(row)
+            grouped.setdefault(int(data["company_id"]), []).append(data)
+        return grouped
+
+    def get_recent_significant_news_for_company(
+        self,
+        company_id: int,
+        days: int = 90,
+    ) -> list[dict[str, Any]]:
+        """Return significant news articles for one company within the window.
+
+        Used by the status analyzer to feed news signals into status
+        determination. Filters to classification='significant' only --
+        insignificant and uncertain classifications are ignored.
+        """
+        rows = self.db.fetchall(
+            """SELECT * FROM news_articles
+               WHERE company_id = ?
+                 AND significance_classification = 'significant'
+                 AND published_at >= datetime('now', ?)
+               ORDER BY published_at DESC""",
+            (company_id, f"-{days} days"),
+        )
+        return [self._deserialize_row(row) for row in rows]
+
     def get_significant_news(
         self,
         days: int = 90,

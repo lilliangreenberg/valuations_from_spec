@@ -56,6 +56,29 @@ ACQUISITION_PATTERNS: list[str] = [
     "is now a brand of",
 ]
 
+# Words that follow "sold to" in commerce contexts (not M&A).
+# E.g. "produce sold to retail consumers", "goods sold to customers".
+_SOLD_TO_COMMERCE_FOLLOWERS: tuple[str, ...] = (
+    "consumers",
+    "customers",
+    "retail",
+    "retailers",
+    "businesses",
+    "buyers",
+    "users",
+    "clients",
+    "merchants",
+    "distributors",
+    "resellers",
+    "dealers",
+    "end users",
+    "end-users",
+    "the public",
+    "subscribers",
+    "patients",
+    "enterprises",
+)
+
 
 def detect_acquisition(content: str) -> tuple[bool, str | None]:
     """Detect acquisition keywords in content.
@@ -63,12 +86,24 @@ def detect_acquisition(content: str) -> tuple[bool, str | None]:
     Returns (is_acquired, matched_text).
     Note: "is now" without a corporate structure word is NOT matched
     to avoid false positives like "Product X is now available".
+    Note: "sold to" followed by a generic commerce object (consumers,
+    customers, retail, etc.) is NOT matched -- that's commerce language,
+    not an M&A event.
     """
     content_lower = content.lower()
     for pattern in ACQUISITION_PATTERNS:
-        if pattern in content_lower:
-            # Find the context around the match
-            idx = content_lower.index(pattern)
+        # Scan all occurrences so a commerce-context false positive
+        # doesn't mask a real acquisition match later in the content.
+        search_start = 0
+        while True:
+            idx = content_lower.find(pattern, search_start)
+            if idx == -1:
+                break
+            if pattern == "sold to":
+                after = content_lower[idx + len(pattern) :].lstrip()
+                if any(after.startswith(follower) for follower in _SOLD_TO_COMMERCE_FOLLOWERS):
+                    search_start = idx + len(pattern)
+                    continue
             start = max(0, idx - 30)
             end = min(len(content), idx + len(pattern) + 50)
             context = content[start:end].strip()
@@ -102,24 +137,47 @@ def calculate_confidence(indicators: list[tuple[str, str, SignalType]]) -> float
 def determine_status(
     confidence: float,
     indicators: list[tuple[str, str, SignalType]],
+    previous_status: CompanyStatusType | None = None,
 ) -> CompanyStatusType:
-    """Determine company status from confidence and indicators.
+    """Determine company status from confidence, indicators, and previous status.
 
-    High confidence (>= 0.7):
-      - Any negative signals -> likely_closed
-      - Otherwise -> operational
-    Medium confidence (0.4-0.7):
-      - More positive than negative -> operational
-      - More negative than positive -> likely_closed
-      - Equal or all neutral -> uncertain
-    Low confidence (< 0.4):
-      -> uncertain
+    Previous status is preserved when there are no negative signals, since the
+    absence of positive evidence is not grounds for downgrading a company from
+    operational to uncertain (or upgrading from uncertain to operational).
+
+    When negative signals exist:
+      High confidence (>= 0.7):
+        - Any negative signals -> likely_closed
+        - Otherwise -> operational
+      Medium confidence (0.4-0.7):
+        - More positive than negative -> operational
+        - More negative than positive -> likely_closed
+        - Equal -> uncertain
+      Low confidence (< 0.4):
+        -> uncertain
+
+    When no negative signals exist:
+      - Preserve previous_status if one exists
+      - If no previous status, default to operational (a live website
+        serving content is operational until proven otherwise)
     """
+    negative_count = sum(1 for _, _, s in indicators if s == SignalType.NEGATIVE)
+    positive_count = sum(1 for _, _, s in indicators if s == SignalType.POSITIVE)
+
+    # No negative signals: preserve previous status or default to operational.
+    # UNCERTAIN is promoted to OPERATIONAL when at least 2 independent
+    # positive signals accumulate, so companies don't stay stuck in UNCERTAIN
+    # forever once the rules bootstrap was too conservative.
+    if negative_count == 0:
+        if previous_status == CompanyStatusType.UNCERTAIN and positive_count >= 2:
+            return CompanyStatusType.OPERATIONAL
+        if previous_status is not None:
+            return previous_status
+        return CompanyStatusType.OPERATIONAL
+
+    # Negative signals exist: evaluate based on confidence thresholds
     if confidence < 0.4:
         return CompanyStatusType.UNCERTAIN
-
-    positive_count = sum(1 for _, _, s in indicators if s == SignalType.POSITIVE)
-    negative_count = sum(1 for _, _, s in indicators if s == SignalType.NEGATIVE)
 
     if confidence >= 0.7:
         if negative_count > 0:
@@ -138,11 +196,16 @@ def determine_status(
 def analyze_snapshot_status(
     content: str,
     http_last_modified: datetime | None = None,
+    previous_status: CompanyStatusType | None = None,
 ) -> tuple[CompanyStatusType, float, list[tuple[str, str, SignalType]]]:
     """Analyze a snapshot to determine company status.
 
     Returns (status, confidence, indicators).
     Each indicator is (type, value, signal).
+
+    previous_status is used to preserve an existing classification when
+    no negative signals are found. A company that was operational stays
+    operational; a company that was uncertain stays uncertain.
     """
     indicators: list[tuple[str, str, SignalType]] = []
     current_year = datetime.now(UTC).year
@@ -174,6 +237,6 @@ def analyze_snapshot_status(
             indicators.append(("http_last_modified", f"{days_since} days ago", SignalType.NEGATIVE))
 
     confidence = calculate_confidence(indicators)
-    status = determine_status(confidence, indicators)
+    status = determine_status(confidence, indicators, previous_status)
 
     return status, confidence, indicators

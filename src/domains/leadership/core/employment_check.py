@@ -130,8 +130,7 @@ def _determine_from_dom(
                     "status": STATUS_EMPLOYED,
                     "confidence": 0.80,
                     "evidence": (
-                        f"Current role at {exp_company}: "
-                        f"{exp.get('title', '')} ({dates})"
+                        f"Current role at {exp_company}: {exp.get('title', '')} ({dates})"
                     ),
                     "current_title": exp.get("title", ""),
                     "current_employer": exp_company,
@@ -151,8 +150,7 @@ def _determine_from_dom(
             "status": STATUS_WRONG_PERSON,
             "confidence": 0.60,
             "evidence": (
-                f"Company '{company_name}' not found in any of "
-                f"{len(experience)} experience entries"
+                f"Company '{company_name}' not found in any of {len(experience)} experience entries"
             ),
             "current_title": "",
             "current_employer": "",

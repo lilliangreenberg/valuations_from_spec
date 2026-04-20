@@ -23,6 +23,7 @@ from src.domains.dashboard.routes import (
     news,
     operations,
     overview,
+    risk,
     widgets,
 )
 from src.domains.dashboard.services.query_service import QueryService
@@ -156,6 +157,7 @@ def create_app(
     app.include_router(news.router)
     app.include_router(leadership.router)
     app.include_router(operations.router)
+    app.include_router(risk.router)
     app.include_router(widgets.router)
 
     return app

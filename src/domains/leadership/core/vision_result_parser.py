@@ -36,11 +36,13 @@ def parse_people_tab_result(vision_response: dict[str, Any]) -> list[dict[str, s
         if raw_url and raw_url != "null":
             profile_url = extract_linkedin_profile_url(str(raw_url)) or ""
 
-        results.append({
-            "name": name,
-            "title": title,
-            "profile_url": profile_url,
-        })
+        results.append(
+            {
+                "name": name,
+                "title": title,
+                "profile_url": profile_url,
+            }
+        )
 
     return results
 
@@ -189,9 +191,7 @@ def _find_vision_match(
         if vision_name == name_key:
             return person
         # Partial match: one name contains the other
-        if vision_name and name_key and (
-            vision_name in name_key or name_key in vision_name
-        ):
+        if vision_name and name_key and (vision_name in name_key or name_key in vision_name):
             return person
 
     return None

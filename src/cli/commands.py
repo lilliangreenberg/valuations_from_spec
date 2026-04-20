@@ -1646,6 +1646,338 @@ def analyze_baseline(limit: int | None, dry_run: bool) -> None:
     db.close()
 
 
+@click.command()
+@click.option("--skip-snapshots", is_flag=True, help="Skip snapshot capture stage")
+@click.option("--skip-changes", is_flag=True, help="Skip change detection stage")
+@click.option("--skip-news", is_flag=True, help="Skip news search stage")
+@click.option("--skip-status", is_flag=True, help="Skip status analysis stage")
+@click.option("--limit", default=None, type=int, help="Limit companies per stage")
+def run_full_scan(
+    skip_snapshots: bool,
+    skip_changes: bool,
+    skip_news: bool,
+    skip_status: bool,
+    limit: int | None,
+) -> None:
+    """Run the full portfolio monitoring pipeline end-to-end.
+
+    Executes each stage in order, sharing a single database connection
+    and accumulating per-stage summaries. Fails gracefully on individual
+    stage errors so later stages still run. The output is a single
+    unified summary at the end.
+
+    Stages (in order):
+      1. capture-snapshots (batch mode)
+      2. detect-changes
+      3. search-news-all
+      4. analyze-status  <-- runs last so it can see fresh news + changes
+    """
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+    operator = _get_operator()
+
+    from src.domains.leadership.repositories.leadership_change_repository import (
+        LeadershipChangeRepository,
+    )
+    from src.domains.leadership.repositories.leadership_repository import (
+        LeadershipRepository,
+    )
+    from src.domains.leadership.repositories.linkedin_snapshot_repository import (
+        LinkedInSnapshotRepository,
+    )
+    from src.domains.monitoring.repositories.change_record_repository import (
+        ChangeRecordRepository,
+    )
+    from src.domains.monitoring.repositories.company_status_repository import (
+        CompanyStatusRepository,
+    )
+    from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
+    from src.domains.monitoring.repositories.social_snapshot_repository import (
+        SocialSnapshotRepository,
+    )
+    from src.domains.monitoring.services.change_detector import ChangeDetector
+    from src.domains.monitoring.services.status_analyzer import StatusAnalyzer
+    from src.domains.news.repositories.news_article_repository import (
+        NewsArticleRepository,
+    )
+    from src.repositories.company_repository import CompanyRepository
+
+    snapshot_repo = SnapshotRepository(db, operator)
+    change_repo = ChangeRecordRepository(db, operator)
+    status_repo = CompanyStatusRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
+    social_snapshot_repo = SocialSnapshotRepository(db, operator)
+    news_repo = NewsArticleRepository(db, operator)
+    leadership_repo = LeadershipRepository(db, operator)
+    leadership_change_repo = LeadershipChangeRepository(db, operator)
+    linkedin_snapshot_repo = LinkedInSnapshotRepository(db, operator)
+
+    llm_client = None
+    if config.llm_validation_enabled and config.anthropic_api_key:
+        from src.services.llm_client import LLMClient
+
+        llm_client = LLMClient(config.anthropic_api_key, config.llm_model)
+
+    stage_results: dict[str, Any] = {}
+
+    # --- Stage 1: capture snapshots ---
+    if not skip_snapshots:
+        try:
+            click.echo("[STAGE 1/4] Capturing snapshots...")
+            from src.services.batch_snapshot_manager import BatchSnapshotManager
+            from src.services.firecrawl_client import FirecrawlClient
+
+            firecrawl = FirecrawlClient(config.firecrawl_api_key)
+            batch_mgr = BatchSnapshotManager(
+                firecrawl_client=firecrawl,
+                snapshot_repo=snapshot_repo,
+                company_repo=company_repo,
+            )
+            exclude = _get_manually_closed_ids(db, operator) or None
+            stage_results["snapshots"] = batch_mgr.capture_all_snapshots(
+                limit=limit,
+                exclude_company_ids=exclude,
+            )
+        except Exception as exc:
+            click.echo(f"[ERROR] snapshot stage failed: {exc}")
+            stage_results["snapshots"] = {"error": str(exc)}
+    else:
+        click.echo("[STAGE 1/4] Skipped.")
+
+    # --- Stage 2: detect changes ---
+    if not skip_changes:
+        try:
+            click.echo("[STAGE 2/4] Detecting changes...")
+            detector = ChangeDetector(
+                snapshot_repo,
+                change_repo,
+                company_repo,
+                llm_client=llm_client,
+                llm_enabled=bool(llm_client),
+                social_snapshot_repo=social_snapshot_repo,
+                status_repo=status_repo,
+                linkedin_snapshot_repo=linkedin_snapshot_repo,
+                leadership_repo=leadership_repo,
+            )
+            exclude = _get_manually_closed_ids(db, operator) or None
+            stage_results["changes"] = detector.detect_all_changes(
+                limit=limit,
+                exclude_company_ids=exclude,
+            )
+        except Exception as exc:
+            click.echo(f"[ERROR] change detection stage failed: {exc}")
+            stage_results["changes"] = {"error": str(exc)}
+    else:
+        click.echo("[STAGE 2/4] Skipped.")
+
+    # --- Stage 3: search news ---
+    if not skip_news:
+        if not config.kagi_api_key:
+            click.echo("[STAGE 3/4] Skipped (no KAGI_API_KEY).")
+        else:
+            try:
+                click.echo("[STAGE 3/4] Searching news...")
+                from src.domains.news.services.kagi_client import KagiClient
+                from src.domains.news.services.news_monitor_manager import (
+                    NewsMonitorManager,
+                )
+
+                kagi = KagiClient(config.kagi_api_key)
+                news_mgr = NewsMonitorManager(
+                    kagi_client=kagi,
+                    news_repo=news_repo,
+                    company_repo=company_repo,
+                    snapshot_repo=snapshot_repo,
+                    llm_client=llm_client,
+                )
+                exclude = _get_manually_closed_ids(db, operator) or None
+                stage_results["news"] = news_mgr.search_all_companies(
+                    limit=limit,
+                    exclude_company_ids=exclude,
+                )
+            except Exception as exc:
+                click.echo(f"[ERROR] news stage failed: {exc}")
+                stage_results["news"] = {"error": str(exc)}
+    else:
+        click.echo("[STAGE 3/4] Skipped.")
+
+    # --- Stage 4: analyze status (last so it sees fresh news + leadership) ---
+    if not skip_status:
+        try:
+            click.echo("[STAGE 4/4] Analyzing company statuses...")
+            analyzer = StatusAnalyzer(
+                snapshot_repo=snapshot_repo,
+                status_repo=status_repo,
+                company_repo=company_repo,
+                social_snapshot_repo=social_snapshot_repo,
+                news_repo=news_repo,
+                leadership_change_repo=leadership_change_repo,
+            )
+            stage_results["status"] = analyzer.analyze_all_statuses()
+        except Exception as exc:
+            click.echo(f"[ERROR] status stage failed: {exc}")
+            stage_results["status"] = {"error": str(exc)}
+    else:
+        click.echo("[STAGE 4/4] Skipped.")
+
+    # --- Final summary ---
+    click.echo("\n=== FULL SCAN COMPLETE ===")
+    for stage, summary in stage_results.items():
+        if isinstance(summary, dict) and "error" in summary:
+            click.echo(f"  {stage}: ERROR -- {summary['error']}")
+        elif isinstance(summary, dict):
+            successful = summary.get("successful", "?")
+            failed = summary.get("failed", "?")
+            click.echo(f"  {stage}: successful={successful} failed={failed}")
+        else:
+            click.echo(f"  {stage}: (no summary)")
+
+    db.close()
+
+
+@click.command()
+@click.option("--company-id", default=None, type=int, help="Single company only")
+@click.option("--limit", default=None, type=int, help="Limit companies")
+def reconcile_leadership(company_id: int | None, limit: int | None) -> None:
+    """Reconcile website-extracted leadership mentions against stored profiles.
+
+    For each company, cross-references leadership_mentions (names extracted
+    from homepage text) against company_leadership (LinkedIn profiles we
+    actually know about). Surfaces three buckets:
+
+      - missing_in_db:     website mentions someone we don't have a profile for
+      - missing_on_website: stored leader not mentioned on the current homepage
+      - matched:            mention lines up with a known leader (info only)
+
+    Output is printed to stdout -- this is a review queue, not an
+    automatic mutation. Run discover-ceo-linkedin afterwards for any
+    missing_in_db rows to pull in the LinkedIn profile.
+    """
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    from src.domains.leadership.core.reconciliation import (
+        ReconciliationFlag,
+    )
+    from src.domains.leadership.core.reconciliation import (
+        reconcile_leadership as reconcile_fn,
+    )
+    from src.domains.leadership.repositories.leadership_mention_repository import (
+        LeadershipMentionRepository,
+    )
+    from src.domains.leadership.repositories.leadership_repository import (
+        LeadershipRepository,
+    )
+    from src.repositories.company_repository import CompanyRepository
+
+    operator = _get_operator()
+    mention_repo = LeadershipMentionRepository(db, operator)
+    leadership_repo = LeadershipRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
+
+    if company_id is not None:
+        company = company_repo.get_company_by_id(company_id)
+        if not company:
+            click.echo(f"[ERROR] Company {company_id} not found.")
+            db.close()
+            return
+        companies = [company]
+    else:
+        companies = company_repo.get_all_companies()
+        if limit is not None:
+            companies = companies[:limit]
+
+    total_missing_in_db = 0
+    total_missing_on_website = 0
+    total_matched = 0
+
+    for company in companies:
+        cid = company["id"]
+        mentions = mention_repo.get_mentions_for_company(cid)
+        leaders = leadership_repo.get_current_leadership(cid)
+
+        if not mentions and not leaders:
+            continue
+
+        results = reconcile_fn(mentions, leaders)
+
+        missing_in_db = [r for r in results if r.flag == ReconciliationFlag.MISSING_IN_DB]
+        missing_on_website = [r for r in results if r.flag == ReconciliationFlag.MISSING_ON_WEBSITE]
+        matched = [r for r in results if r.flag == ReconciliationFlag.MATCHED]
+
+        total_missing_in_db += len(missing_in_db)
+        total_missing_on_website += len(missing_on_website)
+        total_matched += len(matched)
+
+        if missing_in_db or missing_on_website:
+            click.echo(f"\n{company['name']} (ID: {cid})")
+            for r in missing_in_db:
+                click.echo(f"  [MISSING IN DB] {r.person_name} ({r.title or '?'})")
+            for r in missing_on_website:
+                click.echo(f"  [STALE]         {r.person_name} ({r.title or '?'})")
+
+    click.echo(
+        f"\nSummary: missing_in_db={total_missing_in_db} "
+        f"missing_on_website={total_missing_on_website} "
+        f"matched={total_matched}"
+    )
+    db.close()
+
+
+@click.command()
+def analyze_status() -> None:
+    """Recompute company status from all available signal sources.
+
+    Pulls indicators from the latest snapshot, social media activity, recent
+    significant news, and recent leadership changes. Definitive closure
+    events in news (bankruptcy / shutdown / acquisition) can veto the
+    weighted decision and force LIKELY_CLOSED.
+    """
+    config = _get_config()
+    configure_logging(config.log_level)
+    db = _get_db(config)
+
+    from src.domains.leadership.repositories.leadership_change_repository import (
+        LeadershipChangeRepository,
+    )
+    from src.domains.monitoring.repositories.company_status_repository import (
+        CompanyStatusRepository,
+    )
+    from src.domains.monitoring.repositories.snapshot_repository import SnapshotRepository
+    from src.domains.monitoring.repositories.social_snapshot_repository import (
+        SocialSnapshotRepository,
+    )
+    from src.domains.monitoring.services.status_analyzer import StatusAnalyzer
+    from src.domains.news.repositories.news_article_repository import (
+        NewsArticleRepository,
+    )
+    from src.repositories.company_repository import CompanyRepository
+
+    operator = _get_operator()
+    snapshot_repo = SnapshotRepository(db, operator)
+    status_repo = CompanyStatusRepository(db, operator)
+    company_repo = CompanyRepository(db, operator)
+    social_snapshot_repo = SocialSnapshotRepository(db, operator)
+    news_repo = NewsArticleRepository(db, operator)
+    leadership_change_repo = LeadershipChangeRepository(db, operator)
+
+    analyzer = StatusAnalyzer(
+        snapshot_repo=snapshot_repo,
+        status_repo=status_repo,
+        company_repo=company_repo,
+        social_snapshot_repo=social_snapshot_repo,
+        news_repo=news_repo,
+        leadership_change_repo=leadership_change_repo,
+    )
+
+    click.echo("[INFO] Analyzing company statuses...")
+    result = analyzer.analyze_all_statuses()
+    _print_summary("Status analysis complete", result)
+    db.close()
+
+
 # --- Feature 006: Social Media Content Monitoring ---
 
 
@@ -1790,6 +2122,9 @@ def _build_leadership_manager(
     from src.domains.discovery.repositories.social_media_link_repository import (
         SocialMediaLinkRepository,
     )
+    from src.domains.leadership.repositories.leadership_change_repository import (
+        LeadershipChangeRepository,
+    )
     from src.domains.leadership.repositories.leadership_repository import (
         LeadershipRepository,
     )
@@ -1807,6 +2142,7 @@ def _build_leadership_manager(
 
     browser = CDPBrowser(profile_dir=browser_profile)
     leadership_repo = LeadershipRepository(db, operator)
+    leadership_change_repo = LeadershipChangeRepository(db, operator)
     social_repo = SocialMediaLinkRepository(db, operator)
     company_repo = CompanyRepository(db, operator)
     snapshot_repo = LinkedInSnapshotRepository(db, operator)
@@ -1839,6 +2175,7 @@ def _build_leadership_manager(
         llm_client=llm_client,
         snapshot_repo=snapshot_repo,
         employment_verifier=verifier,
+        leadership_change_repo=leadership_change_repo,
     )
 
     return manager, browser

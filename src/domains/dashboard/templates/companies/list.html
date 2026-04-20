@@ -6,14 +6,14 @@
 <div class="mb-6">
   <h1 class="text-2xl font-bold" style="color: var(--text-primary)">
     Companies
-    <span class="ml-2 text-base font-normal" style="color: var(--text-secondary)">({{ total }} total)</span>
+    <span id="results-count" class="ml-2 text-base font-normal" style="color: var(--text-secondary)">({{ total }} total)</span>
   </h1>
 </div>
 
 <!-- Search and Filters -->
 <div class="card p-4 mb-4">
-  {% set hx_includes = "[name='search'],[name='status'],[name='source_sheet'],[name='flagged'],[name='freshness'],[name='sort_by'],[name='sort_order']" %}
-  <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+  {% set hx_includes = "[name='search'],[name='status'],[name='source_sheet'],[name='flagged'],[name='freshness'],[name='manual_override'],[name='sort_by'],[name='sort_order']" %}
+  <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
     <div>
       <label for="search" class="block text-sm font-medium mb-1" style="color: var(--text-secondary)">Search</label>
       <input type="text" id="search" name="search"
@@ -58,6 +58,22 @@
         <option value="stale" {% if freshness_filter == 'stale' %}selected{% endif %}>Stale (30-90 days)</option>
         <option value="very_stale" {% if freshness_filter == 'very_stale' %}selected{% endif %}>Very Stale (&gt; 90 days)</option>
         <option value="never" {% if freshness_filter == 'never' %}selected{% endif %}>Never Scanned</option>
+        <option value="manually_closed" {% if freshness_filter == 'manually_closed' %}selected{% endif %}>Manually Closed</option>
+      </select>
+    </div>
+
+    <div>
+      <label for="manual_override" class="block text-sm font-medium mb-1" style="color: var(--text-secondary)">Override</label>
+      <select id="manual_override" name="manual_override"
+              class="w-full rounded border px-3 py-2 text-sm"
+              style="background: var(--bg-card); border-color: var(--border-color); color: var(--text-primary)"
+              hx-get="/companies/partials/table"
+              hx-trigger="change"
+              hx-target="#company-table"
+              hx-include="{{ hx_includes }}">
+        <option value="">All</option>
+        <option value="yes" {% if manual_override_filter == 'yes' %}selected{% endif %}>Manual Override</option>
+        <option value="no" {% if manual_override_filter == 'no' %}selected{% endif %}>Auto-detected</option>
       </select>
     </div>
 

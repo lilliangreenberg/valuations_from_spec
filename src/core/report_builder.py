@@ -78,9 +78,7 @@ def build_detect_changes_report(
             "failed": result.get("failed", 0),
             "skipped": result.get("skipped", 0),
             "changes_found": result.get("changes_found", 0),
-            "no_change": (
-                result.get("successful", 0) - result.get("changes_found", 0)
-            ),
+            "no_change": (result.get("successful", 0) - result.get("changes_found", 0)),
             "status_changes": len(status_changes),
             "duration_seconds": result.get("duration_seconds", 0.0),
         },
@@ -274,9 +272,7 @@ def build_detect_social_changes_report(
             "failed": result.get("failed", 0),
             "skipped": result.get("skipped", 0),
             "changes_found": result.get("changes_found", 0),
-            "no_change": (
-                result.get("successful", 0) - result.get("changes_found", 0)
-            ),
+            "no_change": (result.get("successful", 0) - result.get("changes_found", 0)),
             "duration_seconds": result.get("duration_seconds", 0.0),
         },
         "significance_breakdown": {

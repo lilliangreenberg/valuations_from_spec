@@ -85,14 +85,32 @@ class LinkedInSnapshotRepository:
             return dict(rows[0])
         return None
 
-    def get_snapshots_for_company(self, company_id: int) -> list[dict[str, Any]]:
-        """Get all LinkedIn snapshots for a company, newest first."""
-        rows = self.db.fetchall(
-            """SELECT * FROM linkedin_snapshots
-               WHERE company_id = ?
-               ORDER BY captured_at DESC""",
-            (company_id,),
-        )
+    def get_snapshots_for_company(
+        self,
+        company_id: int,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Get LinkedIn snapshots for a company, newest first.
+
+        Args:
+            company_id: Target company.
+            limit: Maximum rows to return. None returns all (legacy).
+        """
+        if limit is not None:
+            rows = self.db.fetchall(
+                """SELECT * FROM linkedin_snapshots
+                   WHERE company_id = ?
+                   ORDER BY captured_at DESC
+                   LIMIT ?""",
+                (company_id, limit),
+            )
+        else:
+            rows = self.db.fetchall(
+                """SELECT * FROM linkedin_snapshots
+                   WHERE company_id = ?
+                   ORDER BY captured_at DESC""",
+                (company_id,),
+            )
         return [dict(r) for r in rows]
 
     def get_person_snapshots(

@@ -443,3 +443,320 @@ class TestLeadershipManagerContract:
         result = manager.extract_company_leadership(company_id)
         assert result.get("method_used") == "kagi_search"
         mock_browser.extract_people.assert_not_called()
+
+
+# --- LeadershipChangeRepository tests ---
+
+
+class TestLeadershipChangeRepository:
+    def _make_repo(self, tmp_db: Database):
+        from src.domains.leadership.repositories.leadership_change_repository import (
+            LeadershipChangeRepository,
+        )
+
+        return LeadershipChangeRepository(tmp_db, "test-user")
+
+    def _sample_event(self, company_id: int, change_type: str = "ceo_departure") -> dict[str, Any]:
+        return {
+            "company_id": company_id,
+            "change_type": change_type,
+            "person_name": "Alice Smith",
+            "title": "CEO",
+            "linkedin_profile_url": "https://www.linkedin.com/in/alice-smith",
+            "severity": "critical",
+            "detected_at": datetime.now(UTC).isoformat(),
+            "confidence": 0.95,
+            "discovery_method": "cdp_scrape",
+        }
+
+    def test_store_single_change(self, tmp_db: Database, sample_company: dict[str, Any]) -> None:
+        repo = self._make_repo(tmp_db)
+        row_id = repo.store_change(self._sample_event(sample_company["id"]))
+        assert row_id > 0
+
+        rows = repo.get_changes_for_company(sample_company["id"])
+        assert len(rows) == 1
+        assert rows[0]["change_type"] == "ceo_departure"
+        assert rows[0]["severity"] == "critical"
+        assert rows[0]["performed_by"] == "test-user"
+
+    def test_store_changes_batch(self, tmp_db: Database, sample_company: dict[str, Any]) -> None:
+        repo = self._make_repo(tmp_db)
+        events = [
+            self._sample_event(sample_company["id"], "ceo_departure"),
+            self._sample_event(sample_company["id"], "new_ceo"),
+        ]
+        inserted = repo.store_changes(events)
+        assert inserted == 2
+        assert len(repo.get_changes_for_company(sample_company["id"])) == 2
+
+    def test_store_changes_empty_list_is_noop(
+        self, tmp_db: Database, sample_company: dict[str, Any]
+    ) -> None:
+        repo = self._make_repo(tmp_db)
+        assert repo.store_changes([]) == 0
+        assert repo.get_changes_for_company(sample_company["id"]) == []
+
+    def test_get_recent_changes_joins_company_name(
+        self, tmp_db: Database, sample_company: dict[str, Any]
+    ) -> None:
+        repo = self._make_repo(tmp_db)
+        repo.store_change(self._sample_event(sample_company["id"]))
+
+        recent = repo.get_recent_changes(days=90)
+        assert len(recent) == 1
+        assert recent[0]["company_name"] == sample_company["name"]
+
+    def test_get_recent_changes_severity_filter(
+        self, tmp_db: Database, sample_company: dict[str, Any]
+    ) -> None:
+        repo = self._make_repo(tmp_db)
+        critical = self._sample_event(sample_company["id"])
+        notable = self._sample_event(sample_company["id"], "new_ceo")
+        notable["severity"] = "notable"
+        repo.store_changes([critical, notable])
+
+        critical_only = repo.get_recent_changes(days=90, severity="critical")
+        assert len(critical_only) == 1
+        assert critical_only[0]["change_type"] == "ceo_departure"
+
+    def test_get_critical_changes_for_company(
+        self, tmp_db: Database, sample_company: dict[str, Any]
+    ) -> None:
+        repo = self._make_repo(tmp_db)
+        critical = self._sample_event(sample_company["id"])
+        notable = self._sample_event(sample_company["id"], "executive_departure")
+        notable["severity"] = "notable"
+        repo.store_changes([critical, notable])
+
+        results = repo.get_critical_changes_for_company(sample_company["id"])
+        assert len(results) == 1
+        assert results[0]["severity"] == "critical"
+
+    def test_cascade_delete_when_company_removed(
+        self, tmp_db: Database, sample_company: dict[str, Any]
+    ) -> None:
+        repo = self._make_repo(tmp_db)
+        repo.store_change(self._sample_event(sample_company["id"]))
+        assert len(repo.get_changes_for_company(sample_company["id"])) == 1
+
+        tmp_db.execute("DELETE FROM companies WHERE id = ?", (sample_company["id"],))
+        tmp_db.connection.commit()
+
+        assert repo.get_changes_for_company(sample_company["id"]) == []
+
+
+class TestLeadershipChangeModel:
+    def test_valid_change(self) -> None:
+        from src.models.leadership_change import LeadershipChange
+
+        change = LeadershipChange(
+            company_id=1,
+            change_type="ceo_departure",
+            person_name="Alice",
+            title="CEO",
+            linkedin_profile_url="https://www.linkedin.com/in/alice",
+            severity="critical",
+            detected_at=datetime.now(UTC),
+            confidence=0.95,
+            discovery_method="cdp_scrape",
+        )
+        assert change.severity == "critical"
+
+    def test_empty_person_name_rejected(self) -> None:
+        from pydantic import ValidationError
+
+        from src.models.leadership_change import LeadershipChange
+
+        with pytest.raises(ValidationError):
+            LeadershipChange(
+                company_id=1,
+                change_type="ceo_departure",
+                person_name="",
+                severity="critical",
+                detected_at=datetime.now(UTC),
+            )
+
+    def test_confidence_out_of_range_rejected(self) -> None:
+        from pydantic import ValidationError
+
+        from src.models.leadership_change import LeadershipChange
+
+        with pytest.raises(ValidationError):
+            LeadershipChange(
+                company_id=1,
+                change_type="ceo_departure",
+                person_name="Alice",
+                severity="critical",
+                detected_at=datetime.now(UTC),
+                confidence=1.5,
+            )
+
+
+class TestLeadershipManagerPersistsEvents:
+    """End-to-end: LeadershipManager writes events to the change log on departures."""
+
+    def test_departure_records_event(self, tmp_db: Database) -> None:
+        from src.domains.discovery.repositories.social_media_link_repository import (
+            SocialMediaLinkRepository,
+        )
+        from src.domains.leadership.repositories.leadership_change_repository import (
+            LeadershipChangeRepository,
+        )
+        from src.domains.leadership.repositories.leadership_repository import (
+            LeadershipRepository,
+        )
+        from src.domains.leadership.services.leadership_manager import (
+            LeadershipManager,
+        )
+        from src.repositories.company_repository import CompanyRepository
+
+        now = datetime.now(UTC).isoformat()
+
+        cursor = tmp_db.execute(
+            """INSERT INTO companies (name, homepage_url, source_sheet, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            ("EventCo", "https://eventco.com", "Sheet1", now, now),
+        )
+        tmp_db.connection.commit()
+        company_id = cursor.lastrowid
+
+        tmp_db.execute(
+            """INSERT INTO social_media_links
+               (company_id, platform, profile_url, discovery_method,
+                verification_status, discovered_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                company_id,
+                "linkedin",
+                "https://www.linkedin.com/company/eventco",
+                "page_footer",
+                "unverified",
+                now,
+            ),
+        )
+        tmp_db.connection.commit()
+
+        leadership_repo = LeadershipRepository(tmp_db, "test-user")
+        change_repo = LeadershipChangeRepository(tmp_db, "test-user")
+        social_repo = SocialMediaLinkRepository(tmp_db, "test-user")
+        company_repo = CompanyRepository(tmp_db, "test-user")
+
+        # Seed a previous CEO so the next run will detect a departure
+        leadership_repo.store_leadership(
+            {
+                "company_id": company_id,
+                "person_name": "Outgoing Alice",
+                "title": "CEO",
+                "linkedin_profile_url": "https://www.linkedin.com/in/outgoing-alice",
+                "discovery_method": "cdp_scrape",
+                "confidence": 0.8,
+                "is_current": True,
+                "discovered_at": now,
+                "last_verified_at": now,
+            }
+        )
+
+        # New run returns a different CEO
+        mock_browser = MagicMock()
+        mock_browser.extract_people.return_value = [
+            {
+                "name": "New Bob",
+                "title": "CEO",
+                "profile_url": "https://linkedin.com/in/new-bob",
+            },
+        ]
+        mock_browser.get_page_html.return_value = "<html></html>"
+        mock_browser.capture_people_screenshots.return_value = []
+        mock_browser.delay_between_pages.return_value = None
+
+        manager = LeadershipManager(
+            cdp_browser=mock_browser,
+            leadership_search=MagicMock(),
+            leadership_repo=leadership_repo,
+            social_link_repo=social_repo,
+            company_repo=company_repo,
+            leadership_change_repo=change_repo,
+        )
+
+        manager.extract_company_leadership(company_id)
+
+        events = change_repo.get_changes_for_company(company_id)
+        change_types = {e["change_type"] for e in events}
+        assert "ceo_departure" in change_types
+        assert "new_ceo" in change_types
+
+        critical = change_repo.get_critical_changes_for_company(company_id)
+        assert any(e["person_name"] == "Outgoing Alice" for e in critical)
+
+    def test_bootstrap_run_does_not_record_events(self, tmp_db: Database) -> None:
+        """First-ever extraction (no previous leaders) should not emit events."""
+        from src.domains.discovery.repositories.social_media_link_repository import (
+            SocialMediaLinkRepository,
+        )
+        from src.domains.leadership.repositories.leadership_change_repository import (
+            LeadershipChangeRepository,
+        )
+        from src.domains.leadership.repositories.leadership_repository import (
+            LeadershipRepository,
+        )
+        from src.domains.leadership.services.leadership_manager import (
+            LeadershipManager,
+        )
+        from src.repositories.company_repository import CompanyRepository
+
+        now = datetime.now(UTC).isoformat()
+        cursor = tmp_db.execute(
+            """INSERT INTO companies (name, homepage_url, source_sheet, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            ("BootCo", "https://bootco.com", "Sheet1", now, now),
+        )
+        tmp_db.connection.commit()
+        company_id = cursor.lastrowid
+
+        tmp_db.execute(
+            """INSERT INTO social_media_links
+               (company_id, platform, profile_url, discovery_method,
+                verification_status, discovered_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                company_id,
+                "linkedin",
+                "https://www.linkedin.com/company/bootco",
+                "page_footer",
+                "unverified",
+                now,
+            ),
+        )
+        tmp_db.connection.commit()
+
+        mock_browser = MagicMock()
+        mock_browser.extract_people.return_value = [
+            {
+                "name": "First Carol",
+                "title": "CEO",
+                "profile_url": "https://linkedin.com/in/first-carol",
+            },
+        ]
+        mock_browser.get_page_html.return_value = "<html></html>"
+        mock_browser.capture_people_screenshots.return_value = []
+        mock_browser.delay_between_pages.return_value = None
+
+        leadership_repo = LeadershipRepository(tmp_db, "test-user")
+        change_repo = LeadershipChangeRepository(tmp_db, "test-user")
+        social_repo = SocialMediaLinkRepository(tmp_db, "test-user")
+        company_repo = CompanyRepository(tmp_db, "test-user")
+
+        manager = LeadershipManager(
+            cdp_browser=mock_browser,
+            leadership_search=MagicMock(),
+            leadership_repo=leadership_repo,
+            social_link_repo=social_repo,
+            company_repo=company_repo,
+            leadership_change_repo=change_repo,
+        )
+
+        manager.extract_company_leadership(company_id)
+
+        # No events on bootstrap run
+        assert change_repo.get_changes_for_company(company_id) == []

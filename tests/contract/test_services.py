@@ -6,7 +6,7 @@ Mock the API clients, use real Database for data persistence verification.
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
@@ -983,6 +983,293 @@ class TestStatusAnalyzer:
         summary = analyzer.analyze_all_statuses()
 
         assert summary["skipped"] >= 1
+
+
+# ===========================================================================
+# 6b. StatusAnalyzer -- multi-source signals (news + leadership)
+# ===========================================================================
+
+
+def _insert_news_article(
+    db: Database,
+    company_id: int,
+    title: str,
+    sentiment: str,
+    confidence: float,
+    categories: list[str],
+    days_ago: int = 5,
+    classification: str = "significant",
+) -> int:
+    """Insert a news article for status analyzer tests."""
+    import json
+
+    published = (datetime.now(UTC) - timedelta(days=days_ago)).isoformat()
+    now = datetime.now(UTC).isoformat()
+    cursor = db.execute(
+        """INSERT INTO news_articles
+           (company_id, title, content_url, source, published_at, discovered_at,
+            match_confidence, significance_classification, significance_sentiment,
+            significance_confidence, matched_keywords, matched_categories,
+            significance_notes, performed_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            company_id,
+            title,
+            f"https://example.com/{company_id}/{title.replace(' ', '-')}",
+            "testnews.com",
+            published,
+            now,
+            0.9,
+            classification,
+            sentiment,
+            confidence,
+            json.dumps([]),
+            json.dumps(categories),
+            "",
+            "test-user",
+        ),
+    )
+    db.connection.commit()
+    return cursor.lastrowid or 0
+
+
+def _insert_leadership_change(
+    db: Database,
+    company_id: int,
+    change_type: str,
+    severity: str,
+    person_name: str = "Alice Smith",
+    title: str = "CEO",
+    days_ago: int = 5,
+) -> int:
+    """Insert a leadership_changes event for status analyzer tests."""
+    detected = (datetime.now(UTC) - timedelta(days=days_ago)).isoformat()
+    cursor = db.execute(
+        """INSERT INTO leadership_changes
+           (company_id, change_type, person_name, title, linkedin_profile_url,
+            severity, detected_at, confidence, discovery_method, performed_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            company_id,
+            change_type,
+            person_name,
+            title,
+            f"https://www.linkedin.com/in/{person_name.replace(' ', '-').lower()}",
+            severity,
+            detected,
+            0.95,
+            "cdp_scrape",
+            "test-user",
+        ),
+    )
+    db.connection.commit()
+    return cursor.lastrowid or 0
+
+
+class TestStatusAnalyzerMultiSource:
+    """StatusAnalyzer pulls signals from news and leadership repositories."""
+
+    def _build_analyzer(self, db: Database) -> StatusAnalyzer:
+        from src.domains.leadership.repositories.leadership_change_repository import (
+            LeadershipChangeRepository,
+        )
+        from src.domains.news.repositories.news_article_repository import (
+            NewsArticleRepository,
+        )
+
+        return StatusAnalyzer(
+            snapshot_repo=SnapshotRepository(db, "test-user"),
+            status_repo=CompanyStatusRepository(db, "test-user"),
+            company_repo=CompanyRepository(db, "test-user"),
+            news_repo=NewsArticleRepository(db, "test-user"),
+            leadership_change_repo=LeadershipChangeRepository(db, "test-user"),
+        )
+
+    def test_news_veto_forces_likely_closed_on_closure(self, db: Database) -> None:
+        """A significant-negative closure article vetoes the weighted decision."""
+        current_year = datetime.now(UTC).year
+        cid = _insert_company(db, "Dying Corp", "https://dying.com")
+        _insert_snapshot(
+            db,
+            cid,
+            f"# Dying Corp\n\nActively hiring! Copyright {current_year} Dying Corp.",
+        )
+        _insert_news_article(
+            db,
+            cid,
+            title="Dying Corp files for bankruptcy",
+            sentiment="negative",
+            confidence=0.92,
+            categories=["financial_distress", "closure"],
+        )
+
+        analyzer = self._build_analyzer(db)
+        summary = analyzer.analyze_all_statuses()
+        assert summary["successful"] >= 1
+
+        status = CompanyStatusRepository(db, "test-user").get_latest_status(cid)
+        assert status is not None
+        assert status["status"] == "likely_closed"
+        assert "news_veto" in (status.get("status_reason") or "")
+
+    def test_news_veto_requires_minimum_confidence(self, db: Database) -> None:
+        """Low-confidence closure articles do NOT trigger the veto path.
+
+        A low-confidence article can still contribute as a regular NEGATIVE
+        indicator through the normal weighted calculation, but the special
+        veto path (which bypasses weighting and writes a news_veto reason)
+        must only fire on high-confidence articles.
+        """
+        current_year = datetime.now(UTC).year
+        cid = _insert_company(db, "LowConf Corp", "https://lowconf.com")
+        _insert_snapshot(
+            db,
+            cid,
+            f"# LowConf Corp\n\nWelcome. Copyright {current_year} LowConf Corp.",
+        )
+        _insert_news_article(
+            db,
+            cid,
+            title="Rumor: LowConf Corp may close",
+            sentiment="negative",
+            confidence=0.50,  # below veto threshold 0.75
+            categories=["closure"],
+        )
+
+        analyzer = self._build_analyzer(db)
+        analyzer.analyze_all_statuses()
+
+        status = CompanyStatusRepository(db, "test-user").get_latest_status(cid)
+        assert status is not None
+        # Veto did not fire (no veto reason written)
+        assert "news_veto" not in (status.get("status_reason") or "")
+
+    def test_news_veto_requires_negative_sentiment(self, db: Database) -> None:
+        """Positive-sentiment articles, even with closure keywords, do not veto."""
+        current_year = datetime.now(UTC).year
+        cid = _insert_company(db, "Acquirer Corp", "https://acquirer.com")
+        _insert_snapshot(
+            db,
+            cid,
+            f"# Acquirer Corp\n\nGreat news! Copyright {current_year} Acquirer Corp.",
+        )
+        _insert_news_article(
+            db,
+            cid,
+            title="Acquirer Corp announces acquisition of startup",
+            sentiment="positive",
+            confidence=0.90,
+            categories=["acquisition"],
+        )
+
+        analyzer = self._build_analyzer(db)
+        analyzer.analyze_all_statuses()
+
+        status = CompanyStatusRepository(db, "test-user").get_latest_status(cid)
+        assert status is not None
+        assert status["status"] != "likely_closed"
+
+    def test_ceo_departure_adds_negative_indicator(self, db: Database) -> None:
+        """Recent critical leadership change produces a leadership_departure signal."""
+        current_year = datetime.now(UTC).year
+        cid = _insert_company(db, "Turnover Corp", "https://turnover.com")
+        _insert_snapshot(
+            db,
+            cid,
+            f"# Turnover Corp\n\nWelcome. Copyright {current_year} Turnover Corp.",
+        )
+        _insert_leadership_change(
+            db,
+            cid,
+            change_type="ceo_departure",
+            severity="critical",
+            person_name="Alice Smith",
+            title="CEO",
+        )
+
+        analyzer = self._build_analyzer(db)
+        analyzer.analyze_all_statuses()
+
+        status = CompanyStatusRepository(db, "test-user").get_latest_status(cid)
+        assert status is not None
+        indicators = status.get("indicators") or []
+        types = {i["type"] for i in indicators}
+        assert "leadership_departure" in types
+
+    def test_old_leadership_change_ignored(self, db: Database) -> None:
+        """Leadership changes outside the 90-day window are ignored."""
+        current_year = datetime.now(UTC).year
+        cid = _insert_company(db, "AncientTurnover", "https://old.com")
+        _insert_snapshot(
+            db,
+            cid,
+            f"# AncientTurnover\n\nStill here. Copyright {current_year}.",
+        )
+        _insert_leadership_change(
+            db,
+            cid,
+            change_type="ceo_departure",
+            severity="critical",
+            days_ago=200,  # outside the 90-day lookback
+        )
+
+        analyzer = self._build_analyzer(db)
+        analyzer.analyze_all_statuses()
+
+        status = CompanyStatusRepository(db, "test-user").get_latest_status(cid)
+        assert status is not None
+        indicators = status.get("indicators") or []
+        types = {i["type"] for i in indicators}
+        assert "leadership_departure" not in types
+
+    def test_positive_news_adds_positive_indicator(self, db: Database) -> None:
+        """Significant-positive news contributes a positive signal."""
+        current_year = datetime.now(UTC).year
+        cid = _insert_company(db, "Funded Corp", "https://funded.com")
+        _insert_snapshot(
+            db,
+            cid,
+            f"# Funded Corp\n\nCopyright {current_year} Funded Corp.",
+        )
+        _insert_news_article(
+            db,
+            cid,
+            title="Funded Corp raises $50M Series B",
+            sentiment="positive",
+            confidence=0.85,
+            categories=["funding"],
+        )
+
+        analyzer = self._build_analyzer(db)
+        analyzer.analyze_all_statuses()
+
+        status = CompanyStatusRepository(db, "test-user").get_latest_status(cid)
+        assert status is not None
+        indicators = status.get("indicators") or []
+        types = {i["type"] for i in indicators}
+        assert "news_positive" in types
+        assert status["status"] == "operational"
+
+    def test_no_extra_repos_matches_legacy_behavior(self, db: Database) -> None:
+        """StatusAnalyzer without news/leadership repos behaves like before."""
+        current_year = datetime.now(UTC).year
+        cid = _insert_company(db, "Legacy Corp", "https://legacy.com")
+        _insert_snapshot(
+            db,
+            cid,
+            f"# Legacy Corp\n\nCopyright {current_year} Legacy Corp.",
+        )
+
+        analyzer = StatusAnalyzer(
+            snapshot_repo=SnapshotRepository(db, "test-user"),
+            status_repo=CompanyStatusRepository(db, "test-user"),
+            company_repo=CompanyRepository(db, "test-user"),
+        )
+        analyzer.analyze_all_statuses()
+
+        status = CompanyStatusRepository(db, "test-user").get_latest_status(cid)
+        assert status is not None
+        assert status["status"] == "operational"
 
 
 # ===========================================================================

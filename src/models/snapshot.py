@@ -112,3 +112,16 @@ class Snapshot(BaseModel):
             )
             raise ValueError(msg)
         return self
+
+    @model_validator(mode="after")
+    def validate_checksum_matches_content(self) -> Snapshot:
+        """Checksum is required whenever content_markdown is present.
+
+        A NULL checksum is only valid for failed captures (no markdown content).
+        This prevents the ambiguous state where a populated snapshot has no
+        checksum, which would break change detection comparisons.
+        """
+        if self.content_markdown is not None and self.content_checksum is None:
+            msg = "content_checksum is required when content_markdown is provided"
+            raise ValueError(msg)
+        return self
